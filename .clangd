@@ -1,0 +1,33 @@
+# .clangd 配置文件示例
+CompileFlags:
+  # 编译命令数据库的路径，如果不在项目根目录或build目录，需显式指定
+  CompilationDatabase: out  # 指向包含compile_commands.json的目录
+
+Index:
+  Background: Build  # 在后台构建项目索引，提升导航和补全速度
+  # OnSymbol: true  # 也可以在符号查询时构建索引
+
+Diagnostics:
+  UnusedIncludes: Strict  # 严格检查未使用的头文件
+  ClangTidy:
+    # 启用clang-tidy检查，提升代码质量
+    Checks: "bugprone-*, performance-*, portability-*, readability-*, modernize-*"
+    # 可以针对项目需要启用或禁用特定检查
+    # 禁用检查示例: -bugprone-use-after-move
+
+CodeComplete:
+  # 补全相关设置
+  Enable: true
+  Style: Detailed  # 提供详细的补全信息，包括参数列表和返回类型
+
+Hover:
+  Enable: true
+  Show: [Type, Definition, Documentation]  # 悬停时显示的信息类型
+
+HeaderInsertion: IWYU  # 遵循"Include What You Use"原则，自动插入所需头文件
+
+InlayHints:
+  # 内联提示设置（需要编辑器支持）
+  Enabled: yes
+  DeducedTypes: yes  # 显示推导的类型
+  ParameterNames: yes  # 显示参数名称
