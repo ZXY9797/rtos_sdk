@@ -12,9 +12,6 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${AUTOCONF_H})
 
 set_ifndef(KCONFIG_NAMESPACE "CONFIG")
 
-set_ifndef(KCONFIG_BINARY_DIR ${PROJECT_BINARY_DIR}/Kconfig)
-file(MAKE_DIRECTORY ${KCONFIG_BINARY_DIR})
-
 # Bring in extra configuration files dropped in by the user or anyone else;
 # make sure they are set at the end so we can override any other setting
 file(GLOB config_files ${PROJECT_CONFIG_DIR}/*.conf)
@@ -26,7 +23,7 @@ set(
 
 set(KCONFIG_ROOT                ${TOP_DIR}/Kconfig)
 set(DOTCONFIG                   ${PROJECT_BINARY_DIR}/.config)
-set(PARSED_KCONFIG_SOURCES_TXT  ${PROJECT_BINARY_DIR}/Kconfig/sources.txt)
+set(PARSED_KCONFIG_SOURCES_TXT  ${KCONFIG_BINARY_DIR}/sources.txt)
 
 # Create a new .config if it does not exists
 set(CREATE_NEW_DOTCONFIG 1)
@@ -44,6 +41,9 @@ endif()
 set(COMMON_KCONFIG_ENV_SETTINGS
   PYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
   srctree=${TOP_DIR}
+  EDT_PICKLE=${EDT_PICKLE}
+  SOC_YAML_FILE=${BSP_DIR}/soc/soc.yml
+  KCONFIG_BINARY_DIR=${KCONFIG_BINARY_DIR}
 )
 
 set(EXTRA_KCONFIG_TARGET_COMMAND_FOR_menuconfig

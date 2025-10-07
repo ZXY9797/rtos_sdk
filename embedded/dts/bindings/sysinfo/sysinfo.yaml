@@ -1,0 +1,6 @@
+include: base.yaml
+
+properties:
+  clock-frequency:
+    type: int
+    description: Clock frequency information for UART operation

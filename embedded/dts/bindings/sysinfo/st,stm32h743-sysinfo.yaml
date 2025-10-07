@@ -1,0 +1,6 @@
+description: |
+  stm32h743 sysinfo
+
+compatible: "st,stm32h743-sysinfo"
+
+include: sysinfo.yaml

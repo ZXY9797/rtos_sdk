@@ -25,12 +25,24 @@ include(${CMAKE_CURRENT_LIST_DIR}/tools/cmake/toolchain/compiler.cmake)
 # target_compile_options(${PROJECT_NAME} INTERFACE $<$<COMPILE_LANGUAGE:ASM>:-D_ASMLANGUAGE>)
 
 include_directories(${BINARY_DIR_INCLUDE_GENERATED})
-include_directories(${BSP_DIR}/include)
 
 
-add_subdirectory(${BSP_DIR}/arch)
+add_subdirectory(embedded)
+add_subdirectory(${PROJECT_DIR})
 
+add_executable(${PROJECT_NAME} ${NULL_C})
+target_link_libraries(${PROJECT_NAME} app
+)
 
+set_source_files_properties(${NULL_C} OBJECT_DEPENDS ${LINKER_SCRIPT})
 
-add_executable(${PROJECT_NAME} ${PROJECT_DIR}/main.c)
-target_link_libraries(${PROJECT_NAME} arch)
+ADD_CUSTOM_COMMAND(
+  TARGET "${PROJECT_NAME}"
+  POST_BUILD
+  # Build .hex and .bin files
+  COMMAND ${CMAKE_OBJCOPY} -Obinary "${PROJECT_NAME}${CMAKE_OUTPUT_SUFFIX}" "${PROJECT_NAME}.bin"
+  COMMAND ${CMAKE_OBJCOPY} -Oihex "${PROJECT_NAME}${CMAKE_OUTPUT_SUFFIX}" "${PROJECT_NAME}.hex"
+  COMMENT "Building ${PROJECT_NAME}.bin and ${PROJECT_NAME}.hex"
+  # Display sizes
+  COMMAND ${CMAKE_SIZE} --format=berkeley ${PROJECT_NAME}${CMAKE_OUTPUT_SUFFIX}
+)

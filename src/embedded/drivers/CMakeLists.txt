@@ -1,2 +1,0 @@
-
-add_subdirectory(irq_controller)

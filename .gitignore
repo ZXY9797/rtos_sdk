@@ -57,3 +57,6 @@ out/
 *.pyc
 *.pyo
 *.pyd
+build/
+compile_commands.json
+*.sh

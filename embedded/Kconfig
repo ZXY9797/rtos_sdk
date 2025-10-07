@@ -1,0 +1,238 @@
+menu "Embedded Configure"
+
+rsource "dts/Kconfig"
+
+menu "Device Options"
+
+config DEVICE_DEPS
+	bool "Store device dependencies"
+	help
+	  When enabled, device dependencies will be stored so that they can be
+	  queried at runtime. Device dependencies are typically inferred from
+	  devicetree. Enabling this option will increase ROM usage (or RAM if
+	  dynamic device dependencies are enabled).
+
+config DEVICE_DEPS_DYNAMIC
+	bool "Dynamic device dependencies"
+	depends on DEVICE_DEPS
+	help
+	  Option that makes it possible to manipulate device dependencies at
+	  runtime.
+
+config DEVICE_MUTABLE
+	bool "Mutable devices [EXPERIMENTAL]"
+	select EXPERIMENTAL
+	help
+	  Support mutable devices. Mutable devices are instantiated in SRAM
+	  instead of Flash and are runtime modifiable in kernel mode.
+
+config DEVICE_DT_METADATA
+	bool "Store additional devicetree metadata for each device"
+	help
+	  If enabled, additional data from the devicetree will be stored for
+	  each device. This allows you to use device_get_by_dt_nodelabel(),
+	  device_get_dt_metadata(), etc.
+
+config DEVICE_DEINIT_SUPPORT
+	bool "Support device de-initialization"
+	default y
+	help
+	  In very specific case, it might be necessary to de-initialize
+	  a device at runtime. This is possible by providing a function
+	  to do so. Note, that this will grow every struct device by a
+	  function pointer. All device drivers that use the relevant
+	  macros and provide such function should select this option.
+
+endmenu
+
+menu "Initialization Priorities"
+
+config KERNEL_INIT_PRIORITY_OBJECTS
+	int "Kernel objects initialization priority"
+	default 30
+	help
+	  Kernel objects use this priority for initialization. This
+	  priority needs to be higher than minimal default initialization
+	  priority.
+
+config KERNEL_INIT_PRIORITY_LIBC
+	int "LIBC initialization priority"
+	default 35
+	help
+	  LIBC uses this priority for initialization. This
+	  priority needs to be higher than minimal default initialization
+	  priority.
+
+config KERNEL_INIT_PRIORITY_DEFAULT
+	int "Default init priority"
+	default 40
+	help
+	  Default minimal init priority for each init level.
+
+config KERNEL_INIT_PRIORITY_DEVICE
+	int "Default init priority for device drivers"
+	default 50
+	help
+	  Device driver, that depends on common components, such as
+	  interrupt controller, but does not depend on other devices,
+	  uses this init priority.
+
+config APPLICATION_INIT_PRIORITY
+	int "Default init priority for application level drivers"
+	default 90
+	help
+	  This priority level is for end-user drivers such as sensors and display
+	  which have no inward dependencies.
+
+endmenu
+
+config SYS_CLOCK_EXISTS
+	bool "System clock exists and is enabled"
+	default y
+	help
+	  This option specifies that the kernel has timer support.
+
+	  Some device configurations can eliminate significant code if
+	  this is disabled.  Obviously timeout-related APIs will not
+	  work when disabled.
+
+config SYS_CLOCK_TICKS_PER_SEC
+	int "System tick frequency (in ticks/second)"
+	default 1000
+	help
+	  This option specifies the nominal frequency of the system clock in Hz.
+
+	  For asynchronous timekeeping, the kernel defines a "ticks" concept. A
+	  "tick" is the internal count in which the kernel does all its internal
+	  uptime and timeout bookkeeping. Interrupts are expected to be delivered
+	  on tick boundaries to the extent practical, and no fractional ticks
+	  are tracked.
+
+	  The choice of tick rate is configurable by this option. Also the number
+	  of cycles per tick should be chosen so that 1 millisecond is exactly
+	  represented by an integral number of ticks. Defaults on most hardware
+	  platforms (ones that support setting arbitrary interrupt timeouts) are
+	  expected to be in the range of 10 kHz, with software emulation
+	  platforms and legacy drivers using a more traditional 100 Hz value.
+
+	  Note that when available and enabled, in "tickless" mode
+	  this config variable specifies the minimum available timing
+	  granularity, not necessarily the number or frequency of
+	  interrupts delivered to the kernel.
+
+	  A value of 0 completely disables timer support in the kernel.
+
+config SYS_CLOCK_HW_CYCLES_PER_SEC
+	int "System clock's h/w timer frequency"
+	default 0 if TIMER_READS_ITS_FREQUENCY_AT_RUNTIME
+	depends on SYS_CLOCK_EXISTS
+	help
+	  This option specifies the frequency of the hardware timer used for the
+	  system clock (in Hz). This option is set by the SOC's or board's Kconfig file
+	  and the user should generally avoid modifying it via the menu configuration.
+
+config HAS_FLASH_LOAD_OFFSET
+	bool
+	help
+	  This option is selected by targets having a FLASH_LOAD_OFFSET
+	  and FLASH_LOAD_SIZE.
+if HAS_FLASH_LOAD_OFFSET
+
+config USE_DT_CODE_PARTITION
+	bool "Link application into /chosen/msdk,code-partition from devicetree"
+	help
+	  When enabled, the application will be linked into the flash partition
+	  selected by the zephyr,code-partition property in /chosen in devicetree.
+	  When this is disabled, the flash load offset and size can be set manually
+	  below.
+
+# Workaround for not being able to have commas in macro arguments
+DT_CHOSEN_Z_CODE_PARTITION := msdk,code-partition
+
+config FLASH_LOAD_OFFSET
+	# Only user-configurable when USE_DT_CODE_PARTITION is disabled
+	hex "Kernel load offset" if !USE_DT_CODE_PARTITION
+	default $(dt_chosen_reg_addr_hex,$(DT_CHOSEN_Z_CODE_PARTITION)) if USE_DT_CODE_PARTITION
+	default 0
+	help
+	  This option specifies the byte offset from the beginning of flash that
+	  the kernel should be loaded into. Changing this value from zero will
+	  affect the Zephyr image's link, and will decrease the total amount of
+	  flash available for use by application code.
+
+	  If unsure, leave at the default value 0.
+
+config FLASH_LOAD_SIZE
+	# Only user-configurable when USE_DT_CODE_PARTITION is disabled
+	hex "Kernel load size" if !USE_DT_CODE_PARTITION
+	default $(dt_chosen_reg_size_hex,$(DT_CHOSEN_Z_CODE_PARTITION)) if USE_DT_CODE_PARTITION
+	default 0
+	help
+	  If non-zero, this option specifies the size, in bytes, of the flash
+	  area that the Zephyr image will be allowed to occupy.  If zero, the
+	  image will be able to occupy from the FLASH_LOAD_OFFSET to the end of
+	  the device.
+
+	  If unsure, leave at the default value 0.
+
+endif  # HAS_FLASH_LOAD_OFFSET
+
+config SWAP_NONATOMIC
+	bool
+	help
+	  On some architectures, the z_swap() primitive cannot be made
+	  atomic with respect to the irq_lock being released.  That
+	  is, interrupts may be received between the entry to z_swap
+	  and the completion of the context switch.  There are a
+	  handful of workaround cases in the kernel that need to be
+	  enabled when this is true.  Currently, this only happens on
+	  ARM when the PendSV exception priority sits below that of
+	  Zephyr-handled interrupts.
+
+menu "Barrier Operations"
+config BARRIER_OPERATIONS_BUILTIN
+	bool
+	help
+	  Use the compiler builtin functions for barrier operations. This is
+	  the preferred method. However, support for all arches in GCC is
+	  incomplete.
+
+config BARRIER_OPERATIONS_ARCH
+	bool
+	help
+	  Use when there isn't support for compiler built-ins, but you have
+	  written optimized assembly code under arch/ which implements these.
+endmenu
+
+menu "Atomic Operations"
+config ATOMIC_OPERATIONS_BUILTIN
+	bool
+	help
+	  Use the compiler builtin functions for atomic operations. This is
+	  the preferred method. However, support for all arches in GCC is
+	  incomplete.
+
+config ATOMIC_OPERATIONS_ARCH
+	bool
+	help
+	  Use when there isn't support for compiler built-ins, but you have
+	  written optimized assembly code under arch/ which implements these.
+
+config ATOMIC_OPERATIONS_C
+	bool
+	help
+	  Use atomic operations routines that are implemented entirely
+	  in C by locking interrupts. Selected by architectures which either
+	  do not have support for atomic operations in their instruction
+	  set, or haven't been implemented yet during bring-up, and also
+	  the compiler does not have support for the atomic __sync_* builtins.
+endmenu
+
+# zephyr-keep-sorted-start
+source "embedded/arch/Kconfig"
+source "embedded/drivers/Kconfig"
+source "embedded/modules/Kconfig"
+source "embedded/soc/Kconfig"
+# zephyr-keep-sorted-stop
+
+endmenu

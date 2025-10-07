@@ -1,10 +1,5 @@
 mainmenu "MSDK Configuration"
 
-config MDBG_ENABLE
-    bool "mdbg enable"
-    default y
+source "Kconfig.constants"
 
-config MBSP_SUPPORT_RTT_NANO
-    bool "support rtt nano"
-    default n
-    select MCOMPONENT_USING_MTIMER
+source "embedded/Kconfig"

@@ -1,0 +1,7 @@
+#include <st/h7/stm32h742.dtsi>
+
+/ {
+    soc {
+        compatible = "st,STM32H743";
+    };
+};

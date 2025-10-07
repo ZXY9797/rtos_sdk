@@ -1,0 +1,10 @@
+menu "Device Drivers"
+
+# zephyr-keep-sorted-start
+source "embedded/drivers/cache/Kconfig"
+source "embedded/drivers/clock_control/Kconfig"
+source "embedded/drivers/gpio/Kconfig"
+source "embedded/drivers/timer/Kconfig"
+# zephyr-keep-sorted-stop
+
+endmenu

@@ -4558,9 +4558,9 @@ function(dt_arch_type var index)
   set(${var} ${arch_type} PARENT_SCOPE)
 endfunction()
 
-function(dt_get_board_name var)
-  dt_prop(board_name PATH "/" PROPERTY "compatible")
-  set(${var} ${board_name} PARENT_SCOPE)
+function(dt_get_soc_name var)
+  dt_prop(soc_name PATH "/soc" PROPERTY "compatible")
+  set(${var} ${soc_name} PARENT_SCOPE)
 endfunction()
 
 # 4.2. *_if_dt_node

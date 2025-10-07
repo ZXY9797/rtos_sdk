@@ -24,6 +24,11 @@ set(DEVICETREE_GENERATED_H      ${BINARY_DIR_INCLUDE_GENERATED}/devicetree_gener
 set(DTS_POST_CPP                ${PROJECT_BINARY_DIR}/firmware.dts.pre)
 set(DTS_DEPS                    ${PROJECT_BINARY_DIR}/firmware.dts.d)
 
+# This generates DT information needed by the Kconfig APIs.
+set(GEN_DRIVER_KCONFIG_SCRIPT   ${DT_SCRIPTS}/gen_driver_kconfig_dts.py)
+# Generated Kconfig symbols go here.
+set(DTS_KCONFIG                 ${KCONFIG_BINARY_DIR}/Kconfig.dts)
+
 set(DTS_SOURCE                  ${PROJECT_CONFIG_DIR}/board.dts)
 
 set(VENDOR_PREFIXES             dts/bindings/vendor-prefixes.txt)
@@ -143,6 +148,21 @@ execute_process(
 zephyr_file_copy(${DEVICETREE_GENERATED_H}.new ${DEVICETREE_GENERATED_H} ONLY_IF_DIFFERENT)
 file(REMOVE ${DEVICETREE_GENERATED_H}.new)
 message(STATUS "Generated devicetree_generated.h: ${DEVICETREE_GENERATED_H}")
+
+#
+# Run GEN_DRIVER_KCONFIG_SCRIPT.
+#
+
+execute_process(
+  COMMAND ${PYTHON_EXECUTABLE} ${GEN_DRIVER_KCONFIG_SCRIPT}
+  --kconfig-out ${DTS_KCONFIG}
+  --bindings-dirs ${DTS_ROOT_BINDINGS}
+  WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
+  RESULT_VARIABLE ret
+  )
+if(NOT "${ret}" STREQUAL "0")
+  message(FATAL_ERROR "gen_driver_kconfig_dts.py failed with return code: ${ret}")
+endif()
 
 #
 # Import devicetree contents into CMake.

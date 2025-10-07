@@ -12,6 +12,14 @@ import re
 import sys
 from pathlib import Path
 
+# 添加 pylib 到路径
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(current_dir)
+pylib_path = os.path.join(project_root, 'pylib')
+sys.path.insert(0, pylib_path)
+
+import yaml
+
 ZEPHYR_BASE = str(Path(__file__).resolve().parents[2])
 sys.path.insert(0, os.path.join(ZEPHYR_BASE, "scripts", "dts",
                                 "python-devicetree", "src"))
@@ -20,6 +28,7 @@ sys.path.insert(0, os.path.join(ZEPHYR_BASE, "scripts", "dts",
 # 'string', 'int', 'hex', 'bool'
 
 doc_mode = os.environ.get('KCONFIG_DOC_MODE') == "1"
+soc_yaml_file = os.environ.get("SOC_YAML_FILE")
 
 if not doc_mode:
     EDT_PICKLE = os.environ.get("EDT_PICKLE")
@@ -1073,6 +1082,169 @@ def inc_dec(kconf, name, *args):
         assert False
 
 
+def str_is_equal(kconf, _, string1, string2):
+    """
+    Return "y" if string1 equals string2. Otherwise, return "n".
+    """
+    return "y" if string1 == string2 else "n"
+
+
+def find_soc_in_yaml(soc_name_input, yaml_data):
+    """
+    在YAML数据中查找SOC信息，支持模糊匹配并忽略大小写
+
+    Args:
+        soc_name_input: 输入的SOC名称
+        yaml_data: 加载的YAML数据
+
+    Returns:
+        tuple: (family, series, exact_soc_name) 或 None
+    """
+    # 将输入转换为小写用于比较
+    soc_name_input_lower = soc_name_input.lower()
+
+    exact_match = None
+    partial_match = None
+
+    if 'family' in yaml_data:
+        for family in yaml_data['family']:
+            family_name = family.get('name', '')
+            if 'series' in family:
+                for series in family['series']:
+                    series_name = series.get('name', '')
+                    if 'socs' in series:
+                        for soc in series['socs']:
+                            soc_name = soc.get('name', '')
+                            soc_name_lower = soc_name.lower()
+
+                            # 精确匹配（忽略大小写）
+                            if soc_name_lower == soc_name_input_lower:
+                                return family_name, series_name, soc_name
+
+                            # 部分匹配（忽略大小写，处理名称变体）
+                            # 移除尾部的'x'字符进行更宽松的匹配
+                            base_input = soc_name_input_lower.rstrip('x')
+                            base_soc = soc_name_lower.rstrip('x')
+
+                            if (base_input.startswith(base_soc) or
+                                base_soc.startswith(base_input) or
+                                base_input in base_soc or
+                                base_soc in base_input):
+                                partial_match = (family_name, series_name, soc_name)
+
+    # 如果没有精确匹配，返回部分匹配
+    return partial_match
+
+def parse_soc_info(compatible_str, yaml_file_path, fuzzy_match=False):
+    """
+    解析SOC信息，支持模糊匹配并忽略大小写
+
+    Args:
+        compatible_str: 兼容性字符串
+        yaml_file_path: YAML文件路径
+        fuzzy_match: 是否启用模糊匹配
+
+    Returns:
+        tuple: (vendor, family, series, soc_name)
+    """
+    try:
+        # 解析兼容性字符串
+        parts = compatible_str.split(',')
+        if len(parts) != 2:
+            raise ValueError(f"Invalid compatible string format: {compatible_str}")
+
+        vendor = parts[0].strip()
+        soc_name_input = parts[1].strip()
+
+        # 加载YAML文件
+        with open(yaml_file_path, 'r') as file:
+            data = yaml.safe_load(file)
+
+        # 查找SOC信息
+        if fuzzy_match:
+            result = find_soc_in_yaml(soc_name_input, data)
+        else:
+            # 非模糊匹配也要忽略大小写
+            result = None
+            soc_name_input_lower = soc_name_input.lower()
+
+            if 'family' in data:
+                for family in data['family']:
+                    family_name = family.get('name', '')
+                    if 'series' in family:
+                        for series in family['series']:
+                            series_name = series.get('name', '')
+                            if 'socs' in series:
+                                for soc in series['socs']:
+                                    soc_name = soc.get('name', '')
+                                    soc_name_lower = soc_name.lower()
+                                    if soc_name_lower == soc_name_input_lower:
+                                        result = (family_name, series_name, soc_name)
+                                        break
+                                if result:
+                                    break
+                        if result:
+                            break
+
+        if result:
+            family, series, exact_soc_name = result
+            return vendor, family, series, exact_soc_name
+        else:
+            print(f"Error: SOC '{soc_name_input}' not found in YAML file", file=sys.stderr)
+            return None
+
+    except Exception as e:
+        print(f"Error parsing SOC info: {e}", file=sys.stderr)
+        return None
+
+
+def dt_get_soc_compat_name(kconf, _):
+    if doc_mode or edt is None:
+        return "n"
+
+    try:
+        node = edt.get_node("/")
+    except edtlib.EDTError:
+        return "n"
+
+    if "compatible" not in node.props:
+        return "n"
+
+    return str(node.props["compatible"].val[0])
+
+
+def get_soc_vender(kconf, _, soc_compat_str):
+    result = parse_soc_info(soc_compat_str, soc_yaml_file, True)
+    if result:
+        vendor, _, _, _ = result
+        return vendor
+    else:
+        return None
+
+def get_soc_family(kconf, _, soc_compat_str):
+    result = parse_soc_info(soc_compat_str, soc_yaml_file, True)
+    if result:
+        _, family, _, _ = result
+        return family
+    else:
+        return None
+
+def get_soc_series(kconf, _, soc_compat_str):
+    result = parse_soc_info(soc_compat_str, soc_yaml_file, True)
+    if result:
+        _, _, series, _ = result
+        return series
+    else:
+        return None
+
+def get_soc_name(kconf, _, soc_compat_str):
+    result = parse_soc_info(soc_compat_str, soc_yaml_file, True)
+    if result:
+        _, _, _, soc_name = result
+        return soc_name
+    else:
+        return None
+
 # Keys in this dict are the function names as they appear
 # in Kconfig files. The values are tuples in this form:
 #
@@ -1083,6 +1255,12 @@ def inc_dec(kconf, name, *args):
 #
 # See the kconfiglib documentation for more details.
 functions = {
+        "str_is_equal": (str_is_equal, 2, 2),
+        "dt_get_soc_compat_name": (dt_get_soc_compat_name, 0, 1),
+        "get_soc_name": (get_soc_name, 1, 1),
+        "get_soc_series": (get_soc_series, 1, 1),
+        "get_soc_family": (get_soc_family, 1, 1),
+        "get_soc_vender": (get_soc_vender, 1, 1),
         "dt_has_compat": (dt_has_compat, 1, 1),
         "dt_compat_enabled": (dt_compat_enabled, 1, 1),
         "dt_compat_enabled_num": (dt_compat_enabled_num, 1, 1),
