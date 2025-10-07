@@ -60,3 +60,4 @@ out/
 build/
 compile_commands.json
 *.sh
+*.DS_Store
