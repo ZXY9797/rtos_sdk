@@ -160,6 +160,8 @@ struct init_entry {
 #define SYS_INIT(init_fn, level, prio)                                         \
 	SYS_INIT_NAMED(init_fn, init_fn, level, prio)
 
+
+
 #ifdef __cplusplus
 }
 #endif

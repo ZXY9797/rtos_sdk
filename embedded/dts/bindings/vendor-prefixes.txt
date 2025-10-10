@@ -447,6 +447,7 @@ mpl	MPL AG
 mps	Monolithic Power Systems Inc.
 mqmaker	mqmaker Inc.
 mrvl	Marvell Technology Group Ltd.
+msdk	MSDK Project.
 msi	Micro-Star International Co. Ltd.
 mstar	MStar Semiconductor, Inc. (acquired by MediaTek Inc.)
 mti	Imagination Technologies Ltd. (formerly MIPS Technologies Inc.)

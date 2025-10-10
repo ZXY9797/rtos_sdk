@@ -13,4 +13,4 @@ target_link_libraries(${MODULE_NAME}
         soc
 )
 
-target_sources(${MODULE_NAME} PRIVATE st,stm32_gpio.c)
+target_sources_ifdef(CONFIG_GPIO_STM32 ${MODULE_NAME} PRIVATE gpio_stm32.c)

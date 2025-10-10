@@ -1,6 +1,7 @@
 #include "stdint.h"
 #include "devicetree.h"
 #include "drivers/gpio.h"
+#include <osal.h>
 
 volatile uint32_t dd_cnt = 128;
 
@@ -10,17 +11,19 @@ static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
 
 void dd_test_func()
 {
-    gpio_pin_toggle_dt(&led);
+    while(1) {
+        osal_sleep(500);
+        gpio_pin_toggle_dt(&led);
+    }
 }
+osal_thread_t *tid = NULL;
 int main() {
     gpio_pin_configure_dt(&led, GPIO_OUTPUT | GPIO_PULL_UP);
     gpio_pin_set_dt(&led, 1);
-    while(1) {
-        // if (dd_cnt == 6000000) {
-        //     dd_cnt = 0;
-        //     gpio_pin_toggle_dt(&led);
-        // }
-        dd_cnt++;
+
+    tid = osal_thread_create("test_thread", dd_test_func, NULL, 1024, 8, 10);
+    if (tid) {
+        osal_thread_startup(tid);
     }
     return 0;
 }

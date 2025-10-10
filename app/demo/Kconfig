@@ -1,0 +1,6 @@
+menu "Demo APP Configure"
+
+config DEMO_APP_CONFIG_TEST
+    bool "DEMO_APP_CONFIG_TEST.."
+
+endmenu

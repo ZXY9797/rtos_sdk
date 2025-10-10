@@ -25,19 +25,8 @@ void Dummy_Handler() {
     while(1);
 }
 
-// extern void z_prep_c(void);
-
-// void Reset_Handler(void)
-// {
-//     __set_CONTROL(0);
-//     __set_MSP((uint32_t)&_estack);
-//     soc_reset_hook();
-//     z_prep_c();
-//     soc_early_init_hook();
-//     soc_start();
-// }
 extern void Reset_Handler(void);
-// __weak void Reset_Handler(void) {Dummy_Handler();}
+
 __weak void NMI_Handler(void) {Dummy_Handler();}
 __weak void HardFault_Handler(void) {Dummy_Handler();}
 __weak void MemManage_Handler(void) {Dummy_Handler();}

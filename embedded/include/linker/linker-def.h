@@ -2,7 +2,7 @@
 #define ZEPHYR_INCLUDE_LINKER_LINKER_DEFS_H_
 #include <toolchain.h>
 #include <sys/util.h>
-
+#include <devicetree.h>
 
 /* Used by arch_bss_zero or arch-specific implementation */
 extern char __bss_start[];
@@ -23,5 +23,24 @@ extern char __ramfunc_start[];
 extern char __ramfunc_end[];
 extern char __ramfunc_size[];
 extern char __ramfunc_load_start[];
+
+#if (DT_NODE_HAS_STATUS_OKAY(DT_CHOSEN(msdk_itcm)))
+extern char __itcm_start[];
+extern char __itcm_end[];
+extern char __itcm_size[];
+extern char __itcm_load_start[];
+#endif
+
+#if (DT_NODE_HAS_STATUS_OKAY(DT_CHOSEN(msdk_dtcm)))
+extern char __dtcm_data_start[];
+extern char __dtcm_data_end[];
+extern char __dtcm_bss_start[];
+extern char __dtcm_bss_end[];
+extern char __dtcm_noinit_start[];
+extern char __dtcm_noinit_end[];
+extern char __dtcm_data_load_start[];
+extern char __dtcm_start[];
+extern char __dtcm_end[];
+#endif
 
 #endif

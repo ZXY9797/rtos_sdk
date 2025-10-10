@@ -4559,7 +4559,7 @@ function(dt_arch_type var index)
 endfunction()
 
 function(dt_get_soc_name var)
-  dt_prop(soc_name PATH "/soc" PROPERTY "compatible")
+  dt_prop(soc_name PATH "/" PROPERTY "compatible")
   set(${var} ${soc_name} PARENT_SCOPE)
 endfunction()
 

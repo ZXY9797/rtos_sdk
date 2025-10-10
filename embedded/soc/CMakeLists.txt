@@ -6,7 +6,6 @@ set(SOC_PARSER_SCRIPT "${TOOLS_DIR}/scripts/soc/generate_soc_cmake.py")
 set(SOC_INFO_FILE "${CMAKE_CURRENT_BINARY_DIR}/soc_info.cmake")
 
 dt_get_soc_name(SOC_COMPATIBLE)
-message(STATUS "SOC_COMPATIBLE: ${SOC_COMPATIBLE}")
 
 execute_process(
     COMMAND ${PYTHON_EXECUTABLE}

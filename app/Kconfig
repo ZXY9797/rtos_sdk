@@ -1,0 +1,3 @@
+menu "Application Configure"
+osource "$(PROJECT_DIR)/Kconfig"
+endmenu

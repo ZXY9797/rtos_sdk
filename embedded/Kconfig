@@ -233,6 +233,7 @@ source "embedded/arch/Kconfig"
 source "embedded/drivers/Kconfig"
 source "embedded/modules/Kconfig"
 source "embedded/soc/Kconfig"
+source "embedded/system/Kconfig"
 # zephyr-keep-sorted-stop
 
 endmenu

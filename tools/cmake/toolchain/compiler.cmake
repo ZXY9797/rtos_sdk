@@ -8,8 +8,10 @@ include(${arch_core})
 set(CFCOMMON "${MCPU_FLAGS} ${VFP_FLAGS} ${SYSTEM_PATH} --specs=nano.specs -specs=rdimon.specs --specs=nosys.specs -Wall -fmessage-length=0 -ffunction-sections -fdata-sections")
 
 set(CMAKE_C_FLAGS   "-O2 -g ${CFCOMMON} -imacros ${AUTOCONF_H}")
-set(CMAKE_CXX_FLAGS "-O2 -g ${CFCOMMON} -fno-exceptions")
-set(CMAKE_ASM_FLAGS "${MCPU_FLAGS} ${VFP_FLAGS} -x assembler-with-cpp")
+set(CMAKE_CXX_FLAGS "-O2 -g ${CFCOMMON} -imacros ${AUTOCONF_H} -fno-exceptions")
+set(CMAKE_ASM_FLAGS "${MCPU_FLAGS} ${VFP_FLAGS} -x assembler-with-cpp -imacros ${AUTOCONF_H}")
+
+add_compile_options($<$<COMPILE_LANGUAGE:ASM>:-D_ASMLANGUAGE>)
 
 # 获得SOC名字
 dt_get_soc_name(soc_name)

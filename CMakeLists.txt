@@ -8,6 +8,7 @@ if(DEFINED t)
     set(TOOLCHAIN ${t})
 else()
     set(TOOLCHAIN "armgcc")
+    message(STATUS "Toolchain not specified, using default: ${TOOLCHAIN}")
 endif()
 
 # 工具链
@@ -22,8 +23,6 @@ include(${CMAKE_CURRENT_LIST_DIR}/tools/cmake/modules/dts.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/tools/cmake/modules/kconfig.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/tools/cmake/toolchain/compiler.cmake)
 
-# target_compile_options(${PROJECT_NAME} INTERFACE $<$<COMPILE_LANGUAGE:ASM>:-D_ASMLANGUAGE>)
-
 include_directories(${BINARY_DIR_INCLUDE_GENERATED})
 
 
@@ -31,12 +30,11 @@ add_subdirectory(embedded)
 add_subdirectory(${PROJECT_DIR})
 
 add_executable(${PROJECT_NAME} ${NULL_C})
-target_link_libraries(${PROJECT_NAME} app
-)
+target_link_libraries(${PROJECT_NAME} app)
 
 set_source_files_properties(${NULL_C} OBJECT_DEPENDS ${LINKER_SCRIPT})
 
-ADD_CUSTOM_COMMAND(
+add_custom_command(
   TARGET "${PROJECT_NAME}"
   POST_BUILD
   # Build .hex and .bin files

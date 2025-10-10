@@ -21,6 +21,8 @@
 #define  DT_MEM_NON_VOLATILE		BIT(1)  /* non-volatile */
 #define  DT_MEM_OOO			BIT(2)  /* out-of-order */
 #define  DT_MEM_DMA			BIT(3)	/* DMA-able */
+#define  DT_MEM_HIGHSPEED   BIT(4)  /* High spped memory such as DTCM */
+#define  DT_MEM_NOCACHE     BIT(5)
 #define  DT_MEM_UNKNOWN			BIT(15) /* must be last */
 /* to be continued */
 

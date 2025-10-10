@@ -3,6 +3,7 @@ menuconfig GPIO
 	help
 	  Include GPIO drivers in system config
 
+rsource "Kconfig.stm32"
 
 if GPIO
 

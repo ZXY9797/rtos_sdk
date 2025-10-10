@@ -1,6 +1,7 @@
 #include "init.h"
 #include "device.h"
 #include "soc/soc.h"
+#include <osal.h>
 
 extern int do_device_init(const struct device *dev);
 
@@ -60,10 +61,35 @@ static void sys_init_run_level(enum init_level level)
 	}
 }
 
+#define CONFIG_STATIC_INIT_GNU
+#ifdef CONFIG_STATIC_INIT_GNU
+
+extern void (*__init_array_start[])();
+extern void (*__init_array_end[])();
+
+static void z_static_init_gnu(void)
+{
+	void	(**fn)();
+
+	for (fn = __init_array_start; fn != __init_array_end; fn++) {
+		/* MWDT toolchain sticks a NULL at the end of the array */
+		if (*fn == NULL) {
+			break;
+		}
+		(**fn)();
+	}
+}
+
+#endif
+
 void bg_main_thread(void *arg)
 {
     sys_init_run_level(INIT_LEVEL_POST_KERNEL);
     soc_late_init_hook();
+
+#ifdef CONFIG_STATIC_INIT_GNU
+	z_static_init_gnu();
+#endif /* CONFIG_STATIC_INIT_GNU */
 	/* Final init level before app starts */
 	sys_init_run_level(INIT_LEVEL_APPLICATION);
 
@@ -79,12 +105,11 @@ void z_cstart(void)
     // LOG init
     // device_state_init
     soc_early_init_hook();
-
     sys_init_run_level(INIT_LEVEL_PRE_KERNEL_1);
-
     sys_init_run_level(INIT_LEVEL_PRE_KERNEL_2);
 
-    bg_main_thread(NULL);
+	osal_init();
+	osal_start(bg_main_thread, NULL);
 
     while(1){};
 }

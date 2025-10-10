@@ -4,6 +4,7 @@
 #include <devicetree/clocks.h>
 #include <device.h>
 #include <drivers/clock_control.h>
+#include <osal.h>
 
 #if defined(CONFIG_TIMER_READS_ITS_FREQUENCY_AT_RUNTIME)
 extern unsigned int z_clock_hw_cycles_per_sec;
@@ -189,9 +190,9 @@ void sys_clock_isr(void)
 		dcycles = cycle_count - announced_cycles;
 		dticks = dcycles / CYC_PER_TICK;
 		announced_cycles += dticks * CYC_PER_TICK;
-		// sys_clock_announce(dticks);
+		sys_clock_announce(dticks);
 	} else {
-		// sys_clock_announce(1);
+		sys_clock_announce(1);
 	}
 
 	// ISR_DIRECT_PM();
@@ -208,17 +209,11 @@ void sys_clock_disable(void)
 	SysTick->CTRL &= ~SysTick_CTRL_ENABLE_Msk;
 }
 
-extern void dd_test_func();
-volatile uint32_t dd_time = 0;
 void SysTick_Handler(void)
 {
+	osal_interrupt_enter();
 	sys_clock_isr();
-	dd_time++;
-	if (dd_time > 500) {
-		dd_test_func();
-		dd_time = 0;
-	}
-	// dd_test_func();
+	osal_interrupt_leave();
 }
 
 static int sys_clock_driver_init(void)

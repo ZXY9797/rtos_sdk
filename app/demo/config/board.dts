@@ -1,6 +1,7 @@
 /dts-v1/;
-#include <st/h7/stm32h743.dtsi>
-#include <st/h7/pinctrl/stm32h743vgtx-pinctrl.dtsi>
+#include <st/h7/stm32h743Xi.dtsi>
+#include <st/h7/pinctrl/stm32h743vitx-pinctrl.dtsi>
+#include <dt-bindings/memory-attr/memory-attr.h>
 
 / {
     compatible = "st,stm32h743xx";
@@ -8,6 +9,33 @@
     aliases {
         led0 = &green_led; /* 为LED节点创建别名led0 */
     };
+	chosen {
+		// zephyr,console = &usart3;
+		// zephyr,shell-uart = &usart3;
+		msdk,sram = &sram0;
+		msdk,flash = &flash0;
+		msdk,dtcm = &dtcm;
+		msdk,itcm = &itcm;
+		// zephyr,code-partition = &slot0_partition;
+		// zephyr,canbus = &fdcan1;
+	};
+
+	mempool {
+		normal_mem: mempool@0 {
+			compatible = "msdk,mempool";
+			section-name = ".axiram";
+			label = "normal";
+			attr = <( DT_MEM_CACHEABLE | DT_MEM_DMA )>;
+			size = <DT_SIZE_K(64)>;
+		};
+		highspeed_mem: mempool@1 {
+			compatible = "msdk,mempool";
+			section-name = ".dtcm_bss";
+			label = "hspeed";
+			attr = <( DT_MEM_HIGHSPEED | DT_MEM_NOCACHE )>;
+			size = <DT_SIZE_K(32)>;
+		};
+	};
 
     soc {
         #address-cells = <1>;

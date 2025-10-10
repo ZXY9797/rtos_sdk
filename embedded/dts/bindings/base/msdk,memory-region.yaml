@@ -1,0 +1,12 @@
+# Copyright (c) 2021, CSIRO
+# SPDX-License-Identifier: Apache-2.0
+
+description: Compatible for devices resulting in linker memory regions
+
+compatible: "msdk,memory-region"
+
+include: [base.yaml, "msdk,memory-common.yaml"]
+
+properties:
+  msdk,memory-region:
+    required: true

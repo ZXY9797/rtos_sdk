@@ -1,0 +1,18 @@
+description: Compatible for devices resulting in linker memory regions
+
+compatible: "msdk,mempool"
+
+include: [base.yaml]
+
+properties:
+  section-name:
+    type: string
+    required: true
+
+  attr:
+    type: int
+    required: true
+
+  size:
+    type: int
+    required: true

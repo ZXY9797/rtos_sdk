@@ -47,7 +47,7 @@ config SYSTEM_CLOCK_LOCK_FREE_COUNT
 	  cycle count accessor. This is needed for instrumenting spin lock
 	  hold times.
 
-source "embedded/drivers/timer/Kconfig.cortex_m_systick"
+rsource "Kconfig.cortex_m_systick"
 rsource "Kconfig.stm32_lptim"
 
 endmenu

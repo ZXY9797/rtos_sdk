@@ -25,3 +25,8 @@ target_link_libraries(${MODULE_NAME}
     PRIVATE
         soc
 )
+
+# target_compile_options(${MODULE_NAME}
+#     PRIVATE
+#         $<$<COMPILE_LANGUAGE:ASM>:-D_ASMLANGUAGE>
+# )

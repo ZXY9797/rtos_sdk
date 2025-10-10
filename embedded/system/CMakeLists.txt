@@ -11,6 +11,7 @@ target_sources(${MODULE_NAME}
     PRIVATE
         ./device.c
         ./init.c
+        ./mmem.c
 )
 
 target_link_libraries(${MODULE_NAME}
@@ -18,5 +19,7 @@ target_link_libraries(${MODULE_NAME}
     PRIVATE
         drivers
         soc
+        osal
+        lwmem
 )
 

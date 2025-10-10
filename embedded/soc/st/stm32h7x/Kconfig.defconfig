@@ -17,11 +17,7 @@ rsource "Kconfig.defconfig.stm32h7*"
 config CACHE_MANAGEMENT
 	default y if CPU_CORTEX_M7
 
-# if LVGL
-
-# config LV_DRAW_DMA2D_HAL_INCLUDE
-# 	default "stm32h7xx.h"
-
-# endif # LVGL
+config MEMPOOL_HIGHSPEED_SIZE
+	default 64
 
 endif # SOC_SERIES_STM32H7X

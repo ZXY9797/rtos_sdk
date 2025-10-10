@@ -3,3 +3,4 @@ mainmenu "MSDK Configuration"
 source "Kconfig.constants"
 
 source "embedded/Kconfig"
+source "app/Kconfig"
