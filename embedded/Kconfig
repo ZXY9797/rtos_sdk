@@ -2,6 +2,16 @@ menu "Embedded Configure"
 
 rsource "dts/Kconfig"
 
+config MAIN_STACK_SIZE
+	int "Size of stack for initialization and main thread"
+	default 1024
+	help
+	  When the initialization is complete, the thread executing it then
+	  executes the main() routine, so as to reuse the stack used by the
+	  initialization, which would be wasted RAM otherwise.
+
+	  After initialization is complete, the thread runs main().
+
 menu "Device Options"
 
 config DEVICE_DEPS

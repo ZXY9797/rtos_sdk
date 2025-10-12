@@ -6,7 +6,7 @@
 #ifndef ZEPHYR_INCLUDE_DRIVERS_HSEM_STM32_HSEM_H_
 #define ZEPHYR_INCLUDE_DRIVERS_HSEM_STM32_HSEM_H_
 
-#include <soc/soc.h>
+#include <soc.h>
 #include <stm32_ll_hsem.h>
 #include <stddef.h>
 #include <stdbool.h>

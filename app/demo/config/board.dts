@@ -8,6 +8,7 @@
 
     aliases {
         led0 = &green_led; /* 为LED节点创建别名led0 */
+		sw0 = &key_pc13;
     };
 	chosen {
 		// zephyr,console = &usart3;
@@ -50,9 +51,9 @@
 			label = "User LD1";
 		};
 
-		yellow_led: led_1 {
-			gpios = <&gpioe 1 GPIO_ACTIVE_HIGH>;
-			label = "User LD2";
+		key_pc13: led_1 {
+			gpios = <&gpioc 13 GPIO_ACTIVE_LOW>;
+			label = "User Key";
 		};
 	};
 };

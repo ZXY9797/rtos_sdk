@@ -25,7 +25,9 @@ SECTIONS
     {
         . = ALIGN(4);
         _vector_start = .;
-        KEEP(*(.isr_vector))
+        /* KEEP(*(.isr_vector)) */
+        KEEP(*(.exc_vector_table))
+        KEEP(*(".exc_vector_table.*"))
         _vector_end = .;
         . = ALIGN(4);
     } > FLASH
@@ -47,6 +49,7 @@ SECTIONS
         *libsystem.a:(.text*)
         *libsoc.a:(.text*)
         *libtimer.a:(.text*)
+        *(.text._isr_wrapper)
         *(.itcm)
         *(".itcm.*")
         __itcm_end = .;
@@ -159,6 +162,15 @@ SECTIONS
         __symbol_to_keep_start = .;
         KEEP(*(SORT(.symbol_to_keep*)));
         __symbol_to_keep_end = .;
+    } > FLASH
+
+    irq_info : ALIGN_WITH_INPUT
+    {
+        . = ALIGN(4);
+        __static_irq_info_start = .;
+        KEEP(*(SORT(.static_irq_info*)));
+        __static_irq_info_end = .;
+        . = ALIGN(4);
     } > FLASH
 
     rodata :
@@ -292,7 +304,7 @@ SECTIONS
     {
         . = ALIGN(4);
         __bss_start = .;
-
+        *(.gnu.linkonce.sw_isr_table*)
         __bss_end = ALIGN(4);
     } > RAM AT > RAM
 

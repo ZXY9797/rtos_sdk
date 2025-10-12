@@ -11,7 +11,7 @@
 #endif
 
 #include <toolchain.h>
-#include <soc/soc.h>
+#include <soc.h>
 
 #ifdef __cplusplus
 extern "C" {

@@ -22,7 +22,7 @@
 #include <stdbool.h>
 
 #ifndef _ASMLANGUAGE
-
+#include <sys/__assert.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>

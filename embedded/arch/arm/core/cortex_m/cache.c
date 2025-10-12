@@ -1,4 +1,4 @@
-#include "soc/soc.h"
+#include <cmsis_core.h>
 #include <cache.h>
 #include <arch/cpu.h>
 

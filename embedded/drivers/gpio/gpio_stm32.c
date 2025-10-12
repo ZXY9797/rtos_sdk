@@ -1,6 +1,6 @@
 #define DT_DRV_COMPAT st_stm32_gpio
 
-#include <soc/soc.h>
+#include <soc.h>
 #include <stm32_ll_bus.h>
 #include <stm32_ll_exti.h>
 #include <stm32_ll_gpio.h>
@@ -11,9 +11,10 @@
 
 #include <drivers/gpio.h>
 #include <drivers/clock_control/stm32_clock_control.h>
+#include <drivers/interrupt_controller/gpio_intc_stm32.h>
 #include <pm/device.h>
 #include <pm/device_runtime.h>
-#include <gpio/gpio_utils.h>
+#include <drivers/gpio/gpio_utils.h>
 #include <dt-bindings/pinctrl/stm32-pinctrl.h>
 #include <dt-bindings/gpio/stm32-gpio.h>
 #include <stm32_hsem.h>
@@ -66,10 +67,24 @@ struct gpio_stm32_data {
 	/* device's owner of this data */
 	const struct device *dev;
 	/* user ISR cb */
-	// sys_slist_t cb;
+	sys_slist_t cb;
 	/* keep track of pins that  are connected and need GPIO clock to be enabled */
 	uint32_t pin_has_clock_enabled;
 };
+
+/**
+ * @brief Common GPIO driver for STM32 MCUs.
+ */
+
+/**
+ * @brief EXTI interrupt callback
+ */
+static void gpio_stm32_isr(gpio_port_pins_t pin, void *arg)
+{
+	struct gpio_stm32_data *data = arg;
+
+	gpio_fire_callbacks(&data->cb, data->dev, pin);
+}
 
 /**
  * @brief Common gpio flags to custom flags
@@ -564,19 +579,106 @@ static int gpio_stm32_get_config(const struct device *dev,
 }
 #endif /* CONFIG_GPIO_GET_CONFIG */
 
+static inline void gpio_stm32_disable_pin_irqs(uint32_t port, gpio_pin_t pin)
+{
+#if defined(CONFIG_EXTI_STM32)
+	if (port != stm32_exti_get_line_src_port(pin)) {
+		/* EXTI line not owned by this port - do nothing */
+		return;
+	}
+#endif
+	stm32_gpio_irq_line_t irq_line = stm32_gpio_intc_get_pin_irq_line(port, pin);
+
+	stm32_gpio_intc_disable_line(irq_line);
+	stm32_gpio_intc_remove_irq_callback(irq_line);
+	stm32_gpio_intc_select_line_trigger(irq_line, STM32_GPIO_IRQ_TRIG_NONE);
+}
+
 static int gpio_stm32_pin_interrupt_configure(const struct device *dev,
 					      gpio_pin_t pin,
 					      enum gpio_int_mode mode,
 					      enum gpio_int_trig trig)
 {
-    return 0;
+	const struct gpio_stm32_config *cfg = dev->config;
+	struct gpio_stm32_data *data = dev->data;
+	const stm32_gpio_irq_line_t irq_line = stm32_gpio_intc_get_pin_irq_line(cfg->port, pin);
+	uint32_t irq_trigger = 0;
+	int err = 0;
+
+#ifdef CONFIG_GPIO_ENABLE_DISABLE_INTERRUPT
+	if (mode == GPIO_INT_MODE_DISABLE_ONLY) {
+		stm32_gpio_intc_disable_line(irq_line);
+		goto exit;
+	} else if (mode == GPIO_INT_MODE_ENABLE_ONLY) {
+		stm32_gpio_intc_enable_line(irq_line);
+		goto exit;
+	}
+#endif /* CONFIG_GPIO_ENABLE_DISABLE_INTERRUPT */
+
+	if (mode == GPIO_INT_MODE_DISABLED) {
+		gpio_stm32_disable_pin_irqs(cfg->port, pin);
+		goto exit;
+	}
+
+	if (mode == GPIO_INT_MODE_LEVEL) {
+		/* Level-sensitive interrupts are only supported on STM32WB0. */
+		if (!IS_ENABLED(CONFIG_SOC_SERIES_STM32WB0X)) {
+			err = -ENOTSUP;
+			goto exit;
+		} else {
+			switch (trig) {
+			case GPIO_INT_TRIG_LOW:
+				irq_trigger = STM32_GPIO_IRQ_TRIG_LOW_LEVEL;
+				break;
+			case GPIO_INT_TRIG_HIGH:
+				irq_trigger = STM32_GPIO_IRQ_TRIG_HIGH_LEVEL;
+				break;
+			default:
+				err = -EINVAL;
+				goto exit;
+			}
+		}
+	} else {
+		switch (trig) {
+		case GPIO_INT_TRIG_LOW:
+			irq_trigger = STM32_GPIO_IRQ_TRIG_FALLING;
+			break;
+		case GPIO_INT_TRIG_HIGH:
+			irq_trigger = STM32_GPIO_IRQ_TRIG_RISING;
+			break;
+		case GPIO_INT_TRIG_BOTH:
+			irq_trigger = STM32_GPIO_IRQ_TRIG_BOTH;
+			break;
+		default:
+			err = -EINVAL;
+			goto exit;
+		}
+	}
+
+	if (stm32_gpio_intc_set_irq_callback(irq_line, gpio_stm32_isr, data) != 0) {
+		err = -EBUSY;
+		goto exit;
+	}
+
+#if defined(CONFIG_EXTI_STM32)
+	stm32_exti_set_line_src_port(pin, cfg->port);
+#endif
+
+	stm32_gpio_intc_select_line_trigger(irq_line, irq_trigger);
+
+	stm32_gpio_intc_enable_line(irq_line);
+
+exit:
+	return err;
 }
 
 static int gpio_stm32_manage_callback(const struct device *dev,
 				      struct gpio_callback *callback,
 				      bool set)
 {
-	return 0;
+	struct gpio_stm32_data *data = dev->data;
+
+	return gpio_manage_callback(&data->cb, callback, set);
 }
 
 /**

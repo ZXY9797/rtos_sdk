@@ -19,11 +19,13 @@
  */
 
 #include <stdbool.h>
+#include <stdint.h>
+#include <errno.h>
+
 #include <devicetree.h>
 #include <drivers/gpio.h>
-// #include <zephyr/sys/__assert.h>
-// #include <zephyr/sys/slist.h>
-// #include <zephyr/tracing/tracing.h>
+#include <sys/__assert.h>
+#include <sys/slist.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -69,29 +71,29 @@ extern "C" {
  *
  * @return 0 on success, negative errno otherwise.
  */
-// static inline int gpio_manage_callback(sys_slist_t *callbacks,
-// 					struct gpio_callback *callback,
-// 					bool set)
-// {
-// 	__ASSERT(callback, "No callback!");
-// 	__ASSERT(callback->handler, "No callback handler!");
+static inline int gpio_manage_callback(sys_slist_t *callbacks,
+					struct gpio_callback *callback,
+					bool set)
+{
+	__ASSERT(callback, "No callback!");
+	__ASSERT(callback->handler, "No callback handler!");
 
-// 	if (!sys_slist_is_empty(callbacks)) {
-// 		if (!sys_slist_find_and_remove(callbacks, &callback->node)) {
-// 			if (!set) {
-// 				return -EINVAL;
-// 			}
-// 		}
-// 	} else if (!set) {
-// 		return -EINVAL;
-// 	}
+	if (!sys_slist_is_empty(callbacks)) {
+		if (!sys_slist_find_and_remove(callbacks, &callback->node)) {
+			if (!set) {
+				return -EINVAL;
+			}
+		}
+	} else if (!set) {
+		return -EINVAL;
+	}
 
-// 	if (set) {
-// 		sys_slist_prepend(callbacks, &callback->node);
-// 	}
+	if (set) {
+		sys_slist_prepend(callbacks, &callback->node);
+	}
 
-// 	return 0;
-// }
+	return 0;
+}
 
 /**
  * @brief Generic function to go through and fire callback from a callback list
@@ -100,23 +102,23 @@ extern "C" {
  * @param port A pointer on the gpio driver instance
  * @param pins The actual pin mask that triggered the interrupt
  */
-// static inline void gpio_fire_callbacks(sys_slist_t *list,
-// 					const struct device *port,
-// 					uint32_t pins)
-// {
-// 	struct gpio_callback *cb, *tmp;
+static inline void gpio_fire_callbacks(sys_slist_t *list,
+					const struct device *port,
+					uint32_t pins)
+{
+	struct gpio_callback *cb, *tmp;
 
-// 	sys_port_trace_gpio_fire_callbacks_enter(list, port, pins);
+	// sys_port_trace_gpio_fire_callbacks_enter(list, port, pins);
 
-// 	SYS_SLIST_FOR_EACH_CONTAINER_SAFE(list, cb, tmp, node) {
-// 		if (cb->pin_mask & pins) {
-// 			__ASSERT(cb->handler, "No callback handler!");
+	SYS_SLIST_FOR_EACH_CONTAINER_SAFE(list, cb, tmp, node) {
+		if (cb->pin_mask & pins) {
+			__ASSERT(cb->handler, "No callback handler!");
 
-// 			cb->handler(port, cb, cb->pin_mask & pins);
-// 			sys_port_trace_gpio_fire_callback(port, cb);
-// 		}
-// 	}
-// }
+			cb->handler(port, cb, cb->pin_mask & pins);
+			// sys_port_trace_gpio_fire_callback(port, cb);
+		}
+	}
+}
 
 #ifdef __cplusplus
 }

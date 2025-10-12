@@ -1,6 +1,6 @@
 #include "init.h"
 #include "device.h"
-#include "soc/soc.h"
+#include <soc.h>
 #include <osal.h>
 
 extern int do_device_init(const struct device *dev);

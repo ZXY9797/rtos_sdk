@@ -1,0 +1,12 @@
+menu "Interrupt controller drivers"
+
+config INTC_INIT_PRIORITY
+	int "Interrupt controller init priority"
+	default KERNEL_INIT_PRIORITY_DEFAULT
+	help
+	  Interrupt controller device initialization priority.
+
+module = INTC
+module-str = intc
+rsource "Kconfig.stm32"
+endmenu

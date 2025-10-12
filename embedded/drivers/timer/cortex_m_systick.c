@@ -1,5 +1,5 @@
 #include <init.h>
-#include <soc/soc.h>
+#include <soc.h>
 #include <devicetree.h>
 #include <devicetree/clocks.h>
 #include <device.h>

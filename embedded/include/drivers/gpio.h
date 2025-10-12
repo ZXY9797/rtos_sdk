@@ -15,10 +15,12 @@
 
 #ifndef ZEPHYR_INCLUDE_DRIVERS_GPIO_H_
 #define ZEPHYR_INCLUDE_DRIVERS_GPIO_H_
-
+#include <sys/__assert.h>
+#include <sys/slist.h>
 #include <stddef.h>
 #include <device.h>
 #include <dt-bindings/gpio/gpio.h>
+#include <errno.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -742,7 +744,7 @@ struct gpio_callback {
 	/** This is meant to be used in the driver and the user should not
 	 * mess with it (see drivers/gpio/gpio_utils.h)
 	 */
-	// sys_snode_t node;
+	sys_snode_t node;
 
 	/** Actual callback function being called when relevant. */
 	gpio_callback_handler_t handler;
@@ -1128,6 +1130,132 @@ static inline int gpio_pin_toggle_dt(const struct gpio_dt_spec *spec)
 {
 	return gpio_pin_toggle(spec->port, spec->pin);
 }
+
+/**
+ * @brief Helper to initialize a struct gpio_callback properly
+ * @param callback A valid Application's callback structure pointer.
+ * @param handler A valid handler function pointer.
+ * @param pin_mask A bit mask of relevant pins for the handler
+ */
+static inline void gpio_init_callback(struct gpio_callback *callback,
+				      gpio_callback_handler_t handler,
+				      gpio_port_pins_t pin_mask)
+{
+	// SYS_PORT_TRACING_FUNC_ENTER(gpio, init_callback, callback, handler, pin_mask);
+
+	__ASSERT(callback, "Callback pointer should not be NULL");
+	__ASSERT(handler, "Callback handler pointer should not be NULL");
+
+	callback->handler = handler;
+	callback->pin_mask = pin_mask;
+
+	// SYS_PORT_TRACING_FUNC_EXIT(gpio, init_callback, callback);
+}
+
+/**
+ * @brief Add an application callback.
+ * @param port Pointer to the device structure for the driver instance.
+ * @param callback A valid Application's callback structure pointer.
+ * @retval 0 If successful
+ * @retval -ENOSYS If driver does not implement the operation
+ * @retval -errno Other negative errno code on failure.
+ *
+ * @note Callbacks may be added to the device from within a callback
+ * handler invocation, but whether they are invoked for the current
+ * GPIO event is not specified.
+ *
+ * Note: enables to add as many callback as needed on the same port.
+ */
+static inline int gpio_add_callback(const struct device *port,
+				    struct gpio_callback *callback)
+{
+	const struct gpio_driver_api *api =
+		(const struct gpio_driver_api *)port->api;
+	int ret;
+
+	// SYS_PORT_TRACING_FUNC_ENTER(gpio, add_callback, port, callback);
+
+	if (api->manage_callback == NULL) {
+		// SYS_PORT_TRACING_FUNC_EXIT(gpio, add_callback, port, -ENOSYS);
+		return -ENOSYS;
+	}
+
+	ret = api->manage_callback(port, callback, true);
+	// SYS_PORT_TRACING_FUNC_EXIT(gpio, add_callback, port, ret);
+	return ret;
+}
+
+/**
+ * @brief Add an application callback.
+ *
+ * This is equivalent to:
+ *
+ *     gpio_add_callback(spec->port, callback);
+ *
+ * @param spec GPIO specification from devicetree.
+ * @param callback A valid application's callback structure pointer.
+ * @return a value from gpio_add_callback().
+ */
+static inline int gpio_add_callback_dt(const struct gpio_dt_spec *spec,
+				       struct gpio_callback *callback)
+{
+	return gpio_add_callback(spec->port, callback);
+}
+
+/**
+ * @brief Remove an application callback.
+ * @param port Pointer to the device structure for the driver instance.
+ * @param callback A valid application's callback structure pointer.
+ * @retval 0 If successful
+ * @retval -ENOSYS If driver does not implement the operation
+ * @retval -errno Other negative errno code on failure.
+ *
+ * @warning It is explicitly permitted, within a callback handler, to
+ * remove the registration for the callback that is running, i.e. @p
+ * callback.  Attempts to remove other registrations on the same
+ * device may result in undefined behavior, including failure to
+ * invoke callbacks that remain registered and unintended invocation
+ * of removed callbacks.
+ *
+ * Note: enables to remove as many callbacks as added through
+ *       gpio_add_callback().
+ */
+static inline int gpio_remove_callback(const struct device *port,
+				       struct gpio_callback *callback)
+{
+	const struct gpio_driver_api *api =
+		(const struct gpio_driver_api *)port->api;
+	int ret;
+
+	// SYS_PORT_TRACING_FUNC_ENTER(gpio, remove_callback, port, callback);
+
+	if (api->manage_callback == NULL) {
+		// SYS_PORT_TRACING_FUNC_EXIT(gpio, remove_callback, port, -ENOSYS);
+		return -ENOSYS;
+	}
+
+	ret = api->manage_callback(port, callback, false);
+	// SYS_PORT_TRACING_FUNC_EXIT(gpio, remove_callback, port, ret);
+	return ret;
+}
+
+/**
+ * @brief Remove an application callback.
+ *
+ * This is equivalent to:
+ *
+ *     gpio_remove_callback(spec->port, callback);
+ *
+ * @param spec GPIO specification from devicetree.
+ * @param callback A valid application's callback structure pointer.
+ * @return a value from gpio_remove_callback().
+ */
+static inline int gpio_remove_callback_dt(const struct gpio_dt_spec *spec,
+					  struct gpio_callback *callback)
+{
+	return gpio_remove_callback(spec->port, callback);
+}
+
 
 #ifdef __cplusplus
 }

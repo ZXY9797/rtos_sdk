@@ -2,6 +2,8 @@
 #define ZEPHYR_INCLUDE_ARCH_ARM_ARCH_H_
 
 #include <devicetree.h>
+#include <arch/arm/exception.h>
+#include <arch/arm/irq.h>
 #include <arch/arm/asm_inline.h>
 #include <arch/common/sys_bitops.h>
 

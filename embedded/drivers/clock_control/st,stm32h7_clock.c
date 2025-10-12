@@ -1,4 +1,4 @@
-#include <soc/soc.h>
+#include <soc.h>
 #include <stm32_ll_bus.h>
 #include <stm32_ll_pwr.h>
 #include <stm32_ll_rcc.h>

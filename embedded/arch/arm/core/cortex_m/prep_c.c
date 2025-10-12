@@ -1,6 +1,6 @@
 #include <arch/cache.h>
 #include <toolchain.h>
-#include <soc/soc.h>
+#include <cmsis_core.h>
 #include <sys/barrier.h>
 #include <arch/cpu.h>
 #include <arch/common/init.h>

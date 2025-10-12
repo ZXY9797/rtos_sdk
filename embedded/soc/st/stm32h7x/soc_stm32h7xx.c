@@ -1,4 +1,4 @@
-#include "soc/soc.h"
+#include <cmsis_core.h>
 #include "system_stm32h7xx.h"
 #include "cache.h"
 #include <stm32_ll_pwr.h>

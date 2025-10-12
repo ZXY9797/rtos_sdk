@@ -30,7 +30,10 @@ add_subdirectory(embedded)
 add_subdirectory(${PROJECT_DIR})
 
 add_executable(${PROJECT_NAME} ${NULL_C})
-target_link_libraries(${PROJECT_NAME} app)
+target_link_libraries(${PROJECT_NAME}
+    embedded
+    app
+)
 
 set_source_files_properties(${NULL_C} OBJECT_DEPENDS ${LINKER_SCRIPT})
 

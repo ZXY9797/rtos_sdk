@@ -7,6 +7,7 @@ target_include_directories(${MODULE_NAME}
         .
     PRIVATE
         ${BSP_DIR}/include
+        common/include
 )
 
 file(GLOB_RECURSE ARCH_SOURCES
