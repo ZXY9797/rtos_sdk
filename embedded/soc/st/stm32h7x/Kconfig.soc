@@ -17,27 +17,27 @@ config SOC_SERIES
 	default "stm32h7x" if SOC_SERIES_STM32H7X
 
 config SOC_STM32H723XX
-	bool
+	def_bool $(str_is_equal,$(soc_name),stm32h723xx)
 	select SOC_SERIES_STM32H7X
 
 config SOC_STM32H725XX
-	bool
+	def_bool $(str_is_equal,$(soc_name),stm32h725xx)
 	select SOC_SERIES_STM32H7X
 
 config SOC_STM32H730XX
-	bool
+	def_bool $(str_is_equal,$(soc_name),stm32h730xx)
 	select SOC_SERIES_STM32H7X
 
 config SOC_STM32H730XXQ
-	bool
+	def_bool $(str_is_equal,$(soc_name),stm32h730xxq)
 	select SOC_SERIES_STM32H7X
 
 config SOC_STM32H735XX
-	bool
+	def_bool $(str_is_equal,$(soc_name),stm32h735xx)
 	select SOC_SERIES_STM32H7X
 
 config SOC_STM32H742XX
-	bool
+	def_bool $(str_is_equal,$(soc_name),stm32h742xx)
 	select SOC_SERIES_STM32H7X
 
 config SOC_STM32H743XX
@@ -45,67 +45,67 @@ config SOC_STM32H743XX
 	select SOC_SERIES_STM32H7X
 
 config SOC_STM32H745XX_M7
-	bool
+	def_bool $(str_is_equal,$(soc_name),stm32h745xx_m7)
 	select SOC_SERIES_STM32H7X
 
 config SOC_STM32H745XX_M4
-	bool
+	def_bool $(str_is_equal,$(soc_name),stm32h745xx_m4)
 	select SOC_SERIES_STM32H7X
 
 config SOC_STM32H747XX_M7
-	bool
+	def_bool $(str_is_equal,$(soc_name),stm32h747xx_m7)
 	select SOC_SERIES_STM32H7X
 
 config SOC_STM32H747XX_M4
-	bool
+	def_bool $(str_is_equal,$(soc_name),stm32h747xx_m4)
 	select SOC_SERIES_STM32H7X
 
 config SOC_STM32H750XX
-	bool
+	def_bool $(str_is_equal,$(soc_name),stm32h750xx)
 	select SOC_SERIES_STM32H7X
 
 config SOC_STM32H753XX
-	bool
+	def_bool $(str_is_equal,$(soc_name),stm32h753xx)
 	select SOC_SERIES_STM32H7X
 
 config SOC_STM32H755XX_M4
-	bool
+	def_bool $(str_is_equal,$(soc_name),stm32h755xx_m4)
 	select SOC_SERIES_STM32H7X
 
 config SOC_STM32H755XX_M7
-	bool
+	def_bool $(str_is_equal,$(soc_name),stm32h755xx_m7)
 	select SOC_SERIES_STM32H7X
 
 config SOC_STM32H757XX_M4
-	bool
+	def_bool $(str_is_equal,$(soc_name),stm32h757xx_m4)
 	select SOC_SERIES_STM32H7X
 
 config SOC_STM32H757XX_M7
-	bool
+	def_bool $(str_is_equal,$(soc_name),stm32h757xx_m7)
 	select SOC_SERIES_STM32H7X
 
 config SOC_STM32H7A3XX
-	bool
+	def_bool $(str_is_equal,$(soc_name),stm32h7a3xx)
 	select SOC_SERIES_STM32H7X
 
 config SOC_STM32H7A3XXQ
-	bool
+	def_bool $(str_is_equal,$(soc_name),stm32h7a3xxq)
 	select SOC_SERIES_STM32H7X
 
 config SOC_STM32H7B0XX
-	bool
+	def_bool $(str_is_equal,$(soc_name),stm32h7b0xx)
 	select SOC_SERIES_STM32H7X
 
 config SOC_STM32H7B0XXQ
-	bool
+	def_bool $(str_is_equal,$(soc_name),stm32h7b0xxq)
 	select SOC_SERIES_STM32H7X
 
 config SOC_STM32H7B3XX
-	bool
+	def_bool $(str_is_equal,$(soc_name),stm32h7b3xx)
 	select SOC_SERIES_STM32H7X
 
 config SOC_STM32H7B3XXQ
-	bool
+	def_bool $(str_is_equal,$(soc_name),stm32h7b3xxq)
 	select SOC_SERIES_STM32H7X
 
 config SOC
