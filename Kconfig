@@ -2,5 +2,6 @@ mainmenu "MSDK Configuration"
 
 source "Kconfig.constants"
 
+source "kernel/Kconfig"
 source "embedded/Kconfig"
 source "app/Kconfig"

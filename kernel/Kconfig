@@ -1,0 +1,128 @@
+# Kernel configuration options
+
+menu "General Kernel Options"
+
+config MULTITHREADING
+    bool "Multi-threading"
+    default y
+    help
+      If disabled, only the main thread is available.
+
+config NUM_COOP_PRIORITIES
+    int "Number of coop priorities"
+    default 16
+    range 0 128
+    help
+      Number of cooperative priorities configured in the system.
+
+config NUM_PREEMPT_PRIORITIES
+    int "Number of preemptible priorities"
+    default 15
+    range 0 127
+    help
+      Number of preemptible priorities available in the system.
+
+config MAIN_THREAD_PRIORITY
+    int "Priority of initialization/main thread"
+    default 0
+    help
+      Priority at which the initialization thread runs.
+
+endmenu
+
+menu "Memory Management"
+
+config HEAP_MEM_POOL_SIZE
+    int "System heap memory pool size (bytes)"
+    default 0
+    help
+      Size of the system heap memory pool. Set to 0 to disable.
+
+config MAX_THREAD_BYTES
+    int "Maximum number of thread bytes"
+    default 1
+    help
+      Maximum number of bytes used for thread bitmaps.
+
+endmenu
+
+menu "Userspace"
+
+config USERSPACE
+    bool "User mode threads"
+    depends on ARCH_HAS_USERSPACE
+    help
+      When enabled, threads may be created or dropped down to user mode.
+
+config PRIVILEGED_STACK_SIZE
+    int "Size of privileged stack"
+    default 1024
+    depends on USERSPACE
+    help
+      Size of the privileged stack region for user mode threads.
+
+config MAX_DOMAIN_PARTITIONS
+    int "Maximum number of memory domain partitions"
+    default 6
+    depends on USERSPACE
+    help
+      Maximum number of partitions in a memory domain.
+
+config GEN_PRIV_STACKS
+    bool "Generate privileged stacks"
+    depends on USERSPACE
+    default y
+    help
+      Generate privileged stacks for user mode threads.
+
+endmenu
+
+menu "Thread Options"
+
+config THREAD_NAME
+    bool "Thread name support"
+    default y
+    help
+      Enable thread name support.
+
+config THREAD_MAX_NAME_LEN
+    int "Maximum thread name length"
+    default 32
+    depends on THREAD_NAME
+    help
+      Maximum length of thread names.
+
+config THREAD_MONITOR
+    bool "Thread monitor"
+    default n
+    help
+      Enable thread monitoring support.
+
+endmenu
+
+menu "Timer Options"
+
+config SYS_CLOCK_TICKS_PER_SEC
+    int "System clock ticks per second"
+    default 100
+    help
+      Number of system clock ticks per second.
+
+endmenu
+
+menu "Interrupt Options"
+
+config ZERO_LATENCY_IRQS
+    bool "Zero latency interrupt support"
+    depends on ARCH_HAS_ZERO_LATENCY_IRQS
+    help
+      Enable zero latency interrupt support.
+
+config ZERO_LATENCY_LEVELS
+    int "Number of zero latency interrupt priority levels"
+    default 1
+    depends on ZERO_LATENCY_IRQS
+    help
+      Number of interrupt priority levels reserved for zero latency.
+
+endmenu

@@ -24,7 +24,10 @@ include(${CMAKE_CURRENT_LIST_DIR}/tools/cmake/modules/kconfig.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/tools/cmake/toolchain/compiler.cmake)
 
 include_directories(${BINARY_DIR_INCLUDE_GENERATED})
+include_directories(${CMAKE_CURRENT_LIST_DIR}/kernel/include)
 
+# Add kernel subdirectory
+add_subdirectory(kernel)
 
 add_subdirectory(embedded)
 add_subdirectory(${PROJECT_DIR})

@@ -19,7 +19,6 @@ target_link_libraries(${MODULE_NAME}
     PRIVATE
         drivers
         soc
-        osal
-        lwmem
+        kernel
 )
 

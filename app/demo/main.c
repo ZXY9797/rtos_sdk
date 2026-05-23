@@ -1,7 +1,7 @@
 #include "stdint.h"
 #include "devicetree.h"
 #include "drivers/gpio.h"
-#include <osal.h>
+#include <zephyr/kernel.h>
 #include <sys/cdefs.h>
 
 volatile uint32_t dd_cnt = 128;
@@ -18,6 +18,10 @@ static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET(BUTTON_NODE, gpios);
 
 static struct gpio_callback button_cb_data;
 
+/* 线程栈定义 */
+K_THREAD_STACK_DEFINE(test_thread_stack, 1024);
+static struct k_thread test_thread_data;
+
 /* 中断回调函数
  * 注意：在此函数中应尽快处理关键操作，避免长时间阻塞
  */
@@ -28,16 +32,22 @@ void button_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t
     gpio_pin_toggle_dt(&led);
 }
 
-void dd_test_func()
+void dd_test_func(void *p1, void *p2, void *p3)
 {
+    ARG_UNUSED(p1);
+    ARG_UNUSED(p2);
+    ARG_UNUSED(p3);
+
     while(1) {
-        osal_sleep(500);
+        k_msleep(500);
         // gpio_pin_toggle_dt(&led);
         dd_cnt++;
     }
 }
-osal_thread_t *tid = NULL;
+
 int main() {
+    k_tid_t tid;
+
     gpio_pin_configure_dt(&led, GPIO_OUTPUT | GPIO_PULL_UP);
     gpio_pin_set_dt(&led, 1);
 
@@ -47,13 +57,16 @@ int main() {
     gpio_init_callback(&button_cb_data, button_pressed, BIT(button.pin));
     gpio_add_callback(button.port, &button_cb_data);
 
-    tid = osal_thread_create("test_thread", dd_test_func, NULL, 1024, 8, 10);
+    /* 创建线程 */
+    tid = k_thread_create(&test_thread_data, test_thread_stack,
+                          K_THREAD_STACK_SIZEOF(test_thread_stack),
+                          dd_test_func, NULL, NULL, NULL,
+                          8, 0, K_NO_WAIT);
+
     if (tid) {
-        osal_thread_startup(tid);
+        /* 线程已经在k_thread_create中启动（delay=K_NO_WAIT） */
     }
 
     while(1);
     return 0;
 }
-
-
