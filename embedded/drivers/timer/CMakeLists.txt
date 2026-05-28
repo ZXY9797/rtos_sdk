@@ -12,7 +12,7 @@ target_link_libraries(${MODULE_NAME}
         cmsis
         soc
         arch
-        kernel
+        osal
 )
 
 target_sources(${MODULE_NAME} PRIVATE cortex_m_systick.c)

@@ -7,11 +7,6 @@
 extern "C" {
 #endif
 
-/* Declare arch_irq_connect_dynamic */
-extern int arch_irq_connect_dynamic(unsigned int irq, unsigned int priority,
-				    void (*routine)(const void *parameter),
-				    const void *parameter, uint32_t flags);
-
 /**
  * @brief Initialize an interrupt handler.
  *

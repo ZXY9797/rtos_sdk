@@ -4,11 +4,7 @@
 #include <devicetree/clocks.h>
 #include <device.h>
 #include <drivers/clock_control.h>
-#include <zephyr/kernel.h>
-#include <zephyr/irq.h>
-
-/* Declare sys_clock_announce which is called by the timer ISR */
-extern void sys_clock_announce(int32_t ticks);
+#include <osal.h>
 
 #if defined(CONFIG_TIMER_READS_ITS_FREQUENCY_AT_RUNTIME)
 extern unsigned int z_clock_hw_cycles_per_sec;
@@ -215,8 +211,9 @@ void sys_clock_disable(void)
 
 void SysTick_Handler(void)
 {
-	/* zephyr内核会自动处理中断嵌套 */
+	osal_interrupt_enter();
 	sys_clock_isr();
+	osal_interrupt_leave();
 }
 
 static int sys_clock_driver_init(void)

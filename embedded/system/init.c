@@ -1,7 +1,7 @@
 #include "init.h"
 #include "device.h"
 #include <soc.h>
-#include <zephyr/kernel.h>
+#include <osal.h>
 
 extern int do_device_init(const struct device *dev);
 
@@ -48,6 +48,7 @@ static void sys_init_run_level(enum init_level level)
 		const struct device *dev = entry->dev;
 		int result = 0;
 
+		// sys_trace_sys_init_enter(entry, level);
 		if (dev != NULL) {
 			if ((dev->flags & DEVICE_FLAG_INIT_DEFERRED) == 0U) {
 				result = do_device_init(dev);
@@ -55,6 +56,7 @@ static void sys_init_run_level(enum init_level level)
 		} else {
 			result = entry->init_fn();
 		}
+		// sys_trace_sys_init_exit(entry, level, result);
         ARG_UNUSED(result);
 	}
 }
@@ -80,16 +82,8 @@ static void z_static_init_gnu(void)
 
 #endif
 
-/* Background main thread for kernel initialization */
-static struct k_thread bg_thread;
-static K_THREAD_STACK_DEFINE(bg_thread_stack, 2048);
-
-void bg_main_thread(void *arg, void *p2, void *p3)
+void bg_main_thread(void *arg)
 {
-    ARG_UNUSED(arg);
-    ARG_UNUSED(p2);
-    ARG_UNUSED(p3);
-
     sys_init_run_level(INIT_LEVEL_POST_KERNEL);
     soc_late_init_hook();
 
@@ -107,13 +101,15 @@ void z_cstart(void)
 {
     sys_init_run_level(INIT_LEVEL_EARLY);
 
+    // arch_kernel_init
+    // LOG init
+    // device_state_init
     soc_early_init_hook();
     sys_init_run_level(INIT_LEVEL_PRE_KERNEL_1);
     sys_init_run_level(INIT_LEVEL_PRE_KERNEL_2);
 
-    /* Kernel is now initialized, start the background thread */
-    /* The K_THREAD_DEFINE macro automatically starts the thread */
+	osal_init();
+	osal_start(bg_main_thread, NULL);
 
-    /* Should never reach here */
     while(1){};
 }

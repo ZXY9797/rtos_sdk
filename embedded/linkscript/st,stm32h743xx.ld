@@ -44,7 +44,7 @@ SECTIONS
     .itcm : SUBALIGN(4)
     {
         __itcm_start = .;
-        *libkernel.a:(.text*)
+        *libosal.a:(.text*)
         *libirq_controller.a:(.text*)
         *libsystem.a:(.text*)
         *libsoc.a:(.text*)

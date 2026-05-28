@@ -12,6 +12,7 @@ add_subdirectory(drivers)
 add_subdirectory(modules)
 add_subdirectory(arch)
 add_subdirectory(system)
+add_subdirectory(osal)
 
 target_link_libraries(${MODULE_NAME}
     PUBLIC
@@ -22,7 +23,7 @@ target_link_libraries(${MODULE_NAME}
         drivers
         modules
         system
-        kernel
+        osal
         -Wl,--no-whole-archive
         -Wl,--end-group
 )
