@@ -1,0 +1,15 @@
+menu "RTOS Selection"
+
+choice RTOS_TYPE
+    prompt "Select RTOS"
+    default RTOS_RT_THREAD
+
+config RTOS_RT_THREAD
+    bool "RT-Thread Nano"
+
+config RTOS_FREERTOS
+    bool "FreeRTOS"
+
+endchoice
+
+endmenu

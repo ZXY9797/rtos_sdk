@@ -28,8 +28,9 @@ void button_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t
     gpio_pin_toggle_dt(&led);
 }
 
-void dd_test_func()
+void dd_test_func(void *parameter)
 {
+    (void)parameter;
     while(1) {
         osal_sleep(500);
         // gpio_pin_toggle_dt(&led);

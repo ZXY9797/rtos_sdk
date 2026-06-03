@@ -6,6 +6,11 @@
 #include <drivers/clock_control.h>
 #include <osal.h>
 
+/* When FreeRTOS is active, it manages SysTick and the tick handler itself.
+ * The SDK's SysTick driver is not needed.
+ */
+#ifndef CONFIG_RTOS_FREERTOS
+
 #if defined(CONFIG_TIMER_READS_ITS_FREQUENCY_AT_RUNTIME)
 extern unsigned int z_clock_hw_cycles_per_sec;
 #define CYC_PER_TICK (z_clock_hw_cycles_per_sec/CONFIG_SYS_CLOCK_TICKS_PER_SEC)
@@ -231,3 +236,5 @@ static int sys_clock_driver_init(void)
 
 SYS_INIT(sys_clock_driver_init, PRE_KERNEL_2,
 	 CONFIG_SYSTEM_CLOCK_INIT_PRIORITY);
+
+#endif /* !CONFIG_RTOS_FREERTOS */
