@@ -1,5 +1,5 @@
-#ifndef MSDK_INCLUDE_SPINLOCK_H_
-#define MSDK_INCLUDE_SPINLOCK_H_
+#ifndef RTOS_SDK_INCLUDE_SPINLOCK_H_
+#define RTOS_SDK_INCLUDE_SPINLOCK_H_
 #include <stdbool.h>
 #include <toolchain.h>
 #include <arch/cpu.h>

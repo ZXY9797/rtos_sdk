@@ -4,7 +4,7 @@
 include: [base.yaml]
 
 properties:
-  msdk,memory-region:
+  rtos_sdk,memory-region:
     type: string
     description: |
       Signify that this node should result in a dedicated linker script
@@ -12,21 +12,21 @@ properties:
       is taken from the <reg> property, while the name is the value of
       this property.
 
-  msdk,memory-region-flags:
+  rtos_sdk,memory-region-flags:
     type: string
     description: |
       Set attributes such as read-only or executable for the linker script
       memory region. The string set here will be specified in parentheses
       after the area name in the linker script.
 
-  msdk,memory-region-mpu:
+  rtos_sdk,memory-region-mpu:
     type: string
     deprecated: true
     description: |
       Signify that this node should result in a dedicated MPU region.
-      Deprecated in favor of 'msdk,memory-attr'.
+      Deprecated in favor of 'rtos_sdk,memory-attr'.
 
-  msdk,memory-attr:
+  rtos_sdk,memory-attr:
     type: int
     description: |
       Attribute or set of attributes (bitmask) for the memory region. See

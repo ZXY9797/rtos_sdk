@@ -9,7 +9,7 @@ endif()
 
 add_subdirectory(${RTOS_TYPE})
 
-target_sources(${MODULE_NAME} PRIVATE mmem.c)
+target_sources(${MODULE_NAME} PRIVATE mem.cc)
 
 # 添加 C++ OSAL 头文件路径
 target_include_directories(${MODULE_NAME} PUBLIC ${CMAKE_SOURCE_DIR}/embedded/include)

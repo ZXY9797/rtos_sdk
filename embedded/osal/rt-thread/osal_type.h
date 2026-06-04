@@ -1,5 +1,5 @@
-#ifndef MSDK_OSAL_TYPE_H_
-#define MSDK_OSAL_TYPE_H_
+#ifndef RTOS_SDK_OSAL_TYPE_H_
+#define RTOS_SDK_OSAL_TYPE_H_
 #include <rtthread.h>
 #include <stdint.h>
 

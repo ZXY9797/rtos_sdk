@@ -5,8 +5,8 @@
  * 新代码应使用 init.h 中的 C++ 接口。
  */
 
-#ifndef MSDK_INCLUDE_INIT_H_
-#define MSDK_INCLUDE_INIT_H_
+#ifndef RTOS_SDK_INCLUDE_INIT_H_
+#define RTOS_SDK_INCLUDE_INIT_H_
 
 #include <stdint.h>
 
@@ -41,4 +41,4 @@ struct init_entry {
 }
 #endif
 
-#endif /* MSDK_INCLUDE_INIT_H_ */
+#endif /* RTOS_SDK_INCLUDE_INIT_H_ */

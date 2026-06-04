@@ -1,6 +1,6 @@
 description: Compatible for devices resulting in linker memory regions
 
-compatible: "msdk,mempool"
+compatible: "rtos_sdk,mempool"
 
 include: [base.yaml]
 

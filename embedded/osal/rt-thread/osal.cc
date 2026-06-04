@@ -5,7 +5,7 @@
 #include <osal.h>
 #include <cstdint>
 #include <cstddef>
-#include <mmem.h>
+#include <mem_alloc.h>
 
 /* if there is not enable heap, we should use static thread and stack. */
 ALIGN(8)
@@ -93,11 +93,11 @@ osal_thread_t *osal_thread_create(const char *name,
     osal_thread_t *thread = nullptr;
     uint8_t *stack = nullptr;
 
-    thread = static_cast<osal_thread_t *>(mmem_caps_aligned_alloc(4, sizeof(osal_thread_t), MEM_CAP_HIGHSPEED));
+    thread = static_cast<osal_thread_t *>(Mem::aligned_alloc(4, sizeof(osal_thread_t)));
     if (thread == nullptr) {
         goto err_exit;
     }
-    stack = static_cast<uint8_t *>(mmem_caps_aligned_alloc(8, stack_size, MEM_CAP_HIGHSPEED));
+    stack = static_cast<uint8_t *>(Mem::aligned_alloc(8, stack_size));
     if (stack == nullptr) {
         goto err_exit;
     }
@@ -109,10 +109,10 @@ osal_thread_t *osal_thread_create(const char *name,
     return thread;
 err_exit:
     if (thread) {
-        mmem_aligned_free(thread);
+        Mem::aligned_free(thread);
     }
     if (stack) {
-        mmem_aligned_free(stack);
+        Mem::aligned_free(stack);
     }
     return nullptr;
 }
@@ -127,7 +127,7 @@ osal_mutex_t *osal_mutex_create(const char *name, uint8_t flag)
     rt_err_t result;
     osal_mutex_t *mutex = nullptr;
 
-    mutex = static_cast<osal_mutex_t *>(mmem_caps_aligned_alloc(4, sizeof(osal_mutex_t), MEM_CAP_HIGHSPEED));
+    mutex = static_cast<osal_mutex_t *>(Mem::aligned_alloc(4, sizeof(osal_mutex_t)));
     if (mutex == nullptr) {
         goto err_exit;
     }
@@ -140,7 +140,7 @@ osal_mutex_t *osal_mutex_create(const char *name, uint8_t flag)
     return mutex;
 err_exit:
     if (mutex) {
-        mmem_aligned_free(mutex);
+        Mem::aligned_free(mutex);
     }
     return nullptr;
 }

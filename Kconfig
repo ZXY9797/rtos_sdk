@@ -1,4 +1,4 @@
-mainmenu "MSDK Configuration"
+mainmenu "RTOS-SDK Configuration"
 
 source "Kconfig.constants"
 
