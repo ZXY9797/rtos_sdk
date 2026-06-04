@@ -16,7 +16,7 @@ include(${CMAKE_CURRENT_LIST_DIR}/tools/cmake/toolchain/${TOOLCHAIN}.cmake)
 
 set(PROJECT_NAME        ${p})
 
-project(${PROJECT_NAME} LANGUAGES C ASM)
+project(${PROJECT_NAME} LANGUAGES C CXX ASM)
 
 include(${CMAKE_CURRENT_LIST_DIR}/tools/cmake/env.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/tools/cmake/modules/dts.cmake)

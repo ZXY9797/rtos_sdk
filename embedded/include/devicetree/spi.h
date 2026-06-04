@@ -12,9 +12,6 @@
 #ifndef ZEPHYR_INCLUDE_DEVICETREE_SPI_H_
 #define ZEPHYR_INCLUDE_DEVICETREE_SPI_H_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /**
  * @defgroup devicetree-spi Devicetree SPI API
@@ -254,8 +251,5 @@ extern "C" {
  * @}
  */
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif  /* ZEPHYR_INCLUDE_DEVICETREE_SPI_H_ */

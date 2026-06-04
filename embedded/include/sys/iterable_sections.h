@@ -10,9 +10,6 @@
 // #include <zephyr/sys/__assert.h>
 #include <toolchain.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /**
  * @brief Iterable Sections APIs
@@ -295,8 +292,5 @@ extern "C" {
  * @}
  */ /* end of struct_section_apis */
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* INCLUDE_ZEPHYR_SYS_ITERABLE_SECTIONS_H_ */

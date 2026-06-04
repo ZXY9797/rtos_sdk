@@ -7,10 +7,6 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #define OSAL_IPC_FLAG_FIFO     RT_IPC_FLAG_FIFO
 #define OSAL_IPC_FLAG_PRIO     RT_IPC_FLAG_PRIO
 
@@ -45,7 +41,7 @@ static ALWAYS_INLINE int osal_thread_startup(osal_thread_t *thread) {
 }
 
 static ALWAYS_INLINE int osal_thread_suspend(osal_thread_t *thread) {
-    return (int)rt_thread_resume(&thread->tcb);
+    return (int)rt_thread_suspend(&thread->tcb);
 }
 
 static ALWAYS_INLINE int osal_thread_resume(osal_thread_t *thread) {
@@ -90,11 +86,5 @@ static ALWAYS_INLINE void sys_clock_announce(uint32_t ticks) {
 
 int osal_init(void);
 int osal_start(void (*entry)(void *parameter), void *parameter);
-
-
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

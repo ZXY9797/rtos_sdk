@@ -2,7 +2,7 @@ set(FREERTOS_DIR "../rtos/freertos")
 
 target_sources(${MODULE_NAME}
     PRIVATE
-        osal.c
+        osal.cc
         ${FREERTOS_DIR}/tasks.c
         ${FREERTOS_DIR}/queue.c
         ${FREERTOS_DIR}/list.c

@@ -1,5 +1,5 @@
 set(MODULE_NAME app)
-add_library(${MODULE_NAME} main.c)
+add_library(${MODULE_NAME} main.cc)
 
 target_include_directories(${MODULE_NAME}
     PUBLIC

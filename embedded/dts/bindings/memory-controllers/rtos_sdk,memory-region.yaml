@@ -1,0 +1,21 @@
+# Copyright (c) 2024 RTOS SDK Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Base binding for memory regions with a symbolic name.
+  Nodes using this binding describe a memory region that can be
+  referenced by name in the application (e.g. SRAM0, DTCM, ITCM).
+
+compatible: "rtos_sdk,memory-region"
+
+include: base.yaml
+
+properties:
+  reg:
+    required: true
+
+  rtos_sdk,memory-region:
+    type: string
+    required: true
+    description: |
+      Symbolic name for this memory region (e.g. "SRAM0", "DTCM").

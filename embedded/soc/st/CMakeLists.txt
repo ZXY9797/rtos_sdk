@@ -29,6 +29,7 @@ endif()
 target_include_directories(${MODULE_NAME}
   PUBLIC
     common
+    include
   PRIVATE
     ${BSP_DIR}/arch
     ${BSP_DIR}/arch/common

@@ -1051,10 +1051,10 @@
 		};
 
 		backup_sram: memory@38800000 {
-			compatible = "msdk,memory-region", "st,stm32-backup-sram";
+			compatible = "rtos_sdk,memory-region", "st,stm32-backup-sram";
 			reg = <0x38800000 DT_SIZE_K(4)>;
 			clocks = <&rcc STM32_CLOCK(AHB4, 28)>;
-			msdk,memory-region = "BACKUP_SRAM";
+			rtos_sdk,memory-region = "BACKUP_SRAM";
 			status = "disabled";
 		};
 

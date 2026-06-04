@@ -13,24 +13,24 @@
 	chosen {
 		// zephyr,console = &usart3;
 		// zephyr,shell-uart = &usart3;
-		msdk,sram = &sram0;
-		msdk,flash = &flash0;
-		msdk,dtcm = &dtcm;
-		msdk,itcm = &itcm;
+		sram = &sram0;
+		flash = &flash0;
+		dtcm = &dtcm;
+		itcm = &itcm;
 		// zephyr,code-partition = &slot0_partition;
 		// zephyr,canbus = &fdcan1;
 	};
 
 	mempool {
 		normal_mem: mempool@0 {
-			compatible = "msdk,mempool";
+			compatible = "rtos_sdk,mempool";
 			section-name = ".axiram";
 			label = "normal";
 			attr = <( DT_MEM_CACHEABLE | DT_MEM_DMA )>;
 			size = <DT_SIZE_K(64)>;
 		};
 		highspeed_mem: mempool@1 {
-			compatible = "msdk,mempool";
+			compatible = "rtos_sdk,mempool";
 			section-name = ".dtcm_bss";
 			label = "hspeed";
 			attr = <( DT_MEM_HIGHSPEED | DT_MEM_NOCACHE )>;

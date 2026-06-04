@@ -12,9 +12,6 @@
 #ifndef ZEPHYR_INCLUDE_DEVICETREE_IO_CHANNELS_H_
 #define ZEPHYR_INCLUDE_DEVICETREE_IO_CHANNELS_H_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /**
  * @defgroup devicetree-io-channels Devicetree IO Channels API
@@ -244,8 +241,5 @@ extern "C" {
  * @}
  */
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif  /* ZEPHYR_INCLUDE_DEVICETREE_IO_CHANNELS_H_ */

@@ -27,17 +27,11 @@
 #define __ASSERT_ON 0
 #endif
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 // TODO
 static inline void assert_print(const char *fmt, ...) {};
 /* Wrapper around printk to avoid including printk.h in assert.h */
 void __printf_like(1, 2) assert_print(const char *fmt, ...);
 
-#ifdef __cplusplus
-}
-#endif
 
 #if defined(CONFIG_ASSERT_VERBOSE)
 #define __ASSERT_PRINT(fmt, ...) assert_print(fmt, ##__VA_ARGS__)
@@ -82,9 +76,6 @@ void __printf_like(1, 2) assert_print(const char *fmt, ...);
 
 #if __ASSERT_ON
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 #ifdef CONFIG_ASSERT_NO_FILE_INFO
 void assert_post_action(void);
@@ -105,9 +96,6 @@ void assert_post_action(const char *file, unsigned int line);
 #define __ASSERT_UNREACHABLE CODE_UNREACHABLE
 #endif
 
-#ifdef __cplusplus
-}
-#endif
 
 #define __ASSERT_NO_MSG(test)                                             \
 	do {                                                              \

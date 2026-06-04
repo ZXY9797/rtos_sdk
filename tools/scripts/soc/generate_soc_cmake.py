@@ -3,12 +3,6 @@ import sys
 import re
 import os
 
-# 添加 pylib 到路径
-current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(current_dir)
-pylib_path = os.path.join(project_root, 'pylib')
-sys.path.insert(0, pylib_path)
-
 import yaml
 
 def find_soc_in_yaml(soc_name_input, yaml_data):

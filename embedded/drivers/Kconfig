@@ -5,7 +5,6 @@ source "embedded/drivers/cache/Kconfig"
 source "embedded/drivers/clock_control/Kconfig"
 source "embedded/drivers/gpio/Kconfig"
 source "embedded/drivers/interrupt_controller/Kconfig"
-source "embedded/drivers/timer/Kconfig"
 # zephyr-keep-sorted-stop
 
 endmenu

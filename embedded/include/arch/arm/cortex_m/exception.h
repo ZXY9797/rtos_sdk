@@ -48,9 +48,6 @@
 // GTEXT(z_arm_exc_exit);
 #else
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 #if defined(CONFIG_FPU) && defined(CONFIG_FPU_SHARING)
 
@@ -114,9 +111,6 @@ extern uint32_t z_arm_coredump_fault_sp;
 
 extern void z_arm_exc_exit(void);
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* _ASMLANGUAGE */
 #endif

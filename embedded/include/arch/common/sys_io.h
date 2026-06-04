@@ -15,9 +15,6 @@
 #include <toolchain.h>
 #include <sys/sys_io.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 static ALWAYS_INLINE uint8_t sys_read8(mem_addr_t addr)
 {
@@ -59,9 +56,6 @@ static ALWAYS_INLINE void sys_write64(uint64_t data, mem_addr_t addr)
 	*(volatile uint64_t *)addr = data;
 }
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* _ASMLANGUAGE */
 

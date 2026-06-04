@@ -12,9 +12,6 @@
 #ifndef ZEPHYR_INCLUDE_DEVICETREE_RESET_H_
 #define ZEPHYR_INCLUDE_DEVICETREE_RESET_H_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /**
  * @defgroup devicetree-reset-controller Devicetree Reset Controller API
@@ -302,8 +299,5 @@ extern "C" {
  * @}
  */
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif  /* ZEPHYR_INCLUDE_DEVICETREE_RESET_H_ */

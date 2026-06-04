@@ -16,9 +16,6 @@
 #include <toolchain.h>
 #include <sys/sys_io.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 static ALWAYS_INLINE void sys_set_bit(mem_addr_t addr, unsigned int bit)
 {
@@ -120,9 +117,6 @@ static ALWAYS_INLINE
 	return ret;
 }
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* _ASMLANGUAGE */
 

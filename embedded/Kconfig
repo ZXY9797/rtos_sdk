@@ -149,7 +149,7 @@ config HAS_FLASH_LOAD_OFFSET
 if HAS_FLASH_LOAD_OFFSET
 
 config USE_DT_CODE_PARTITION
-	bool "Link application into /chosen/msdk,code-partition from devicetree"
+	bool "Link application into /chosen/code-partition from devicetree"
 	help
 	  When enabled, the application will be linked into the flash partition
 	  selected by the zephyr,code-partition property in /chosen in devicetree.
@@ -157,7 +157,7 @@ config USE_DT_CODE_PARTITION
 	  below.
 
 # Workaround for not being able to have commas in macro arguments
-DT_CHOSEN_Z_CODE_PARTITION := msdk,code-partition
+DT_CHOSEN_Z_CODE_PARTITION := code-partition
 
 config FLASH_LOAD_OFFSET
 	# Only user-configurable when USE_DT_CODE_PARTITION is disabled
@@ -244,7 +244,6 @@ source "embedded/drivers/Kconfig"
 source "embedded/modules/Kconfig"
 source "embedded/osal/Kconfig"
 source "embedded/soc/Kconfig"
-source "embedded/system/Kconfig"
 # zephyr-keep-sorted-stop
 
 endmenu

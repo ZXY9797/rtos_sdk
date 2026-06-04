@@ -12,12 +12,6 @@ import re
 import sys
 from pathlib import Path
 
-# 添加 pylib 到路径
-current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(current_dir)
-pylib_path = os.path.join(project_root, 'pylib')
-sys.path.insert(0, pylib_path)
-
 import yaml
 
 ZEPHYR_BASE = str(Path(__file__).resolve().parents[2])

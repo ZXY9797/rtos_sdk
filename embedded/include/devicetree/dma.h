@@ -12,9 +12,6 @@
 #ifndef ZEPHYR_INCLUDE_DEVICETREE_DMAS_H_
 #define ZEPHYR_INCLUDE_DEVICETREE_DMAS_H_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /**
  * @defgroup devicetree-dmas Devicetree DMA API
@@ -293,8 +290,5 @@ extern "C" {
  * @}
  */
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif  /* ZEPHYR_INCLUDE_DEVICETREE_DMAS_H_ */

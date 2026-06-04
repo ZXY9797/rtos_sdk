@@ -30,9 +30,6 @@
 /** @brief Number of bits that make up a type */
 #define NUM_BITS(t) (sizeof(t) * BITS_PER_BYTE)
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /**
  * @defgroup sys-util Utility Functions
@@ -762,9 +759,6 @@ static inline bool util_eq(const void *m1, size_t len1, const void *m2, size_t l
 	return len1 == len2 && (m1 == m2 || util_memeq(m1, m2, len1));
 }
 
-#ifdef __cplusplus
-}
-#endif
 
 /* This file must be included at the end of the !_ASMLANGUAGE guard.
  * It depends on macros defined in this file above which cannot be forward declared.

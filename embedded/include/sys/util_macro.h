@@ -17,9 +17,6 @@
 #ifndef ZEPHYR_INCLUDE_SYS_UTIL_MACROS_H_
 #define ZEPHYR_INCLUDE_SYS_UTIL_MACROS_H_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /**
  * @addtogroup sys-util
@@ -725,8 +722,5 @@ extern "C" {
  * @}
  */
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* ZEPHYR_INCLUDE_SYS_UTIL_MACROS_H_ */

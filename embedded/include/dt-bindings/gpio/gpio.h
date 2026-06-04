@@ -77,6 +77,26 @@
 /** Enable GPIO pin pull-down. */
 #define GPIO_PULL_DOWN          (1 << 5)
 
+/**
+ * @name GPIO pin direction flags
+ * @{
+ */
+
+/** Enables pin as input. */
+#define GPIO_INPUT              (1 << 16)
+
+/** Enables pin as output, no change to the output state. */
+#define GPIO_OUTPUT             (1 << 17)
+
+/** Disables pin for both input and output. */
+#define GPIO_DISCONNECTED       0
+
+/** Configures GPIO pin as output and initializes it to a low state. */
+#define GPIO_OUTPUT_LOW         (GPIO_OUTPUT | (1 << 18))
+
+/** Configures GPIO pin as output and initializes it to a high state. */
+#define GPIO_OUTPUT_HIGH        (GPIO_OUTPUT | (1 << 19))
+
 /** @} */
 
 /**

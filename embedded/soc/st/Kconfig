@@ -7,7 +7,7 @@ if SOC_FAMILY_STM32
 rsource "*/Kconfig"
 
 # Workaround for not being able to have commas in macro arguments
-DT_CHOSEN_Z_CCM := msdk,ccm
+DT_CHOSEN_Z_CCM := ccm
 
 config STM32_CCM
 	def_bool $(dt_chosen_enabled,$(DT_CHOSEN_Z_CCM))

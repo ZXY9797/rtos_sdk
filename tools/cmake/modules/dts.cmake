@@ -150,6 +150,27 @@ file(REMOVE ${DEVICETREE_GENERATED_H}.new)
 message(STATUS "Generated devicetree_generated.h: ${DEVICETREE_GENERATED_H}")
 
 #
+# Run gen_device_traits.py — 生成 DeviceTrait 特化
+#
+
+set(GEN_DEVICE_TRAITS_SCRIPT ${TOP_DIR}/tools/scripts/gen_device_traits.py)
+set(DRIVERS_GENERATED_H ${BINARY_DIR_INCLUDE_GENERATED}/drivers_generated.h)
+set(DTS_BINDINGS_DIR ${TOP_DIR}/embedded/dts/bindings)
+
+execute_process(
+  COMMAND ${PYTHON_EXECUTABLE} ${GEN_DEVICE_TRAITS_SCRIPT}
+    ${DEVICETREE_GENERATED_H}
+    ${DRIVERS_GENERATED_H}
+    ${DTS_BINDINGS_DIR}
+  WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
+  RESULT_VARIABLE ret
+  )
+if(NOT "${ret}" STREQUAL "0")
+  message(FATAL_ERROR "gen_device_traits.py failed with return code: ${ret}")
+endif()
+message(STATUS "Generated drivers_generated.h: ${DRIVERS_GENERATED_H}")
+
+#
 # Run GEN_DRIVER_KCONFIG_SCRIPT.
 #
 

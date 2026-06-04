@@ -13,9 +13,6 @@
 #ifndef ZEPHYR_INCLUDE_DEVICETREE_GPIO_H_
 #define ZEPHYR_INCLUDE_DEVICETREE_GPIO_H_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /**
  * @defgroup devicetree-gpio Devicetree GPIO API
@@ -360,8 +357,5 @@ extern "C" {
  * @}
  */
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif  /* ZEPHYR_INCLUDE_DEVICETREE_GPIO_H_ */

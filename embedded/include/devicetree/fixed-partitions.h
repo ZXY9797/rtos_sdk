@@ -12,9 +12,6 @@
 #ifndef ZEPHYR_INCLUDE_DEVICETREE_FIXED_PARTITION_H_
 #define ZEPHYR_INCLUDE_DEVICETREE_FIXED_PARTITION_H_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /**
  * @defgroup devicetree-fixed-partition Devicetree Fixed Partition API
@@ -213,8 +210,5 @@ extern "C" {
  * @}
  */
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif  /* ZEPHYR_INCLUDE_DEVICETREE_FIXED_PARTITION_H_ */

@@ -9,7 +9,7 @@ set(BSP_DIR             ${TOP_DIR}/embedded)
 set(APP_DIR             ${TOP_DIR}/app)
 set(PROJECT_DIR         ${APP_DIR}/${PROJECT_NAME})
 set(PROJECT_CONFIG_DIR  ${PROJECT_DIR}/config)
-set(NULL_C              ${TOP_DIR}/misc/null.c)
+set(NULL_C              ${TOOLS_DIR}/cmake/null.c)
 
 set(BINARY_DIR_INCLUDE ${PROJECT_BINARY_DIR}/include)
 set(BINARY_DIR_INCLUDE_GENERATED ${BINARY_DIR_INCLUDE}/generated)

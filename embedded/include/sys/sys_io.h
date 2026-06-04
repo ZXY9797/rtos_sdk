@@ -13,9 +13,6 @@
 #include <stdint.h>
 #include <toolchain.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 typedef uint32_t io_port_t;
 typedef uintptr_t mm_reg_t;
@@ -375,8 +372,5 @@ typedef uintptr_t mem_addr_t;
  */
 
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* ZEPHYR_INCLUDE_SYS_SYS_IO_H_ */

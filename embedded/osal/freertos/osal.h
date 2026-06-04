@@ -9,10 +9,6 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #define OSAL_IPC_FLAG_FIFO     0
 #define OSAL_IPC_FLAG_PRIO     1
 
@@ -86,9 +82,5 @@ static ALWAYS_INLINE void sys_clock_announce(uint32_t ticks) {
 
 int osal_init(void);
 int osal_start(void (*entry)(void *parameter), void *parameter);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

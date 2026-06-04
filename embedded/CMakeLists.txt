@@ -11,7 +11,6 @@ add_subdirectory(soc)
 add_subdirectory(drivers)
 add_subdirectory(modules)
 add_subdirectory(arch)
-add_subdirectory(system)
 add_subdirectory(osal)
 
 target_link_libraries(${MODULE_NAME}
@@ -22,7 +21,6 @@ target_link_libraries(${MODULE_NAME}
         soc
         drivers
         modules
-        system
         osal
         -Wl,--no-whole-archive
         -Wl,--end-group

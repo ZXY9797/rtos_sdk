@@ -22,9 +22,6 @@
 #endif
 #endif
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 #ifndef _ASMLANGUAGE
 
@@ -160,8 +157,5 @@ extern "C" {
 #include <arch/arm/mmu/arm_mmu.h>
 #endif /* CONFIG_ARM_AARCH32_MMU */
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif

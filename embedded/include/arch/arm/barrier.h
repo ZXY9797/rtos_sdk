@@ -13,9 +13,6 @@
 #include <toolchain.h>
 #include <soc.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 static ALWAYS_INLINE void z_barrier_dmem_fence_full(void)
 {
@@ -32,8 +29,5 @@ static ALWAYS_INLINE void z_barrier_isync_fence_full(void)
 	__ISB();
 }
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* ZEPHYR_INCLUDE_BARRIER_ARM_H_ */

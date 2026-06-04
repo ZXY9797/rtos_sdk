@@ -3,12 +3,13 @@
 #include <sw_isr_table.h>
 #include <stdbool.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 #ifdef _ASMLANGUAGE
 
 #else
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #if !defined(CONFIG_ARM_CUSTOM_INTERRUPT_CONTROLLER)
 extern void arm_irq_enable(unsigned int irq);
@@ -97,10 +98,11 @@ void z_soc_irq_eoi(unsigned int irq);
 	z_arm_irq_priority_set(irq_p, priority_p, flags_p); \
 }
 
-#endif /* _ASMLANGUAGE */
-
 #ifdef __cplusplus
 }
 #endif
+
+#endif /* _ASMLANGUAGE */
+
 
 #endif

@@ -6,9 +6,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /**
  * @addtogroup arch-irq
@@ -99,10 +96,6 @@ int arch_irq_connect_dynamic(unsigned int irq, unsigned int priority,
 int arch_irq_disconnect_dynamic(unsigned int irq, unsigned int priority,
 				void (*routine)(const void *parameter),
 				const void *parameter, uint32_t flags);
-
-#ifdef __cplusplus
-}
-#endif /* __cplusplus */
 
 #include <arch/arch_inlines.h>
 

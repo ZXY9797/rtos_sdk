@@ -145,8 +145,6 @@ static int stm32_exti_gpio_intc_init(void)
 	return 0;
 }
 
-SYS_INIT(stm32_exti_gpio_intc_init, PRE_KERNEL_1, CONFIG_INTC_INIT_PRIORITY);
-
 /**
  * @brief EXTI GPIO interrupt controller API implementation
  */

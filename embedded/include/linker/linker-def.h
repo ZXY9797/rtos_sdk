@@ -24,14 +24,14 @@ extern char __ramfunc_end[];
 extern char __ramfunc_size[];
 extern char __ramfunc_load_start[];
 
-#if (DT_NODE_HAS_STATUS_OKAY(DT_CHOSEN(msdk_itcm)))
+#if (DT_NODE_HAS_STATUS_OKAY(DT_CHOSEN(itcm)))
 extern char __itcm_start[];
 extern char __itcm_end[];
 extern char __itcm_size[];
 extern char __itcm_load_start[];
 #endif
 
-#if (DT_NODE_HAS_STATUS_OKAY(DT_CHOSEN(msdk_dtcm)))
+#if (DT_NODE_HAS_STATUS_OKAY(DT_CHOSEN(dtcm)))
 extern char __dtcm_data_start[];
 extern char __dtcm_data_end[];
 extern char __dtcm_bss_start[];

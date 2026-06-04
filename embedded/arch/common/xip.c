@@ -24,17 +24,17 @@ void arch_data_copy(void)
 #endif /* CONFIG_NOCACHE_MEMORY */
 #endif /* CONFIG_ARCH_HAS_NOCACHE_MEMORY_SUPPORT */
 
-#if DT_NODE_HAS_STATUS_OKAY(DT_CHOSEN(msdk_ccm))
+#if DT_NODE_HAS_STATUS_OKAY(DT_CHOSEN(rtos_sdk_ccm))
 	arch_early_memcpy(&__ccm_data_start, &__ccm_data_load_start,
 		       __ccm_data_end - __ccm_data_start);
 #endif
 
-#if DT_NODE_HAS_STATUS_OKAY(DT_CHOSEN(msdk_itcm))
+#if DT_NODE_HAS_STATUS_OKAY(DT_CHOSEN(rtos_sdk_itcm))
 	arch_early_memcpy(&__itcm_start, &__itcm_load_start,
 		       (uintptr_t) &__itcm_size);
 #endif
 
-#if DT_NODE_HAS_STATUS_OKAY(DT_CHOSEN(msdk_dtcm))
+#if DT_NODE_HAS_STATUS_OKAY(DT_CHOSEN(rtos_sdk_dtcm))
 	arch_early_memcpy(&__dtcm_data_start, &__dtcm_data_load_start,
 		       __dtcm_data_end - __dtcm_data_start);
 #endif

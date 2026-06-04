@@ -6,9 +6,6 @@
 #include <cmsis_core.h>
 #include <toolchain.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 static ALWAYS_INLINE unsigned int arch_irq_lock(void)
 {
 	unsigned int key;
@@ -72,9 +69,6 @@ static ALWAYS_INLINE bool arch_irq_unlocked(unsigned int key)
 	return key == 0U;
 }
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* _ASMLANGUAGE */
 

@@ -56,13 +56,13 @@ config 64BIT
 	  avoid modifying it.
 
 # Workaround for not being able to have commas in macro arguments
-DT_CHOSEN_Z_SRAM := msdk,sram
+DT_CHOSEN_Z_SRAM := sram
 
 config SRAM_SIZE
 	int "SRAM Size in kB"
 	default $(dt_chosen_reg_size_int,$(DT_CHOSEN_Z_SRAM),0,K)
 	help
-	  The SRAM size in kB. The default value comes from /chosen/msdk,sram in
+	  The SRAM size in kB. The default value comes from /chosen/sram in
 	  devicetree. The user should generally avoid changing it via menuconfig or
 	  in configuration files.
 
@@ -71,7 +71,7 @@ config SRAM_BASE_ADDRESS
 	default $(dt_chosen_reg_addr_hex,$(DT_CHOSEN_Z_SRAM))
 	help
 	  The SRAM base address. The default value comes from
-	  /chosen/msdk,sram in devicetree. The user should generally avoid
+	  /chosen/sram in devicetree. The user should generally avoid
 	  changing it via menuconfig or in configuration files.
 
 config XIP
@@ -86,7 +86,7 @@ config XIP
 if ARC || ARM || ARM64 || X86 || RISCV || RX || ARCH_POSIX
 
 # Workaround for not being able to have commas in macro arguments
-DT_CHOSEN_Z_FLASH := msdk,flash
+DT_CHOSEN_Z_FLASH := flash
 
 config FLASH_SIZE
 	int "Flash Size in kB"

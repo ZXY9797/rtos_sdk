@@ -5,8 +5,16 @@
 
 #include <stm32h7xx.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 void soc_early_init_hook();
 void soc_late_init_hook();
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* !_ASMLANGUAGE */
 

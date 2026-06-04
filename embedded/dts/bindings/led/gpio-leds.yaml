@@ -46,3 +46,11 @@ child-binding:
     gpios:
       type: phandle-array
       required: true
+
+cxx-driver:
+  template: GpioPort
+  header: drivers/gpio.h
+  args:
+    - phandle-reg: gpios
+    - field: gpios/pin
+    - field: gpios/flags

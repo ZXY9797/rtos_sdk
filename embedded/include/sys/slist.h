@@ -24,9 +24,6 @@
 #include <stdbool.h>
 #include "list_gen.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 
 /** @cond INTERNAL_HIDDEN */
@@ -447,8 +444,5 @@ Z_GENLIST_LEN(slist, snode)
 /** @} */
 Z_GENLIST_FIND_AND_REMOVE(slist, snode)
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* ZEPHYR_INCLUDE_SYS_SLIST_H_ */

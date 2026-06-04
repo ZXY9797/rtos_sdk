@@ -1,6 +1,6 @@
 set(RTOS_DIR "../rtos/rt-thread")
 
-target_sources(${MODULE_NAME} PRIVATE osal.c cpu_usage.c)
+target_sources(${MODULE_NAME} PRIVATE osal.cc cpu_usage.c)
 target_sources(${MODULE_NAME}
     PRIVATE
         ${RTOS_DIR}/src/clock.c

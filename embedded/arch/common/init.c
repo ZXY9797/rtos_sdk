@@ -3,6 +3,7 @@
 #include <linker/linker-def.h>
 
 void* arch_early_memset(void* dest, int value, unsigned int n);
+extern int main(void);
 
 
 void arch_bss_zero(void)
@@ -12,17 +13,17 @@ void arch_bss_zero(void)
 	}
 
 	arch_early_memset(__bss_start, 0, __bss_end - __bss_start);
-#if DT_NODE_HAS_STATUS_OKAY(DT_CHOSEN(msdk_ccm))
+#if DT_NODE_HAS_STATUS_OKAY(DT_CHOSEN(rtos_sdk_ccm))
 	arch_early_memset(&__ccm_bss_start, 0,
 		       (uintptr_t) &__ccm_bss_end
 		       - (uintptr_t) &__ccm_bss_start);
 #endif
-#if DT_NODE_HAS_STATUS_OKAY(DT_CHOSEN(msdk_dtcm))
+#if DT_NODE_HAS_STATUS_OKAY(DT_CHOSEN(rtos_sdk_dtcm))
 	arch_early_memset(&__dtcm_bss_start, 0,
 		       (uintptr_t) &__dtcm_bss_end
 		       - (uintptr_t) &__dtcm_bss_start);
 #endif
-#if DT_NODE_HAS_STATUS_OKAY(DT_CHOSEN(msdk_ocm))
+#if DT_NODE_HAS_STATUS_OKAY(DT_CHOSEN(rtos_sdk_ocm))
 	arch_early_memset(&__ocm_bss_start, 0,
 		       (uintptr_t) &__ocm_bss_end
 		       - (uintptr_t) &__ocm_bss_start);
@@ -40,4 +41,9 @@ void arch_bss_zero(void)
 	arch_early_memset(&_nocache_ram_start, 0,
 			(uintptr_t) &_nocache_ram_end - (uintptr_t) &_nocache_ram_start);
 #endif
+}
+
+void z_cstart(void)
+{
+	main();
 }

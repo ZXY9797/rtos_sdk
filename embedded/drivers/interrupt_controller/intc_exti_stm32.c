@@ -352,8 +352,3 @@ int stm32_exti_disable(uint32_t line_num)
 
 	return 0;
 }
-
-DEVICE_DT_DEFINE(EXTI_NODE, &stm32_exti_init,
-	NULL, NULL, NULL,
-	PRE_KERNEL_1, CONFIG_INTC_INIT_PRIORITY,
-	NULL);

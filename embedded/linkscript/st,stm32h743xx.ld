@@ -298,6 +298,21 @@ SECTIONS
     {
         KEEP(*(.last_section))
     } > FLASH
+
+    /* C++ Initcall sections */
+    preinitcall_table :
+    {
+        PROVIDE_HIDDEN(__preinitcall_start = .);
+        KEEP(*(SORT_BY_NAME(.preinitcall.*)))
+        PROVIDE_HIDDEN(__preinitcall_end = .);
+    } > FLASH
+
+    initcall_table :
+    {
+        PROVIDE_HIDDEN(__initcall_start = .);
+        KEEP(*(SORT_BY_NAME(.initcall.*)))
+        PROVIDE_HIDDEN(__initcall_end = .);
+    } > FLASH
     _flash_used = LOADADDR(.last_section) + SIZEOF(.last_section) - __rom_region_start;
 
     bss (NOLOAD) : ALIGN_WITH_INPUT
@@ -307,6 +322,10 @@ SECTIONS
         *(.gnu.linkonce.sw_isr_table*)
         __bss_end = ALIGN(4);
     } > RAM AT > RAM
+
+    /* Heap starts after BSS */
+    PROVIDE(end = .);
+    PROVIDE(_end = .);
 
     noinit (NOLOAD) :
     {

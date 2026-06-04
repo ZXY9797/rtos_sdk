@@ -1,5 +1,8 @@
 set(MODULE_NAME gpio)
-add_library(${MODULE_NAME} gpio_api.c)
+add_library(${MODULE_NAME} STATIC)
+
+# STM32 GPIO 实现
+target_sources_ifdef(CONFIG_GPIO_STM32 ${MODULE_NAME} PRIVATE gpio_stm32.cc)
 
 target_include_directories(${MODULE_NAME}
     PUBLIC
@@ -12,5 +15,3 @@ target_link_libraries(${MODULE_NAME}
     PRIVATE
         soc
 )
-
-target_sources_ifdef(CONFIG_GPIO_STM32 ${MODULE_NAME} PRIVATE gpio_stm32.c)

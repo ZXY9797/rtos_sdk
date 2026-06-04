@@ -64,9 +64,6 @@
 #else
 #include <stdint.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /* CP10 Access Bits */
 #define CPACR_CP10_Pos         20U
@@ -110,9 +107,6 @@ typedef struct __cpu_context _cpu_context_t;
 
 #endif /* CONFIG_PM_S2RAM */
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* _ASMLANGUAGE */
 
