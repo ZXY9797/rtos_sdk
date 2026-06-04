@@ -21,7 +21,7 @@
 | 环境搭建 | West + Python + CMake + Ninja + DTC | **CMake + GCC + Ninja** |
 | 驱动模型 | 运行时 `struct device` + vtable | **编译期模板，零开销** |
 | 内存管理 | 动态分配 + Slab + Heap | **全部静态分配** |
-| RTOS 绑定 | 仅支持 Zephyr 内核 | **OSAL 多内核**（FreeRTOS、RT-Thread、ThreadX…） |
+| RTOS 绑定 | 仅支持 Zephyr 内核 | **OSAL 多内核**（FreeRTOS、RT-Thread） |
 | 代码规模 | ~500K 行 | **~5K 行**（不含 SOC HAL） |
 
 ---
@@ -35,10 +35,10 @@
 │  led.on();  // 零开销，编译期解析                              │
 ├─────────────────────────────────────────────────────────────┤
 │                      OSAL (OS 抽象层)                        │
-│  Thread · Mutex · Semaphore · Timer                         │
-│  ┌──────────┬──────────┬──────────┬──────────┐              │
-│  │ FreeRTOS │ RT-Thread│  ThreadX │  Zephyr  │              │
-│  └──────────┴──────────┴──────────┴──────────┘              │
+│  Thread · Mutex · Semaphore                                 │
+│  ┌──────────┬──────────┐                                    │
+│  │ FreeRTOS │ RT-Thread│                                    │
+│  └──────────┴──────────┘                                    │
 ├─────────────────────────────────────────────────────────────┤
 │                    HAL (硬件抽象层)                           │
 │  GpioPort<Base,Pin,Flags> · ClockCtrl<Base>                 │
@@ -195,10 +195,6 @@ namespace hal {      // 硬件抽象层：驱动、寄存器访问
     template <uintptr_t Base, int Pin, uint32_t Flags> class GpioPort;
     template <int Ord> struct DeviceTrait;
     template <int Ord> using Device = typename DeviceTrait<Ord>::type;
-}
-
-namespace sys {      // 系统层：初始化、中断管理
-    struct InitEntry;
     class Irq;
 }
 
