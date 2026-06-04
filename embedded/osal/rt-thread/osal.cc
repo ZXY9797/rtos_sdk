@@ -12,9 +12,18 @@ ALIGN(8)
 static rt_uint8_t main_stack[RT_MAIN_THREAD_STACK_SIZE];
 struct rt_thread main_thread;
 
+#ifdef RT_USING_HEAP
+static rt_uint8_t rt_heap_pool[32 * 1024];
+#endif
+
 int osal_init()
 {
     rt_hw_interrupt_disable();
+
+#ifdef RT_USING_HEAP
+    /* heap initialization */
+    rt_system_heap_init(rt_heap_pool, rt_heap_pool + sizeof(rt_heap_pool));
+#endif
 
     /* timer system initialization */
     rt_system_timer_init();

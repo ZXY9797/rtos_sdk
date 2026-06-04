@@ -29,6 +29,9 @@ target_sources_ifdef(CONFIG_CPU_CORTEX_M7 ${MODULE_NAME}
         ${RTOS_DIR}/libcpu/arm/cortex-m7/cpu_cache.c
 )
 
+# RT-Thread vendor code: suppress warnings that are treated as errors globally
+target_compile_options(${MODULE_NAME} PRIVATE -Wno-unused-variable)
+
 target_include_directories(${MODULE_NAME}
     PUBLIC
         .
