@@ -19,7 +19,7 @@
 | 设备树层级 | 5+ 级 `.dtsi` 继承 | **2 级**（SoC + Board） |
 | 链接脚本 | 片段拼接 | **单一 `.ld` 文件** |
 | 环境搭建 | West + Python + CMake + Ninja + DTC | **CMake + GCC + Ninja** |
-| 驱动模型 | 运行时 `struct device` + vtable | **编译期模板，零开销** |
+| 驱动模型 | 运行时 `struct device` + vtable | **编译期模板 + initcall 自动初始化** |
 | 内存管理 | 动态分配 + Slab + Heap | **全部静态分配** |
 | RTOS 绑定 | 仅支持 Zephyr 内核 | **OSAL 多内核**（FreeRTOS、RT-Thread） |
 | 代码规模 | ~500K 行 | **~5K 行**（不含 SOC HAL） |
@@ -31,8 +31,8 @@
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                        Application                          │
-│  using Led = hal::Device<DT_ORD(DT_ALIAS(led0))>;           │
-│  led.on();  // 零开销，编译期解析                              │
+│  auto &uart = device_get(uart0);  // 已自动初始化，直接用     │
+│  uart.send(data, len);                                       │
 ├─────────────────────────────────────────────────────────────┤
 │                      OSAL (OS 抽象层)                        │
 │  Thread · Mutex · Semaphore                                 │
@@ -62,70 +62,87 @@
 
 ## 核心设计
 
-### 1. 统一设备模板 — 一行代码绑定硬件
+### 1. initcall 自动初始化 — DTS okay 即用
+
+设备树中 `status = "okay"` 的节点，启动时自动实例化并初始化。业务层通过 `device_get()` 获取已初始化的设备引用：
 
 ```cpp
-#include <devicetree.h>
 #include <device.h>
-#include <drivers_generated.h>  // 自动生成的驱动特化
-
-// DT_ORD 从设备树节点获取 ordinal，Device 通过 ordinal 查找驱动类型
-using Led    = hal::Device<DT_ORD(DT_ALIAS(led0))>;
-using Button = hal::Device<DT_ORD(DT_ALIAS(sw0))>;
-
-static Led led;
-static Button button;
+#include <drivers_generated.h>
 
 int main() {
-    led.configure(GPIO_OUTPUT_HIGH | GPIO_PULL_UP);
-    button.configure(GPIO_INPUT | GPIO_PULL_DOWN);
+    // 设备已在 initcall 阶段自动初始化（baudrate 等参数从 DTS 解析）
+    auto &uart = device_get(uart0);
+    auto &spi  = device_get(spi0);
 
-    led.on();           // 自动处理 ACTIVE_HIGH / ACTIVE_LOW
-    button.is_on();     // 编译期绑定，零运行时开销
+    uart.send(data, len);    // 直接用
+    spi.sync_send(tx, rx, 4, 1000);
 }
 ```
 
 **设备树配置：**
 ```dts
-/ {
-    aliases {
-        led0 = &green_led;
-        sw0  = &key_pc13;
-    };
+aliases {
+    uart0 = &usart0;
+    spi0  = &spi0;
+};
 
-    leds {
-        green_led: led_0 {
-            gpios = <&gpioe 3 GPIO_ACTIVE_HIGH>;  // 改引脚？只改这里
-        };
-        key_pc13: button_0 {
-            gpios = <&gpioc 13 GPIO_ACTIVE_LOW>;
-        };
-    };
+usart0: usart@40013800 {
+    compatible = "gd,gd32-usart";
+    reg = <0x40013800 0x400>;
+    interrupts = <37 0>;
+    status = "okay";            // okay → 自动初始化
+    current-speed = <115200>;   // init 参数从 DTS 解析
+};
+
+spi0: spi@40013000 {
+    compatible = "gd,gd32-spi";
+    reg = <0x40013000 0x400>;
+    status = "okay";
+    spi-max-frequency = <1000000>;
 };
 ```
 
-> **改硬件引脚？只改 DTS，代码零修改。**
+> **改引脚/波特率/时钟频率？只改 DTS，业务代码零修改。**
+
+**initcall 链路：**
+```
+DTS status="okay" + 属性
+        ↓
+gen_device_traits.py 读取 YAML init-cfg + DTS 属性
+        ↓
+生成 drivers_generated.h（DeviceTrait + instance 声明 + device_get）
+生成 drivers_generated.cc（实例定义 + initcall 注册）
+        ↓
+启动：z_cstart() → run_initcalls() → 自动 init 所有设备
+        ↓
+main()：auto &uart = device_get(uart0);  // 直接用
+```
 
 ### 2. 编译期分发 — DeviceTrait + 自动生成
 
 ```
-                    DT_ORD(DT_ALIAS(led0))
+                    device_get(uart0)
                             │
                             ▼
-                    Device<43>  ──────────── DeviceTrait<43>::type
-                                               │
-                                               ▼
-                                         GpioPort<0x58021000, 3, 0>
-                                               │
-                                     ┌─────────┴─────────┐
-                                     │   GpioPortBase     │  ← 非模板，MCU 实现
-                                     │   base_ = 0x58021000 │
-                                     └───────────────────┘
+                    DT_ORD(DT_ALIAS(uart0)) = 14
+                            │
+                            ▼
+                    DeviceTrait<14>::instance  ← 全局静态实例（已自动 init）
+                            │
+                            ▼
+                    Uart<0x40013800, 37>
+                            │
+                  ┌─────────┴─────────┐
+                  │    UartBase        │  ← 非模板，MCU 实现
+                  │    base_ = 0x40013800 │
+                  └───────────────────┘
 ```
 
-- **`DeviceTrait<Ord>`** — 主模板，由 `gen_device_traits.py` 自动生成特化
-- **`GpioPort<Base, Pin, Flags>`** — 值参数模板，编译期绑定基地址/引脚/标志
-- **`GpioPortBase`** — 非模板基类，MCU 特定实现在 `.cc` 文件中
+- **`DeviceTrait<Ord>`** — 主模板，由 `gen_device_traits.py` 自动生成特化 + 静态实例
+- **`device_get(alias)`** — 编译期获取已初始化的设备引用
+- **`Uart<Base, Irq>`** — 值参数模板，编译期绑定基地址/中断号
+- **`UartBase`** — 非模板基类，MCU 特定实现在 `.cc` 文件中
 
 | | 运行时多态（Zephyr） | 编译期多态（RTOS SDK） |
 |:---|:---:|:---:|
@@ -163,29 +180,48 @@ int GpioPortBase::configure(int pin, uint32_t flags) {
 
 ### 4. 代码生成器 — YAML 驱动
 
-`gen_device_traits.py` 解析 DT 绑定 YAML 中的 `cxx-driver` 节，自动生成 `DeviceTrait<Ord>` 特化：
+`gen_device_traits.py` 解析 DT 绑定 YAML 中的 `cxx-driver` 节，自动生成 `DeviceTrait<Ord>` 特化、静态实例和 initcall 注册：
 
 ```yaml
-# binding YAML (gpio-leds.yaml)
+# binding YAML (gd,gd32-usart.yaml)
 cxx-driver:
-  template: GpioPort
-  header: drivers/gpio.h
-  args:
-    - phandle-reg: gpios
-    - field: gpios/pin
-    - field: gpios/flags
+  template: Uart
+  header: drivers/uart.h
+  args: [node-reg, irq]
+  init-cfg:                           # ← init() 参数映射
+    type: UartConfig
+    rx-buffer-size:
+      default: 256
+    fields:
+      baudrate:  { prop: current-speed, default: 115200 }
+      data_bits: { default: 8, cast: DataBits }
+      stop_bits: { default: 0, cast: StopBits }
+      parity:    { default: 0, cast: Parity }
 ```
 
 ```cpp
 // 自动生成的 drivers_generated.h
-template <> struct DeviceTrait<43> {  // led0
-    using type = GpioPort<DT_REG_ADDR(...), 3, 0>;
+template <> struct DeviceTrait<14> {  // uart0
+    using type = Uart<DT_REG_ADDR(...), 37>;
+    static type instance;              // 全局静态实例
 };
+inline auto &device_get() { return DeviceTrait<14>::instance; }
+#define device_get(alias) hal::device_get<DT_ORD(DT_ALIAS(alias))>()
+
+// 自动生成的 drivers_generated.cc
+DeviceTrait<14>::type DeviceTrait<14>::instance{};
+static int _init_uart0() {
+    UartConfig cfg {};
+    cfg.baudrate = 115200;             // 从 DTS current-speed 解析
+    cfg.rx_buffer = _dev_uart0_rx_buf; // 自动生成的静态 buffer
+    return static_cast<int>(DeviceTrait<14>::instance.init(cfg));
+}
+DECLARE_INITCALL(hal::_init_uart0, 5); // 注册到 .initcall.5 section
 ```
 
 - **非侵入**：不修改 Zephyr 的 `gen_defines.py`
-- **声明式**：驱动映射在 binding YAML 中声明，与硬件描述放在一起
-- **HAL 纯净**：驱动头文件无任何额外代码
+- **声明式**：驱动映射 + init 参数在 binding YAML 中声明
+- **自动初始化**：DTS `status = "okay"` → 启动时自动 init，业务层零配置
 
 ### 5. 分层命名空间
 
@@ -220,6 +256,7 @@ rtos_sdk/
 ├── embedded/                     # SDK 核心
 │   ├── include/                  # 公共头文件
 │   │   ├── device.h            # DeviceTrait + Device + DT_ORD
+│   │   ├── initcall.h          # DECLARE_INITCALL 宏 + run_initcalls
 │   │   ├── drivers/              # 纯净驱动接口
 │   │   ├── osal/                 # OS 抽象接口
 │   │   ├── arch/                 # 架构抽象
@@ -320,7 +357,7 @@ int hal::PwmBase::setDuty(uint32_t duty) {
 }
 ```
 
-### 2. 在 binding YAML 声明 cxx-driver
+### 2. 在 binding YAML 声明 cxx-driver + init-cfg
 
 在对应的 DT 绑定 YAML 中添加 `cxx-driver` 节：
 
@@ -332,6 +369,11 @@ cxx-driver:
   args:
     - phandle-reg: pwms
     - field: pwms/channel
+  init-cfg:                             # 可选：自动初始化配置
+    type: PwmConfig
+    fields:
+      frequency: { prop: pwm-frequency, default: 1000 }
+      duty:      { default: 0 }
 ```
 
 ### 3. 用户代码
@@ -340,9 +382,10 @@ cxx-driver:
 #include <device.h>
 #include <drivers_generated.h>
 
-using Motor = hal::Device<DT_ORD(DT_ALIAS(motor0))>;
-Motor motor;
-motor.setDuty(50);
+int main() {
+    auto &motor = device_get(motor0);   // 已自动初始化
+    motor.setDuty(50);
+}
 ```
 
 ---
