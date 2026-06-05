@@ -55,21 +55,32 @@ def parse_yaml_comments(filepath):
 
     args = []
     for item in raw_args:
-        if not isinstance(item, dict) or len(item) != 1:
-            continue
-        key, val = next(iter(item.items()))
-        if key == 'phandle-reg':
-            args.append(('phandle_reg', val))
-        elif key == 'node-reg':
-            args.append(('node_reg', None))
-        elif key == 'field':
-            parts = val.split('/')
-            if len(parts) == 2:
-                args.append(('prop_field_val', parts[0], parts[1]))
-        elif key == 'prop':
-            args.append(('prop_val', val))
-        elif key == 'literal':
-            args.append(('literal', val))
+        if isinstance(item, str):
+            # 无值参数：node-reg, parent-reg, irq, opt_irq
+            if item == 'node-reg':
+                args.append(('node_reg', None))
+            elif item == 'parent-reg':
+                args.append(('parent_reg', None))
+            elif item == 'irq':
+                args.append(('irq', None))
+            elif item == 'opt_irq':
+                args.append(('opt_irq', None))
+        elif isinstance(item, dict) and len(item) == 1:
+            key, val = next(iter(item.items()))
+            if key == 'phandle-reg':
+                args.append(('phandle_reg', val))
+            elif key == 'node-reg':
+                args.append(('node_reg', None))
+            elif key == 'parent-reg':
+                args.append(('parent_reg', None))
+            elif key == 'field':
+                parts = val.split('/')
+                if len(parts) == 2:
+                    args.append(('prop_field_val', parts[0], parts[1]))
+            elif key == 'prop':
+                args.append(('prop_val', val))
+            elif key == 'literal':
+                args.append(('literal', val))
 
     cxx = {'template': template, 'header': header, 'args': args}
     return compatible, cxx
@@ -172,6 +183,21 @@ def parse_generated_header(filepath):
     for m in alias_re.finditer(content):
         aliases[m.group(2)] = m.group(1)
 
+    # IRQ numbers: node_IRQ_IDX_0_VAL_irq <number>
+    irq_re = re.compile(
+        r'^#define\s+(DT_N_(?:S_\w+)+)_IRQ_IDX_\d+_VAL_irq\s+(\d+)',
+        re.MULTILINE)
+    irq_nums = {}
+    for m in irq_re.finditer(content):
+        irq_nums[m.group(1)] = int(m.group(2))
+
+    # 节点 status 属性: node_P_status "okay" / "disabled"
+    status_re = re.compile(
+        r'^#define\s+(DT_N_(?:S_\w+)+)_P_status\s+"(\w+)"', re.MULTILINE)
+    node_status = {}
+    for m in status_re.finditer(content):
+        node_status[m.group(1)] = m.group(2)
+
     # 构建父节点 → compatible 映射
     # 父节点 ID 是子节点 ID 的前缀（去掉最后一段 _S_xxx）
     parent_compat = {}  # node_id -> compatible (从父节点继承)
@@ -193,6 +219,8 @@ def parse_generated_header(filepath):
         'direct_props': direct_props,
         'aliases': aliases,
         'parent_compat': parent_compat,
+        'node_status': node_status,
+        'irq_nums': irq_nums,
     }
 
 
@@ -214,6 +242,15 @@ def resolve_arg(arg, node_id, dt_data):
             return f'DT_REG_ADDR({node_id})'
         return None
 
+    elif arg_type == 'parent_reg':
+        # 从子节点 ID 推导父节点 ID（去掉最后一段 _S_xxx）
+        last_sep = node_id.rfind('_S_')
+        if last_sep > 0:
+            parent_id = node_id[:last_sep]
+            if parent_id in dt_data['reg_addrs']:
+                return f'DT_REG_ADDR({parent_id})'
+        return None
+
     elif arg_type == 'prop_field_val':
         prop, field = arg[1], arg[2]
         if (node_id, prop, field) in dt_data['prop_fields']:
@@ -231,6 +268,16 @@ def resolve_arg(arg, node_id, dt_data):
     elif arg_type == 'literal':
         return f'"{arg[1]}"'
 
+    elif arg_type == 'irq':
+        irq = dt_data['irq_nums'].get(node_id)
+        if irq is not None:
+            return str(irq)
+        return None
+
+    elif arg_type == 'opt_irq':
+        irq = dt_data['irq_nums'].get(node_id)
+        return str(irq) if irq is not None else '-1'
+
     return None
 
 
@@ -244,8 +291,16 @@ def get_node_compatible(node_id, dt_data):
     return dt_data['parent_compat'].get(node_id)
 
 
+def is_node_enabled(node_id, dt_data):
+    """节点是否启用（status = "okay" 或无 status 属性）。"""
+    status = dt_data['node_status'].get(node_id)
+    if status is None:
+        return True  # 无 status 属性，默认启用
+    return status == 'okay'
+
+
 def generate_specializations(dt_data, compat_map):
-    """为所有匹配的节点生成特化代码。"""
+    """为所有匹配且启用的节点生成特化代码。"""
     specs = []
     used_headers = set()
 
@@ -253,6 +308,8 @@ def generate_specializations(dt_data, compat_map):
         compat = get_node_compatible(node_id, dt_data)
         if not compat or compat not in compat_map:
             continue
+
+        enabled = is_node_enabled(node_id, dt_data)
 
         driver = compat_map[compat]
         args_code = []
@@ -275,6 +332,8 @@ def generate_specializations(dt_data, compat_map):
             'type': driver['template'],
             'args': args_code,
             'header': driver['header'],
+            'enabled': enabled,
+            'node_id': node_id,
         })
         used_headers.add(driver['header'])
 
@@ -303,7 +362,11 @@ def write_output(specs, used_headers, output_path):
         '',
     ])
 
+    # DeviceTrait 特化 + 模板实例化（仅启用的节点）
     for spec in specs:
+        if not spec['enabled']:
+            continue
+
         ord_val = spec['ord']
         alias = spec['alias']
         template_type = spec['type']
@@ -317,12 +380,38 @@ def write_output(specs, used_headers, output_path):
         lines.append(f'}};')
         lines.append('')
 
+    # 模板显式实例化（仅启用的节点）
+    instantiations = []
+    for spec in specs:
+        if not spec['enabled']:
+            continue
+        template_type = spec['type']
+        args = ', '.join(spec['args'])
+        instantiations.append(f'template class {template_type}<{args}>;')
+
+    if instantiations:
+        lines.append('// 模板显式实例化（仅 DTS 中 status = "okay" 的节点）')
+        lines.extend(instantiations)
+        lines.append('')
+
     lines.extend([
         '} // namespace hal',
         '',
         '#pragma GCC diagnostic pop',
         '',
     ])
+
+    # DT_INST_* 宏（供 .cc 中条件编译使用）
+    # 格式：DT_INST_<TYPE>_<HEX_ADDR> — 按驱动类型 + 基地址索引
+    lines.append('// 实例化标记宏 — 供驱动 .cc 中条件编译使用')
+    for spec in specs:
+        if not spec['enabled']:
+            continue
+        # 从 node_id 末尾提取基地址（如 DT_N_S_soc_S_serial_40011000 → 40011000）
+        node_id = spec['node_id']
+        addr_hex = node_id.split('_')[-1].upper()
+        lines.append(f'#define DT_INST_{spec["type"]}_{addr_hex}')
+    lines.append('')
 
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write('\n'.join(lines))

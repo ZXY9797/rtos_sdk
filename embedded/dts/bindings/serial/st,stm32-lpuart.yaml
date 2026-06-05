@@ -3,3 +3,10 @@ description: STM32 LPUART
 compatible: "st,stm32-lpuart"
 
 include: st,stm32-uart-base.yaml
+
+cxx-driver:
+  template: Uart
+  header: drivers/uart.h
+  args:
+    - node-reg
+    - irq

@@ -1,0 +1,6 @@
+config UART_STM32
+	bool "UART driver for STM32"
+	select UART
+	default y
+	help
+	  Enable UART driver for STM32 family using HAL.

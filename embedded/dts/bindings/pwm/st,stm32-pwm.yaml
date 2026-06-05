@@ -35,3 +35,9 @@ pwm-cells:
   - channel
   - period
   - flags
+
+cxx-driver:
+  template: Pwm
+  header: drivers/pwm.h
+  args:
+    - parent-reg

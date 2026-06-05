@@ -17,8 +17,4 @@ rsource "Kconfig.defconfig.stm32h7*"
 config CACHE_MANAGEMENT
 	default y if CPU_CORTEX_M7
 
-config MEMPOOL_HIGHSPEED_SIZE
-	int
-	default 64
-
 endif # SOC_SERIES_STM32H7X

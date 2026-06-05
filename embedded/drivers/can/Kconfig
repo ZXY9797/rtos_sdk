@@ -1,0 +1,16 @@
+menuconfig CAN
+	bool "CAN drivers"
+	help
+	  Include CAN drivers in system config
+
+rsource "Kconfig.stm32"
+
+if CAN
+
+config CAN_INIT_PRIORITY
+	int "CAN init priority"
+	default KERNEL_INIT_PRIORITY_DEFAULT
+	help
+	  CAN driver device initialization priority.
+
+endif # CAN

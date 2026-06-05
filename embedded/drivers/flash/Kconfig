@@ -1,0 +1,16 @@
+menuconfig FLASH
+	bool "Flash drivers"
+	help
+	  Include Flash drivers in system config
+
+rsource "Kconfig.stm32"
+
+if FLASH
+
+config FLASH_INIT_PRIORITY
+	int "Flash init priority"
+	default KERNEL_INIT_PRIORITY_DEFAULT
+	help
+	  Flash driver device initialization priority.
+
+endif # FLASH

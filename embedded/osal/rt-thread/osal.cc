@@ -5,9 +5,10 @@
 #include <osal.h>
 #include <cstdint>
 #include <cstddef>
-#include <mem_alloc.h>
+#include <mem.h>
 
-/* if there is not enable heap, we should use static thread and stack. */
+// ─── 系统启动 ──────────────────────────────────────────────────────
+
 ALIGN(8)
 static rt_uint8_t main_stack[RT_MAIN_THREAD_STACK_SIZE];
 struct rt_thread main_thread;
@@ -21,30 +22,22 @@ int osal_init()
     rt_hw_interrupt_disable();
 
 #ifdef RT_USING_HEAP
-    /* heap initialization */
     rt_system_heap_init(rt_heap_pool, rt_heap_pool + sizeof(rt_heap_pool));
 #endif
 
-    /* timer system initialization */
     rt_system_timer_init();
-
-    /* scheduler system initialization */
     rt_system_scheduler_init();
 
 #ifdef RT_USING_SIGNALS
-    /* signal system initialization */
     rt_system_signal_init();
-#endif /* RT_USING_SIGNALS */
+#endif
 
-    /* timer thread initialization */
     rt_system_timer_thread_init();
-
-    /* idle thread initialization */
     rt_thread_idle_init();
 
 #ifdef RT_USING_SMP
     rt_hw_spin_lock(&_cpus_lock);
-#endif /* RT_USING_SMP */
+#endif
 
     return 0;
 }
@@ -60,87 +53,103 @@ int osal_start(void (*entry)(void *parameter), void *parameter)
                             main_stack, sizeof(main_stack), RT_MAIN_THREAD_PRIORITY, 20);
     RT_ASSERT(result == RT_EOK);
 
-    /* if not define RT_USING_HEAP, using to eliminate the warning */
     (void)result;
 
     rt_thread_startup(tid);
 
     cpu_usage_init();
 
-    /* start scheduler */
     rt_system_scheduler_start();
 
     /* never reach here */
     return 0;
 }
 
-int osal_thread_init(struct osal_thread *thread, const char *name,
-                     void (*entry)(void *parameter), void *parameter,
-                     void *stack_start, uint32_t stack_size, uint8_t priority,
-                     uint32_t tick) {
-    return static_cast<int>(rt_thread_init(&(thread->tcb), name, entry, parameter,
-                             stack_start, stack_size, priority, tick));
+// ─── Semaphore ─────────────────────────────────────────────────────
+
+namespace osal {
+
+Semaphore::Semaphore(uint32_t initial)
+    : handle_(rt_sem_create("sem", initial, RT_IPC_FLAG_FIFO)) {}
+
+Semaphore::~Semaphore() {
+    if (handle_) rt_sem_delete(handle_);
 }
 
-osal_thread_t *osal_thread_create(const char *name,
-                        void (*entry)(void *parameter),
-                        void *parameter,
-                        size_t stack_size,
-                        int32_t priority,
-                        int32_t tick)
-{
-    rt_err_t result;
-    osal_thread_t *thread = nullptr;
-    uint8_t *stack = nullptr;
+int Semaphore::take(uint32_t timeout) {
+    return (rt_sem_take(handle_, timeout) == RT_EOK) ? 0 : -1;
+}
 
-    thread = static_cast<osal_thread_t *>(Mem::aligned_alloc(4, sizeof(osal_thread_t)));
-    if (thread == nullptr) {
-        goto err_exit;
+int Semaphore::release() {
+    return (rt_sem_release(handle_) == RT_EOK) ? 0 : -1;
+}
+
+// ─── Mutex ─────────────────────────────────────────────────────────
+
+Mutex::Mutex()
+    : handle_(rt_mutex_create("mtx", RT_IPC_FLAG_FIFO)) {}
+
+Mutex::~Mutex() {
+    if (handle_) rt_mutex_delete(handle_);
+}
+
+int Mutex::lock(uint32_t timeout) {
+    return (rt_mutex_take(handle_, timeout) == RT_EOK) ? 0 : -1;
+}
+
+int Mutex::tryLock() {
+    return (rt_mutex_take(handle_, 0) == RT_EOK) ? 0 : -1;
+}
+
+int Mutex::unlock() {
+    return (rt_mutex_release(handle_) == RT_EOK) ? 0 : -1;
+}
+
+// ─── Thread ────────────────────────────────────────────────────────
+
+Thread::Thread(const char* name, void (*entry)(void*), void* param,
+               void* stack, uint32_t stack_size, uint8_t prio, uint32_t tick)
+    : handle_{}, owned_(false) {
+    rt_thread_init(&handle_.tcb, name, entry, param,
+                   stack, stack_size, prio, tick);
+    handle_.handle = &handle_.tcb;
+}
+
+Thread::~Thread() {
+    if (owned_ && handle_.handle) {
+        rt_thread_delete(handle_.handle);
     }
-    stack = static_cast<uint8_t *>(Mem::aligned_alloc(8, stack_size));
-    if (stack == nullptr) {
-        goto err_exit;
+}
+
+Thread* Thread::create(const char* name, void (*entry)(void*),
+                        void* param, size_t stack_size,
+                        int32_t prio, int32_t tick) {
+    auto *thread = new Thread(PrivateTag{});
+
+    rt_thread_t h = rt_thread_create(name, entry, param,
+                                      stack_size, prio, tick);
+    if (!h) {
+        delete thread;
+        return nullptr;
     }
-    result = rt_thread_init(&(thread->tcb), name, entry, parameter,
-                                stack, stack_size, priority, tick);
-    if (result != RT_EOK) {
-        goto err_exit;
-    }
+    thread->handle_.handle = h;
     return thread;
-err_exit:
-    if (thread) {
-        Mem::aligned_free(thread);
-    }
-    if (stack) {
-        Mem::aligned_free(stack);
-    }
-    return nullptr;
 }
 
-int osal_mutex_init(osal_mutex_t *mutex, const char *name, uint8_t flag)
-{
-    return static_cast<int>(rt_mutex_init(mutex, name, flag));
+int Thread::startup() {
+    return (int)rt_thread_startup(handle_.handle);
 }
 
-osal_mutex_t *osal_mutex_create(const char *name, uint8_t flag)
-{
-    rt_err_t result;
-    osal_mutex_t *mutex = nullptr;
-
-    mutex = static_cast<osal_mutex_t *>(Mem::aligned_alloc(4, sizeof(osal_mutex_t)));
-    if (mutex == nullptr) {
-        goto err_exit;
-    }
-
-    result = rt_mutex_init(mutex, name, flag);
-    if (result != RT_EOK) {
-        goto err_exit;
-    }
-
-    return mutex;
-err_exit:
-    if (mutex) {
-        Mem::aligned_free(mutex);
-    }
-    return nullptr;
+int Thread::suspend() {
+    return (int)rt_thread_suspend(handle_.handle);
 }
+
+int Thread::resume() {
+    return (int)rt_thread_resume(handle_.handle);
+}
+
+int Thread::yield() {
+    return (int)rt_thread_yield();
+}
+
+} // namespace osal

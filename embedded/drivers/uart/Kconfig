@@ -1,0 +1,16 @@
+menuconfig UART
+	bool "UART drivers"
+	help
+	  Include UART drivers in system config
+
+rsource "Kconfig.stm32"
+
+if UART
+
+config UART_INIT_PRIORITY
+	int "UART init priority"
+	default KERNEL_INIT_PRIORITY_DEFAULT
+	help
+	  UART driver device initialization priority.
+
+endif # UART

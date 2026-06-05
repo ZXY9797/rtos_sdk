@@ -2,9 +2,15 @@ menu "Device Drivers"
 
 # zephyr-keep-sorted-start
 source "embedded/drivers/cache/Kconfig"
+source "embedded/drivers/can/Kconfig"
 source "embedded/drivers/clock_control/Kconfig"
+source "embedded/drivers/flash/Kconfig"
 source "embedded/drivers/gpio/Kconfig"
+source "embedded/drivers/i2c/Kconfig"
 source "embedded/drivers/interrupt_controller/Kconfig"
+source "embedded/drivers/pwm/Kconfig"
+source "embedded/drivers/spi/Kconfig"
+source "embedded/drivers/uart/Kconfig"
 # zephyr-keep-sorted-stop
 
 endmenu

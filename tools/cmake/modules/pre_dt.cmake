@@ -68,11 +68,11 @@ function(pre_dt_module_run)
   set(DTS_ROOT_SYSTEM_INCLUDE_DIRS)
   foreach(dts_root ${DTS_ROOT})
     foreach(dts_root_path
-        include
         dts/common
         dts/vendor
         ${arch_include}
         dts
+        include
         )
       get_filename_component(full_path ${dts_root}/${dts_root_path} REALPATH)
       if(EXISTS ${full_path})

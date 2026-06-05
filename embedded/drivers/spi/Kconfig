@@ -1,0 +1,16 @@
+menuconfig SPI
+	bool "SPI drivers"
+	help
+	  Include SPI drivers in system config
+
+rsource "Kconfig.stm32"
+
+if SPI
+
+config SPI_INIT_PRIORITY
+	int "SPI init priority"
+	default KERNEL_INIT_PRIORITY_DEFAULT
+	help
+	  SPI driver device initialization priority.
+
+endif # SPI

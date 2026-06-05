@@ -1,0 +1,6 @@
+config SPI_STM32
+	bool "SPI driver for STM32"
+	select SPI
+	default y
+	help
+	  Enable SPI driver for STM32 family using HAL.

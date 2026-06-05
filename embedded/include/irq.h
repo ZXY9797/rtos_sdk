@@ -12,15 +12,15 @@ public:
     Irq() = delete;
 
     static void enable(int irq) {
-        irq_enable(irq);
+        arm_irq_enable(irq);
     }
 
     static void disable(int irq) {
-        irq_disable(irq);
+        arm_irq_disable(irq);
     }
 
     static void setPriority(int irq, uint32_t preempt, uint32_t sub) {
-        irq_priority_set(irq, preempt, sub);
+        arm_irq_priority_set(irq, preempt, sub);
     }
 };
 

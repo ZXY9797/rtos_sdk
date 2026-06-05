@@ -3,3 +3,10 @@ description: STM32 UART
 compatible: "st,stm32-uart"
 
 include: st,stm32-uart-base.yaml
+
+cxx-driver:
+  template: Uart
+  header: drivers/uart.h
+  args:
+    - node-reg
+    - irq

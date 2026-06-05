@@ -1,106 +1,62 @@
 /dts-v1/;
 #include <st/h7/stm32h743Xi.dtsi>
 #include <st/h7/pinctrl/stm32h743vitx-pinctrl.dtsi>
-#include <dt-bindings/memory-attr/memory-attr.h>
 
 / {
     compatible = "st,stm32h743xx";
 
     aliases {
-        led0 = &green_led; /* 为LED节点创建别名led0 */
-		sw0 = &key_pc13;
-    };
-	chosen {
-		// zephyr,console = &usart3;
-		// zephyr,shell-uart = &usart3;
-		sram = &sram0;
-		flash = &flash0;
-		dtcm = &dtcm;
-		itcm = &itcm;
-		// zephyr,code-partition = &slot0_partition;
-		// zephyr,canbus = &fdcan1;
-	};
-
-	mempool {
-		normal_mem: mempool@0 {
-			compatible = "rtos_sdk,mempool";
-			section-name = ".axiram";
-			label = "normal";
-			attr = <( DT_MEM_CACHEABLE | DT_MEM_DMA )>;
-			size = <DT_SIZE_K(64)>;
-		};
-		highspeed_mem: mempool@1 {
-			compatible = "rtos_sdk,mempool";
-			section-name = ".dtcm_bss";
-			label = "hspeed";
-			attr = <( DT_MEM_HIGHSPEED | DT_MEM_NOCACHE )>;
-			size = <DT_SIZE_K(32)>;
-		};
-	};
-
-    soc {
-        #address-cells = <1>;
-        #size-cells = <1>;
+        led0 = &green_led;
+        sw0 = &key_pc13;
+        console = &usart1;
     };
 
-	leds: leds {
-		compatible = "gpio-leds";
+    chosen {
+        sram = &sram0;
+        flash = &flash0;
+        dtcm = &dtcm;
+        itcm = &itcm;
+    };
 
-		green_led: led_0 {
-			gpios = <&gpioe 3 GPIO_ACTIVE_HIGH>;
-			label = "User LD1";
-		};
+    leds: leds {
+        compatible = "gpio-leds";
 
-		key_pc13: led_1 {
-			gpios = <&gpioc 13 GPIO_ACTIVE_LOW>;
-			label = "User Key";
-		};
-	};
-};
+        green_led: led_0 {
+            gpios = <&gpioe 3 GPIO_ACTIVE_HIGH>;
+            label = "User LD1";
+        };
 
-&clk_lsi {
-	status = "okay";
-};
-
-&clk_hsi48 {
-	status = "okay";
+        key_pc13: led_1 {
+            gpios = <&gpioc 13 GPIO_ACTIVE_LOW>;
+            label = "User Key";
+        };
+    };
 };
 
 &clk_hse {
-	// hse-bypass;
-	clock-frequency = <DT_FREQ_M(25)>; /* STLink 8MHz clock */
-	status = "okay";
+    clock-frequency = <DT_FREQ_M(25)>;
+    status = "okay";
 };
 
 &pll {
-	div-m = <5>;
-	mul-n = <192>;
-	div-p = <2>;
-	div-q = <2>;
-	div-r = <2>;
-	clocks = <&clk_hse>;
-	status = "okay";
-};
-
-&pll2 {
-	div-m = <32>;
-	mul-n = <129>;
-	div-p = <2>;
-	div-q = <3>; /* gives 80MHz to the FDCAN */
-	div-r = <2>;
-	clocks = <&clk_hse>;
-	status = "disabled";
+    div-m = <5>;
+    mul-n = <192>;
+    div-p = <2>;
+    div-q = <2>;
+    div-r = <2>;
+    clocks = <&clk_hse>;
+    status = "okay";
 };
 
 &rcc {
-	clocks = <&pll>;
-	clock-frequency = <DT_FREQ_M(480)>;
-	d1cpre = <1>;
-	hpre = <2>;
-	d1ppre = <2>;
-	d2ppre1 = <2>;
-	d2ppre2 = <2>;
-	d3ppre = <2>;
+    clocks = <&pll>;
+    clock-frequency = <DT_FREQ_M(480)>;
+    d1cpre = <1>;
+    hpre = <2>;
+    d1ppre = <2>;
+    d2ppre1 = <2>;
+    d2ppre2 = <2>;
+    d3ppre = <2>;
 };
 
 &usart1 {

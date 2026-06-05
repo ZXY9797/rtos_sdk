@@ -1,0 +1,16 @@
+menuconfig PWM
+	bool "PWM drivers"
+	help
+	  Include PWM drivers in system config
+
+rsource "Kconfig.stm32"
+
+if PWM
+
+config PWM_INIT_PRIORITY
+	int "PWM init priority"
+	default KERNEL_INIT_PRIORITY_DEFAULT
+	help
+	  PWM driver device initialization priority.
+
+endif # PWM

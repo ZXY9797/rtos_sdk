@@ -6,3 +6,9 @@ description: STM32 SPI controller
 compatible: "st,stm32-spi"
 
 include: st,stm32-spi-common.yaml
+
+cxx-driver:
+  template: Spi
+  header: drivers/spi.h
+  args:
+    - node-reg

@@ -67,3 +67,9 @@ properties:
     description: |
       Names of the optional DMA channels. Expected values are "tx" for
       the TX channel and "rx" for the RX channel.
+
+cxx-driver:
+  template: I2c
+  header: drivers/i2c.h
+  args:
+    - node-reg

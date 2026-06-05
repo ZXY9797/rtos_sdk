@@ -1,9 +1,10 @@
 #include <osal.h>
-#include <soc.h>
 #include <cstdint>
 #include <cstddef>
 
 #define MAIN_THREAD_STACK_SIZE  (CONFIG_MAIN_STACK_SIZE / sizeof(StackType_t))
+
+// ─── 系统启动 ──────────────────────────────────────────────────────
 
 static TaskHandle_t main_task_handle;
 
@@ -39,75 +40,111 @@ int osal_start(void (*entry)(void *parameter), void *parameter)
     return 0;
 }
 
-int osal_thread_init(osal_thread_t *thread, const char *name,
-                     void (*entry)(void *parameter), void *parameter,
-                     void *stack_start, uint32_t stack_size, uint8_t priority,
-                     uint32_t tick)
-{
-    (void)tick;
-    (void)name;
-    /* Static task creation - stack_start must be a StackType_t array */
-    thread->handle = xTaskCreateStatic(entry, name,
-                                        stack_size / sizeof(StackType_t),
-                                        parameter,
-                                        priority,
-                                        static_cast<StackType_t *>(stack_start),
-                                        nullptr);
-    return (thread->handle != nullptr) ? 0 : -1;
+// ─── Semaphore ─────────────────────────────────────────────────────
+
+namespace osal {
+
+Semaphore::Semaphore(uint32_t initial)
+    : handle_(xSemaphoreCreateCounting(0xFFFF, initial)) {}
+
+Semaphore::~Semaphore() {
+    if (handle_) vSemaphoreDelete(handle_);
 }
 
-osal_thread_t *osal_thread_create(const char *name,
-                        void (*entry)(void *parameter),
-                        void *parameter,
-                        size_t stack_size,
-                        int32_t priority,
-                        int32_t tick)
-{
-    (void)tick;
-    auto *thread = static_cast<osal_thread_t *>(pvPortMalloc(sizeof(osal_thread_t)));
-    if (thread == nullptr) {
-        return nullptr;
-    }
+int Semaphore::take(uint32_t timeout) {
+    return (xSemaphoreTake(handle_, timeout) == pdTRUE) ? 0 : -1;
+}
 
-    thread->flags = 0;
+int Semaphore::release() {
+    return (xSemaphoreGive(handle_) == pdTRUE) ? 0 : -1;
+}
+
+// ─── Mutex ─────────────────────────────────────────────────────────
+
+Mutex::Mutex()
+    : handle_(xSemaphoreCreateMutex()) {}
+
+Mutex::~Mutex() {
+    if (handle_) vSemaphoreDelete(handle_);
+}
+
+int Mutex::lock(uint32_t timeout) {
+    return (xSemaphoreTake(handle_, timeout) == pdTRUE) ? 0 : -1;
+}
+
+int Mutex::tryLock() {
+    return (xSemaphoreTake(handle_, 0) == pdTRUE) ? 0 : -1;
+}
+
+int Mutex::unlock() {
+    return (xSemaphoreGive(handle_) == pdTRUE) ? 0 : -1;
+}
+
+// ─── Thread ────────────────────────────────────────────────────────
+
+Thread::Thread(const char* name, void (*entry)(void*), void* param,
+               void* stack, uint32_t stack_size, uint8_t prio, uint32_t tick)
+    : handle_{}, owned_(false) {
+    (void)tick;
+    handle_.handle = xTaskCreateStatic(entry, name,
+                                        stack_size / sizeof(StackType_t),
+                                        param,
+                                        prio,
+                                        static_cast<StackType_t *>(stack),
+                                        nullptr);
+}
+
+Thread::~Thread() {
+    if (owned_ && handle_.handle) {
+        vTaskDelete(handle_.handle);
+    }
+}
+
+Thread* Thread::create(const char* name, void (*entry)(void*),
+                        void* param, size_t stack_size,
+                        int32_t prio, int32_t tick) {
+    (void)tick;
+    auto *thread = new Thread(PrivateTag{});
+    thread->owned_ = true;
+
+    TaskHandle_t h = nullptr;
     BaseType_t ret = xTaskCreate(entry, name,
                                   stack_size / sizeof(StackType_t),
-                                  parameter,
-                                  priority,
-                                  &thread->handle);
+                                  param,
+                                  prio,
+                                  &h);
     if (ret != pdPASS) {
-        vPortFree(thread);
+        delete thread;
         return nullptr;
     }
-
+    thread->handle_.handle = h;
     return thread;
 }
 
-int osal_mutex_init(osal_mutex_t *mutex, const char *name, uint8_t flag)
-{
-    (void)name;
-    (void)flag;
-    *mutex = xSemaphoreCreateMutex();
-    return (*mutex != nullptr) ? 0 : -1;
+int Thread::startup() {
+    vTaskResume(handle_.handle);
+    return 0;
 }
 
-osal_mutex_t *osal_mutex_create(const char *name, uint8_t flag)
-{
-    (void)name;
-    (void)flag;
-    auto *mutex = static_cast<osal_mutex_t *>(pvPortMalloc(sizeof(osal_mutex_t)));
-    if (mutex == nullptr) {
-        return nullptr;
-    }
-    *mutex = xSemaphoreCreateMutex();
-    if (*mutex == nullptr) {
-        vPortFree(mutex);
-        return nullptr;
-    }
-    return mutex;
+int Thread::suspend() {
+    vTaskSuspend(handle_.handle);
+    return 0;
 }
 
-/* FreeRTOS static allocation callbacks */
+int Thread::resume() {
+    vTaskResume(handle_.handle);
+    return 0;
+}
+
+int Thread::yield() {
+    taskYIELD();
+    return 0;
+}
+
+} // namespace osal
+
+// ─── FreeRTOS 静态分配回调 ────────────────────────────────────────
+
 static StaticTask_t idle_task_tcb;
 static StackType_t idle_task_stack[configMINIMAL_STACK_SIZE];
 
