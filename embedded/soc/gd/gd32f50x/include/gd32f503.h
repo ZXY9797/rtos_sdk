@@ -229,6 +229,9 @@ typedef enum {
 /* NVIC priority bits */
 #define __NVIC_PRIO_BITS                4U
 
+/* DSP extension - Cortex-M33 has DSP */
+#define __DSP_PRESENT                   1U
+
 /* FPU configuration */
 #define __FPU_PRESENT                   1U
 #define __FPU_USED                      1U
@@ -237,8 +240,11 @@ typedef enum {
 #define __ICACHE_PRESENT                0U
 #define __DCACHE_PRESENT                0U
 
+/* TrustZone / SAU configuration - GD32F503 has no TrustZone */
+#define __SAUREGION_PRESENT             0U
+
 /* Include CMSIS core files */
-#include "core_cm4.h"
+#include "core_cm33.h"
 
 #ifdef __cplusplus
 }

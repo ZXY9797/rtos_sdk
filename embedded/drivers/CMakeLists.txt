@@ -27,6 +27,9 @@ target_link_libraries_ifdef(CONFIG_FLASH ${MODULE_NAME} PUBLIC flash)
 add_subdirectory_ifdef(CONFIG_PWM pwm)
 target_link_libraries_ifdef(CONFIG_PWM ${MODULE_NAME} PUBLIC pwm)
 
+add_subdirectory_ifdef(CONFIG_DMA_GD32 dma)
+target_link_libraries_ifdef(CONFIG_DMA_GD32 ${MODULE_NAME} PUBLIC dma)
+
 add_subdirectory(log)
 
 add_subdirectory(interrupt_controller)

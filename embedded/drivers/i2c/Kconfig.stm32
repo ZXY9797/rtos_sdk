@@ -2,5 +2,6 @@ config I2C_STM32
 	bool "I2C driver for STM32"
 	select I2C
 	default y
+	depends on SOC_FAMILY_ST
 	help
 	  Enable I2C driver for STM32 family using HAL.

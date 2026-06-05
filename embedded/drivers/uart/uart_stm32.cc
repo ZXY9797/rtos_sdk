@@ -71,7 +71,7 @@ Status UartBase::init(const UartConfig &config) {
     }
     regs->CR1 = cr1;
     regs->CR2 = (config.stop_bits == StopBits::Two) ? CR2_STOP_2 : 0;
-    regs->BRR = 120000000U / config.baudrate;
+    regs->BRR = SystemCoreClock / config.baudrate;
     regs->ICR = ICR_PECF | ICR_FECF | ICR_NCF | ICR_ORECF | ICR_IDLECF | ICR_TCCF;
     regs->CR1 |= CR1_RXNEIE | CR1_TE | CR1_RE | CR1_UE;
 

@@ -2,7 +2,6 @@
 
 #include <dt-bindings/gpio/gpio.h>
 #include <cstdint>
-#include <errno.h>
 
 namespace hal {
 

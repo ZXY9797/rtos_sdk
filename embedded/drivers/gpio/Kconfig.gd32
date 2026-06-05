@@ -1,0 +1,7 @@
+config GPIO_GD32
+	bool "GPIO Driver for GD32 family of MCUs"
+	select GPIO
+	default y
+	depends on DT_HAS_GD_GD32_GPIO_ENABLED
+	help
+	  Enable GPIO driver for GD32 line of MCUs

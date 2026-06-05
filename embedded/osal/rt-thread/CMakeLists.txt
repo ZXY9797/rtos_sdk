@@ -22,6 +22,13 @@ target_sources(${MODULE_NAME}
         ${RTOS_DIR}/src/timer.c
 )
 
+target_sources_ifdef(CONFIG_CPU_CORTEX_M33 ${MODULE_NAME}
+    PRIVATE
+        ${RTOS_DIR}/libcpu/arm/cortex-m33/context_gcc.S
+        ${RTOS_DIR}/libcpu/arm/cortex-m33/cpuport.c
+        ${RTOS_DIR}/libcpu/arm/cortex-m33/trustzone.c
+)
+
 target_sources_ifdef(CONFIG_CPU_CORTEX_M4 ${MODULE_NAME}
     PRIVATE
         ${RTOS_DIR}/libcpu/arm/cortex-m4/context_gcc.S

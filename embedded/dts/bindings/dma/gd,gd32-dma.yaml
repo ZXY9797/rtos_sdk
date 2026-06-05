@@ -1,0 +1,32 @@
+description: GD32 DMA controller with DMAMUX
+
+compatible: "gd,gd32-dma"
+
+include: [dma-controller.yaml, base.yaml]
+
+properties:
+  reg:
+    type: array
+    required: true
+
+  interrupts:
+    type: array
+    required: true
+
+  label:
+    type: string
+    required: true
+
+  dma-channels:
+    type: int
+    required: true
+    description: Number of DMA channels
+
+  mux-channels:
+    type: int
+    required: true
+    description: Number of DMAMUX channels
+
+dma-cells:
+  - channel
+  - request-id

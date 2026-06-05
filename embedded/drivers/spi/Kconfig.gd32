@@ -1,0 +1,7 @@
+config SPI_GD32
+	bool "GD32 SPI driver"
+	select SPI
+	depends on SOC_SERIES_GD32F50X
+	default y
+	help
+	  Enable SPI driver for GD32F50x series with DMA support.

@@ -13,6 +13,8 @@
 
     aliases {
         led0 = &green_led;
+        uart0 = &usart0;
+        spi0 = &spi0;
     };
 
     leds {
@@ -31,6 +33,36 @@
             status = "okay";
             current-speed = <115200>;
             label = "USART0";
+        };
+
+        spi0: spi@40013000 {
+            compatible = "gd,gd32-spi";
+            reg = <0x40013000 0x400>;
+            interrupts = <35 0>;
+            status = "okay";
+            label = "SPI0";
+            #address-cells = <1>;
+            #size-cells = <0>;
+        };
+
+        dma0: dma@40020000 {
+            compatible = "gd,gd32-dma";
+            reg = <0x40020000 0x400>;
+            interrupts = <11 0>, <12 0>, <13 0>, <14 0>, <15 0>, <16 0>, <17 0>;
+            label = "DMA0";
+            dma-channels = <7>;
+            mux-channels = <7>;
+            #dma-cells = <2>;
+        };
+
+        dma1: dma@40020400 {
+            compatible = "gd,gd32-dma";
+            reg = <0x40020400 0x400>;
+            interrupts = <56 0>, <57 0>, <58 0>, <59 0>, <68 0>, <69 0>, <70 0>;
+            label = "DMA1";
+            dma-channels = <7>;
+            mux-channels = <5>;
+            #dma-cells = <2>;
         };
 
         gpioa: gpio@40010800 {

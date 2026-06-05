@@ -2,5 +2,6 @@ config FLASH_STM32
 	bool "Flash driver for STM32"
 	select FLASH
 	default y
+	depends on SOC_FAMILY_ST
 	help
 	  Enable Flash driver for STM32 family using HAL.

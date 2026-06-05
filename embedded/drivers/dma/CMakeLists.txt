@@ -1,8 +1,11 @@
-set(MODULE_NAME spi)
-add_library(${MODULE_NAME} STATIC)
+set(MODULE_NAME dma)
 
-target_sources_ifdef(CONFIG_SPI_STM32 ${MODULE_NAME} PRIVATE spi_stm32.cc)
-target_sources_ifdef(CONFIG_SPI_GD32 ${MODULE_NAME} PRIVATE spi_gd32.cc)
+add_library(${MODULE_NAME} ${NULL_C})
+
+target_sources_ifdef(CONFIG_DMA_GD32 ${MODULE_NAME}
+    PRIVATE
+        dma_gd32.cc
+)
 
 target_include_directories(${MODULE_NAME}
     PUBLIC
@@ -13,8 +16,6 @@ target_include_directories(${MODULE_NAME}
 )
 
 target_link_libraries(${MODULE_NAME}
-    PUBLIC
     PRIVATE
         soc
-        dma
 )

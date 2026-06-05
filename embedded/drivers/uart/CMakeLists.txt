@@ -9,6 +9,7 @@ target_include_directories(${MODULE_NAME}
         ${BSP_DIR}/include
     PRIVATE
         ${BSP_DIR}/modules/cmsis/CMSIS/Core/Include
+        ${BSP_DIR}/soc/gd/gd32f50x/include
 )
 
 target_link_libraries(${MODULE_NAME}
@@ -16,4 +17,5 @@ target_link_libraries(${MODULE_NAME}
     PRIVATE
         soc
         osal
+        dma
 )

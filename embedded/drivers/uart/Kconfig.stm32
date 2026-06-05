@@ -2,5 +2,6 @@ config UART_STM32
 	bool "UART driver for STM32"
 	select UART
 	default y
+	depends on SOC_FAMILY_ST
 	help
 	  Enable UART driver for STM32 family using HAL.

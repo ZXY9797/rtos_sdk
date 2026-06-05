@@ -1,4 +1,5 @@
 #include <drivers/spi.h>
+#include <system_stm32h7xx.h>
 
 namespace hal {
 
@@ -70,20 +71,25 @@ Status SpiBase::deinit() {
 Status SpiBase::sync_send(const uint8_t *tx, uint8_t *rx, size_t len, uint32_t timeout_ms) {
     if (!m_initialized) return Status::InvalidArgument;
     auto *regs = reinterpret_cast<SpiRegs *>(m_base);
-    (void)timeout_ms;
+
+    uint32_t timeout_loops = timeout_ms * (SystemCoreClock / 1000U / 4U);
+    if (timeout_loops == 0) timeout_loops = 1;
 
     regs->IFCR = IFCR_EOTC | IFCR_TXTFC | IFCR_OVRC;
     regs->CR1 |= CR1_CSTART;
 
     for (size_t i = 0; i < len; i++) {
-        while (!(regs->SR & SR_TXP)) {}
+        uint32_t remaining = timeout_loops;
+        while (!(regs->SR & SR_TXP)) { if (--remaining == 0) return Status::Timeout; }
         regs->TXDR = tx ? tx[i] : 0xFF;
-        while (!(regs->SR & SR_RXP)) {}
+        remaining = timeout_loops;
+        while (!(regs->SR & SR_RXP)) { if (--remaining == 0) return Status::Timeout; }
         uint8_t data = static_cast<uint8_t>(regs->RXDR);
         if (rx) rx[i] = data;
     }
 
-    while (!(regs->SR & SR_EOT)) {}
+    uint32_t remaining = timeout_loops;
+    while (!(regs->SR & SR_EOT)) { if (--remaining == 0) return Status::Timeout; }
     regs->IFCR = IFCR_EOTC;
     return Status::Ok;
 }

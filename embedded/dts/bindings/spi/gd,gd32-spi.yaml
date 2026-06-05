@@ -1,0 +1,24 @@
+description: GD32 SPI controller
+
+compatible: "gd,gd32-spi"
+
+include: [spi-controller.yaml, base.yaml]
+
+cxx-driver:
+  template: Spi
+  header: drivers/spi.h
+  args:
+    - node-reg
+
+properties:
+  reg:
+    type: array
+    required: true
+
+  interrupts:
+    type: array
+    required: true
+
+  label:
+    type: string
+    required: true

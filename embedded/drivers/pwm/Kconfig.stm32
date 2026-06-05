@@ -2,5 +2,6 @@ config PWM_STM32
 	bool "PWM driver for STM32"
 	select PWM
 	default y
+	depends on SOC_FAMILY_ST
 	help
 	  Enable PWM driver for STM32 family using HAL TIM.

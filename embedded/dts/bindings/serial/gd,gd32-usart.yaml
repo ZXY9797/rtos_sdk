@@ -4,6 +4,13 @@ compatible: "gd,gd32-usart"
 
 include: [uart-controller.yaml, base.yaml]
 
+cxx-driver:
+  template: Uart
+  header: drivers/uart.h
+  args:
+    - node-reg
+    - irq
+
 properties:
   reg:
     type: array
@@ -15,7 +22,7 @@ properties:
 
   current-speed:
     type: int
-    required: true
+    default: 115200
 
   label:
     type: string

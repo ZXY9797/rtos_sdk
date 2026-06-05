@@ -47,7 +47,7 @@ protected:
 template <uintptr_t Base, int Irq>
 class Uart : public UartBase {
 public:
-    Uart() : UartBase(Base, Irq) {}
+    constexpr Uart() : UartBase(Base, Irq) {}
 };
 
 } // namespace hal

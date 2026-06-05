@@ -1,6 +1,7 @@
 config UART_GD32
 	bool "GD32 UART driver"
+	select UART
 	depends on SOC_SERIES_GD32F50X
-	default y if SOC_SERIES_GD32F50X
+	default y
 	help
 	  Enable GD32 UART driver.
