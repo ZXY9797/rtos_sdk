@@ -5,6 +5,7 @@
 #include <arch/cpu.h>
 #include <arch/common/init.h>
 #include <arch/common/xip.h>
+#include <sct_load.h>
 
 #ifdef CONFIG_CPU_CORTEX_M_HAS_VTOR
 
@@ -156,8 +157,7 @@ void z_prep_c()
 #if defined(CONFIG_CPU_HAS_FPU)
 	z_arm_floating_point_init();
 #endif
-    arch_bss_zero();
-    arch_data_copy();
+    sct_load();
 #if CONFIG_ARCH_CACHE
 	arch_cache_init();
 #endif

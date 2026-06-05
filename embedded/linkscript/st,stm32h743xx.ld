@@ -3,9 +3,12 @@ ENTRY(Reset_Handler)
 
 _region_min_align = 32;
 
+/* GCC RW Compress: flash size = physical flash + physical RAM */
+__flash_size__ = 2048K + 512K;
+
 MEMORY
 {
-    FLASH (rx) :    ORIGIN = 0x08000000,    LENGTH = 2048K /* 2048K flash */
+    FLASH (rx) :    ORIGIN = 0x08000000,    LENGTH = __flash_size__ /* flash + RAM for compress */
     RAM   (rw) :    ORIGIN = 0x24000000,    LENGTH = 512k  /* 512 AXI_RAM */
     ITCM  (rx) :    ORIGIN = 0x00000000,    LENGTH = 64k   /* 64K  ITCM */
     DTCM  (rw) :    ORIGIN = 0x20000000,    LENGTH = 128k  /* 128K DTCM */
@@ -293,6 +296,13 @@ SECTIONS
         KEEP(*(.ARM.attributes))
         KEEP(*(.gnu.attributes))
     }
+
+    .sct_load_config :
+    {
+        . = ALIGN(4);
+        KEEP(*(.sct_load_config))
+        . = ALIGN(4);
+    } > FLASH
 
     .last_section :
     {

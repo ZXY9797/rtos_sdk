@@ -40,10 +40,13 @@ set_source_files_properties(${NULL_C} OBJECT_DEPENDS ${LINKER_SCRIPT})
 add_custom_command(
   TARGET "${PROJECT_NAME}"
   POST_BUILD
+  # GCC RW Compress: compress RW data sections
+  COMMAND ${PYTHON_EXECUTABLE} ${TOOLS_DIR}/scripts/gcc_compress.py
+          -f "${PROJECT_NAME}${CMAKE_OUTPUT_SUFFIX}"
   # Build .hex and .bin files
   COMMAND ${CMAKE_OBJCOPY} -Obinary "${PROJECT_NAME}${CMAKE_OUTPUT_SUFFIX}" "${PROJECT_NAME}.bin"
   COMMAND ${CMAKE_OBJCOPY} -Oihex "${PROJECT_NAME}${CMAKE_OUTPUT_SUFFIX}" "${PROJECT_NAME}.hex"
-  COMMENT "Building ${PROJECT_NAME}.bin and ${PROJECT_NAME}.hex"
+  COMMENT "Compressing RW data and building ${PROJECT_NAME}.bin/.hex"
   # Display sizes
   COMMAND ${CMAKE_SIZE} --format=berkeley ${PROJECT_NAME}${CMAKE_OUTPUT_SUFFIX}
 )
