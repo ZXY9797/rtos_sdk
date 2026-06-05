@@ -1,6 +1,7 @@
 #include "stddef.h"
 #include "devicetree.h"
 #include <linker/linker-def.h>
+#include <initcall.h>
 
 void* arch_early_memset(void* dest, int value, unsigned int n);
 extern int main(void);
@@ -43,7 +44,18 @@ void arch_bss_zero(void)
 #endif
 }
 
+extern const struct initcall_entry __initcall_start[];
+extern const struct initcall_entry __initcall_end[];
+
+void run_initcalls(void) {
+	for (const struct initcall_entry *e = __initcall_start;
+	     e < __initcall_end; e++) {
+		e->fn();
+	}
+}
+
 void z_cstart(void)
 {
+	run_initcalls();
 	main();
 }

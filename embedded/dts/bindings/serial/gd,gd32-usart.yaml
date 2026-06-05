@@ -10,6 +10,23 @@ cxx-driver:
   args:
     - node-reg
     - irq
+  init-cfg:
+    type: UartConfig
+    rx-buffer-size:
+      default: 256
+    fields:
+      baudrate:
+        prop: current-speed
+        default: 115200
+      data_bits:
+        default: 8
+        cast: DataBits
+      stop_bits:
+        default: 0
+        cast: StopBits
+      parity:
+        default: 0
+        cast: Parity
 
 properties:
   reg:

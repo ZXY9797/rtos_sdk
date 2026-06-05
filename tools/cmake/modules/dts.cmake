@@ -155,6 +155,7 @@ message(STATUS "Generated devicetree_generated.h: ${DEVICETREE_GENERATED_H}")
 
 set(GEN_DEVICE_TRAITS_SCRIPT ${TOP_DIR}/tools/scripts/gen_device_traits.py)
 set(DRIVERS_GENERATED_H ${BINARY_DIR_INCLUDE_GENERATED}/drivers_generated.h)
+set(DRIVERS_GENERATED_CC ${BINARY_DIR_INCLUDE_GENERATED}/drivers_generated.cc)
 set(DTS_BINDINGS_DIR ${TOP_DIR}/embedded/dts/bindings)
 
 execute_process(
@@ -162,6 +163,7 @@ execute_process(
     ${DEVICETREE_GENERATED_H}
     ${DRIVERS_GENERATED_H}
     ${DTS_BINDINGS_DIR}
+    ${DRIVERS_GENERATED_CC}
   WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
   RESULT_VARIABLE ret
   )
@@ -169,6 +171,7 @@ if(NOT "${ret}" STREQUAL "0")
   message(FATAL_ERROR "gen_device_traits.py failed with return code: ${ret}")
 endif()
 message(STATUS "Generated drivers_generated.h: ${DRIVERS_GENERATED_H}")
+message(STATUS "Generated drivers_generated.cc: ${DRIVERS_GENERATED_CC}")
 
 #
 # Run GEN_DRIVER_KCONFIG_SCRIPT.

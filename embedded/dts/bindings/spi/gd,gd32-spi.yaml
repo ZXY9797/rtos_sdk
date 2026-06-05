@@ -9,6 +9,17 @@ cxx-driver:
   header: drivers/spi.h
   args:
     - node-reg
+  init-cfg:
+    type: SpiConfig
+    fields:
+      mode:
+        default: 0
+        cast: SpiMode
+      clock_hz:
+        prop: spi-max-frequency
+        default: 1000000
+      data_bits:
+        default: 8
 
 properties:
   reg:
@@ -18,6 +29,10 @@ properties:
   interrupts:
     type: array
     required: true
+
+  spi-max-frequency:
+    type: int
+    default: 1000000
 
   label:
     type: string
