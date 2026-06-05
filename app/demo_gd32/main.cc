@@ -2,8 +2,6 @@
 #include <drivers_generated.h>
 #include <cstring>
 
-#define device_get(alias) hal::device_get<DT_ORD(DT_ALIAS(alias))>()
-
 int main(void) {
     auto &uart = device_get(uart0);
     auto &spi  = device_get(spi0);

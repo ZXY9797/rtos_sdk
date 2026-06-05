@@ -434,6 +434,9 @@ def write_output(specs, used_headers, output_path):
         '',
         '#pragma GCC diagnostic pop',
         '',
+        '/// device_get(alias) — 通过 DTS 别名获取已初始化的设备引用',
+        '#define device_get(alias) hal::device_get<DT_ORD(DT_ALIAS(alias))>()',
+        '',
     ])
 
     # DT_INST_* 宏（供 .cc 中条件编译使用）
