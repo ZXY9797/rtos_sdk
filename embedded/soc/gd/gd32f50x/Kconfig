@@ -1,0 +1,15 @@
+# GigaDevice GD32F50x series SoC configuration
+
+config SOC_GD32F50X
+    bool
+    select ARM
+    select CPU_CORTEX_M4
+    select CPU_HAS_FPU
+
+config SOC
+    string
+    default "gd32f50x"
+
+config SOC_NAME
+    string
+    default "GD32F50X"

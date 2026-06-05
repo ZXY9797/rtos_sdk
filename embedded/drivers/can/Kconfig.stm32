@@ -1,6 +1,6 @@
 config CAN_STM32
 	bool "CAN (FDCAN) driver for STM32"
 	select CAN
-	default y
+	default y if SOC_FAMILY_STM32
 	help
 	  Enable CAN driver for STM32 family using HAL FDCAN.

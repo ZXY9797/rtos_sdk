@@ -16,6 +16,7 @@
 			reg = <0xe000e100 0xc00>;
 			interrupt-controller;
 			#interrupt-cells = <2>;
+			arm,num-irq-priority-bits = <4>;
 		};
 
 		systick: timer@e000e010 {

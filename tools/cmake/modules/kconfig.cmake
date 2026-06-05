@@ -27,7 +27,11 @@ set(COMMON_KCONFIG_ENV_SETTINGS
 )
 
 set(EXTRA_KCONFIG_TARGET_COMMAND_FOR_menuconfig
-  ${TOOLS_DIR}/scripts/kconfig/menuconfig.py
+  ${TOOLS_DIR}/scripts/kconfig/guiconfig.py
+  )
+
+set(EXTRA_KCONFIG_TARGET_COMMAND_FOR_config
+  ${TOOLS_DIR}/scripts/kconfig/guiconfig.py
   )
 
 set(EXTRA_KCONFIG_TARGET_COMMAND_FOR_guiconfig
@@ -38,7 +42,7 @@ set(EXTRA_KCONFIG_TARGET_COMMAND_FOR_hardenconfig
   ${TOOLS_DIR}/scripts/kconfig/hardenconfig.py
   )
 
-set_ifndef(KCONFIG_TARGETS menuconfig guiconfig hardenconfig)
+set_ifndef(KCONFIG_TARGETS menuconfig config guiconfig hardenconfig)
 
 # winpty is an optional dependency
 find_program(PTY_INTERFACE winpty)

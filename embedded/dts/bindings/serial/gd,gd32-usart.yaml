@@ -1,0 +1,22 @@
+description: GD32 USART
+
+compatible: "gd,gd32-usart"
+
+include: [uart-controller.yaml, base.yaml]
+
+properties:
+  reg:
+    type: array
+    required: true
+
+  interrupts:
+    type: array
+    required: true
+
+  current-speed:
+    type: int
+    required: true
+
+  label:
+    type: string
+    required: true

@@ -1,0 +1,15 @@
+# GigaDevice GD32F50x series SoC defconfig
+
+if SOC_SERIES_GD32F50X
+
+config ROM_START_OFFSET
+    hex
+    default 0x0
+
+config SYS_CLOCK_HW_CYCLES_PER_SEC
+    default 200000000
+
+config NUM_IRQS
+    default 96
+
+endif # SOC_SERIES_GD32F50X

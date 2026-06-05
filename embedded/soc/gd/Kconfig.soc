@@ -1,0 +1,13 @@
+# GigaDevice SoC configuration
+
+config SOC_FAMILY_GD
+	bool
+
+config SOC_VENDOR
+	string
+	default "gd" if SOC_SERIES_GD32F50X
+
+config SOC_FAMILY
+	default "gd" if SOC_FAMILY_GD
+
+

@@ -2,6 +2,7 @@
 #include <cache.h>
 #include <arch/cpu.h>
 
+#if __DCACHE_PRESENT
 void arch_dcache_enable(void)
 {
 	SCB_EnableDCache();
@@ -53,7 +54,18 @@ int arch_dcache_flush_and_invd_range(void *start_addr, size_t size)
 
 	return 0;
 }
+#else
+void arch_dcache_enable(void) {}
+void arch_dcache_disable(void) {}
+int arch_dcache_flush_all(void) { return -ENOTSUP; }
+int arch_dcache_invd_all(void) { return -ENOTSUP; }
+int arch_dcache_flush_and_invd_all(void) { return -ENOTSUP; }
+int arch_dcache_flush_range(void *start_addr, size_t size) { ARG_UNUSED(start_addr); ARG_UNUSED(size); return -ENOTSUP; }
+int arch_dcache_invd_range(void *start_addr, size_t size) { ARG_UNUSED(start_addr); ARG_UNUSED(size); return -ENOTSUP; }
+int arch_dcache_flush_and_invd_range(void *start_addr, size_t size) { ARG_UNUSED(start_addr); ARG_UNUSED(size); return -ENOTSUP; }
+#endif
 
+#if __ICACHE_PRESENT
 void arch_icache_enable(void)
 {
 	SCB_EnableICache();
@@ -103,6 +115,16 @@ int arch_icache_flush_and_invd_range(void *start_addr, size_t size)
 
 	return -ENOTSUP;
 }
+#else
+void arch_icache_enable(void) {}
+void arch_icache_disable(void) {}
+int arch_icache_flush_all(void) { return -ENOTSUP; }
+int arch_icache_invd_all(void) { return -ENOTSUP; }
+int arch_icache_flush_and_invd_all(void) { return -ENOTSUP; }
+int arch_icache_flush_range(void *start_addr, size_t size) { ARG_UNUSED(start_addr); ARG_UNUSED(size); return -ENOTSUP; }
+int arch_icache_invd_range(void *start_addr, size_t size) { ARG_UNUSED(start_addr); ARG_UNUSED(size); return -ENOTSUP; }
+int arch_icache_flush_and_invd_range(void *start_addr, size_t size) { ARG_UNUSED(start_addr); ARG_UNUSED(size); return -ENOTSUP; }
+#endif
 
 void arch_cache_init(void)
 {

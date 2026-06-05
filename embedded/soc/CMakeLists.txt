@@ -34,15 +34,20 @@ endif()
 set(SOC_VENDER_DIR ${CMAKE_CURRENT_LIST_DIR}/${SOC_VENDOR})
 set(SOC_SERIES_DIR ${CMAKE_CURRENT_LIST_DIR}/${SOC_VENDOR}/${SOC_SERIES})
 
-target_compile_definitions(soc
-    PUBLIC
-        ${STM32CUBE_CPU}
-        USE_HAL_DRIVER
-        USE_FULL_LL_DRIVER
-        # SOC_FAMILY_${SOC_FAMILY_UPPER}
-        # SOC_SERIES_${SOC_SERIES_UPPER}
-        # SOC_${SOC_NAME_UPPER}
-)
+# 根据 SOC 厂商设置编译定义
+if(SOC_VENDOR STREQUAL "st")
+    target_compile_definitions(soc
+        PUBLIC
+            ${STM32CUBE_CPU}
+            USE_HAL_DRIVER
+            USE_FULL_LL_DRIVER
+    )
+elseif(SOC_VENDOR STREQUAL "gd")
+    target_compile_definitions(soc
+        PUBLIC
+            GD32F50X
+    )
+endif()
 
 add_subdirectory(${SOC_VENDOR})
 

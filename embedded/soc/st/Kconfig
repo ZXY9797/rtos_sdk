@@ -1,8 +1,9 @@
 
 rsource "Kconfig.soc"
-rsource "Kconfig.defconfig"
 
 if SOC_FAMILY_STM32
+
+rsource "Kconfig.defconfig"
 
 rsource "*/Kconfig"
 

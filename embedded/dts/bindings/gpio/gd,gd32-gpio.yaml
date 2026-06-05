@@ -1,0 +1,26 @@
+description: GD32 GPIO controller
+
+compatible: "gd,gd32-gpio"
+
+include: [gpio-controller.yaml, base.yaml]
+
+properties:
+  reg:
+    type: array
+    required: true
+
+  interrupts:
+    type: array
+    required: true
+
+  label:
+    type: string
+    required: true
+
+  ngpios:
+    type: int
+    required: true
+
+gpio-cells:
+  - pin
+  - flags

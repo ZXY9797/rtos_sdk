@@ -1,0 +1,20 @@
+rsource "Kconfig.soc"
+
+config SOC_SERIES_GD32F50X
+	bool "GigaDevice GD32F50x series"
+	select ARM
+	select SOC_GD32F50X
+	select SOC_FAMILY_GD
+	help
+	  GigaDevice GD32F50x series SoC
+
+if SOC_SERIES_GD32F50X
+
+rsource "Kconfig.defconfig"
+
+rsource "gd32f50x/Kconfig"
+
+config SOC_SERIES
+	default "gd32f50x"
+
+endif # SOC_SERIES_GD32F50X
