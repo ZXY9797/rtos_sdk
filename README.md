@@ -216,14 +216,40 @@ static int _init_uart0() {
     cfg.rx_buffer = _dev_uart0_rx_buf; // 自动生成的静态 buffer
     return static_cast<int>(DeviceTrait<14>::instance.init(cfg));
 }
-DECLARE_INITCALL(hal::_init_uart0, 5); // 注册到 .initcall.5 section
+SYS_INIT(hal::_init_uart0, INITCALL_LEVEL_PRE_KERNEL_2, 25);
 ```
 
 - **非侵入**：不修改 Zephyr 的 `gen_defines.py`
 - **声明式**：驱动映射 + init 参数在 binding YAML 中声明
 - **自动初始化**：DTS `status = "okay"` → 启动时自动 init，业务层零配置
 
-### 5. 分层命名空间
+### 5. OSAL — 头文件零 RTOS 依赖
+
+`osal.h` 是纯 C++ 接口，不包含任何 RTOS 特定宏。所有 OS 相关的类型定义和常量集中在各 RTOS 的 `osal_types.h` 中：
+
+```
+include/osal/osal.h                  ← 纯 C++，无 #ifdef configMAX_PRIORITIES
+osal/freertos/osal_types.h           ← FreeRTOS 类型 + 常量
+osal/rt-thread/osal_types.h          ← RT-Thread 类型 + 常量
+```
+
+```cpp
+// osal_types.h (freertos) — OS 特定常量在此定义
+namespace osal {
+inline constexpr uint32_t kSemaphoreMaxCount = 0xFFFFU;
+inline constexpr uint8_t  kPriorityMax =
+    static_cast<uint8_t>((configMAX_PRIORITIES > 0) ? (configMAX_PRIORITIES - 1) : 0);
+inline constexpr size_t   kDefaultThreadStackBytes = 1024U;
+}  // namespace osal
+
+// osal.h — 直接使用，无条件编译
+namespace osal {
+inline constexpr Priority kDefaultThreadPriority =
+    static_cast<Priority>(kPriorityMax / 3U);  // 来自 osal_types.h
+}
+```
+
+### 6. 分层命名空间
 
 ```cpp
 namespace hal {      // 硬件抽象层：驱动、寄存器访问
@@ -256,7 +282,7 @@ rtos_sdk/
 ├── embedded/                     # SDK 核心
 │   ├── include/                  # 公共头文件
 │   │   ├── device.h            # DeviceTrait + Device + DT_ORD
-│   │   ├── initcall.h          # DECLARE_INITCALL 宏 + run_initcalls
+│   │   ├── init.h              # init level + SYS_INIT
 │   │   ├── drivers/              # 纯净驱动接口
 │   │   ├── osal/                 # OS 抽象接口
 │   │   ├── arch/                 # 架构抽象
@@ -310,7 +336,7 @@ ninja -C out
 ls out/demo.elf  out/demo.bin  out/demo.hex
 ```
 
-Demo 源码在 `app/demo/main.cc`，展示了 LED 控制 + 按键检测 + FreeRTOS 线程。
+Demo 源码在 `app/demo/main.cc`，面向 GD32F503，展示 UART echo 和 SPI 同步传输。
 
 ---
 
