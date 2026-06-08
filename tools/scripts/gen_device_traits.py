@@ -145,6 +145,10 @@ def parse_yaml_comments(filepath):
         'init_priority': init_priority,
     }
 
+    isr_handler = cxx_raw.get('isr-handler')
+    if isr_handler:
+        cxx['isr_handler'] = isr_handler
+
     # 解析 init-cfg（init() 参数映射）
     init_cfg_raw = cxx_raw.get('init-cfg')
     if isinstance(init_cfg_raw, dict):
@@ -432,6 +436,19 @@ def generate_specializations(dt_data, compat_map):
         }
         if 'init_cfg' in driver:
             spec['init_cfg'] = driver['init_cfg']
+
+        # ISR handler：从 raw args 中找到 irq 参数的位置
+        isr_handler = driver.get('isr_handler')
+        if isr_handler:
+            irq_index = None
+            for i, arg in enumerate(driver['args']):
+                if arg[0] == 'irq':
+                    irq_index = i
+                    break
+            if irq_index is not None:
+                spec['isr_handler'] = isr_handler
+                spec['irq_arg_index'] = irq_index
+
         specs.append(spec)
         used_headers.add(driver['header'])
 
@@ -668,6 +685,23 @@ def write_cc_output(specs, cc_path, dt_data):
         '} // namespace hal',
         '',
     ])
+
+    # ISR handler 生成（namespace 外，extern "C" linkage）
+    for spec in specs:
+        if not spec['enabled'] or 'isr_handler' not in spec:
+            continue
+        irq_index = spec['irq_arg_index']
+        irq_num = spec['args'][irq_index]
+        ord_val = spec['ord']
+        type_name = f'{spec["type"]}<{", ".join(spec["args"])}>'
+        isr_method = spec['isr_handler']
+        alias = spec['alias'] or f'ord{ord_val}'
+        lines.append(f'// {alias} ISR')
+        lines.append(f'extern "C" void IRQ{irq_num}_Handler(void) {{')
+        lines.append(f'    hal::DeviceTrait<{ord_val}>::'
+                      f'instance.{isr_method}();')
+        lines.append('}')
+        lines.append('')
 
     # initcall 注册（namespace 外，C linkage）
     for alias, func_name, level_macro, prio in init_funcs:

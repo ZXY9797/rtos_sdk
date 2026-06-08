@@ -13,6 +13,7 @@ target_include_directories(${MODULE_NAME}
 file(GLOB_RECURSE ARCH_SOURCES
     ./common/*.c
     ./${CONFIG_ARCH}/core/cortex_m/*.c
+    ./${CONFIG_ARCH}/core/cortex_m/*.cc
     ./${CONFIG_ARCH}/core/cortex_m/*.S
 )
 

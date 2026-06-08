@@ -249,7 +249,41 @@ inline constexpr Priority kDefaultThreadPriority =
 }
 ```
 
-### 6. 分层命名空间
+### 7. 异常处理框架 — 可插拔后端 + noinit 故障记录
+
+统一处理 HardFault/MemManage/BusFault/UsageFault，支持帧指针回溯、栈快照、noinit 故障记录持久化：
+
+```cpp
+#include <arch/arm/cortex_m/fault.h>
+
+int main() {
+    hal::fault::bootCheck();  // 检查 noinit 记录，有历史 fault 则通过 LOG 输出
+    // ...
+}
+```
+
+**特性：**
+- **可插拔后端**：`IBackend` 接口，支持 noinit RAM、UART、Flash 等多种记录方式
+- **noinit 故障记录**：热复位后 RAM 保留，启动时自动输出历史 fault
+- **帧指针回溯**：16 级调用栈地址
+- **栈内存快照**：128 字节原始栈数据，可离线 GDB 解析
+- **双路径输出**：异常上下文用 `putc`（安全），正常线程用 `log_write`（统一日志通道）
+- **FreeRTOS 钩子**：栈溢出 / malloc 失败自动捕获
+
+```
+异常发生 → fault.S/naked 入口 → buildRecord() → 遍历后端 onFault()
+                                       ↓
+                              NoinitBackend: 写 .noinit RAM
+                              UartBackend:   putc 输出诊断
+                                       ↓
+                                  死循环 (cpsid i + wfi)
+                                       ↓
+                              热复位 → bootCheck() → log_write 输出历史记录
+```
+
+> 详细设计见 [doc/EXCEPTION_DESIGN.md](doc/EXCEPTION_DESIGN.md)
+
+### 8. 分层命名空间
 
 ```cpp
 namespace hal {      // 硬件抽象层：驱动、寄存器访问

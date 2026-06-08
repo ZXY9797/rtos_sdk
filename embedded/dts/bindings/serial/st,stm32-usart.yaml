@@ -10,3 +10,4 @@ cxx-driver:
   args:
     - node-reg
     - irq
+  isr-handler: isr_handler

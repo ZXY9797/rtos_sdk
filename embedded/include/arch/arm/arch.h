@@ -5,12 +5,10 @@
 #include <arch/arm/exception.h>
 #include <arch/arm/irq.h>
 #include <arch/arm/asm_inline.h>
-#include <arch/common/sys_bitops.h>
 
 #ifdef CONFIG_CPU_CORTEX_M
 #include <arch/arm/cortex_m/cpu.h>
 #include <arch/arm/cortex_m/memory_map.h>
-#include <arch/common/sys_io.h>
 #elif defined(CONFIG_CPU_AARCH32_CORTEX_R) || defined(CONFIG_CPU_AARCH32_CORTEX_A)
 #include <arch/arm/cortex_a_r/cpu.h>
 #include <arch/arm/cortex_a_r/sys_io.h>

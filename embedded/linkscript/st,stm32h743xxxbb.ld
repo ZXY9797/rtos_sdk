@@ -25,7 +25,8 @@ SECTIONS
     {
         . = ALIGN(4);
         _vector_start = .;
-        KEEP(*(.isr_vector))
+        KEEP(*(.exc_vector_table))
+        KEEP(*(".exc_vector_table.*"))
         _vector_end = .;
         . = ALIGN(4);
     } > FLASH

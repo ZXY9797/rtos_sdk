@@ -1,6 +1,5 @@
 #include <drivers/uart.h>
 #include <drivers/dma.h>
-#include <arch/arch_interface.h>
 #include <irq.h>
 
 #include "gd32_regs.h"
@@ -45,10 +44,6 @@ void usart_clock_enable(uintptr_t base) {
     }
 }
 
-void uart_isr_dispatch(const void *arg) {
-    static_cast<UartBase *>(const_cast<void *>(arg))->isr_handler();
-}
-
 } // anonymous namespace
 
 Status UartBase::init(const UartConfig &config) {
@@ -85,8 +80,7 @@ Status UartBase::init(const UartConfig &config) {
     regs->CTL2 |= CTL2_DENT | CTL2_DENR;
     regs->CTL0 |= CTL0_UEN;
 
-    arch_irq_connect_dynamic(m_irq, 0, uart_isr_dispatch, this, 0);
-    arch_irq_enable(m_irq);
+    hal::Irq::enable(m_irq);
 
     m_initialized = true;
     return Status::Ok;

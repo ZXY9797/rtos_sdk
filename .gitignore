@@ -61,4 +61,3 @@ build/
 compile_commands.json
 *.sh
 *.DS_Store
-.claude/out_gd32/

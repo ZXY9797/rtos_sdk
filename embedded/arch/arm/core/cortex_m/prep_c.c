@@ -3,8 +3,8 @@
 #include <cmsis_core.h>
 #include <sys/barrier.h>
 #include <arch/cpu.h>
-#include <arch/common/xip.h>
 #include <sct_load.h>
+#include <linker/linker-def.h>
 
 #ifdef CONFIG_CPU_CORTEX_M_HAS_VTOR
 
@@ -29,7 +29,7 @@ void __weak relocate_vector_table(void)
 
 	arch_early_memcpy(_sram_vector_start, _vector_start, vector_size);
 #endif
-	// SCB->VTOR = VECTOR_ADDRESS & VTOR_MASK;
+	SCB->VTOR = VECTOR_ADDRESS & VTOR_MASK;
 	barrier_dsync_fence_full();
 	barrier_isync_fence_full();
 }

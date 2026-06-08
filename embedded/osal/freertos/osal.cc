@@ -899,3 +899,19 @@ extern "C" void vApplicationGetTimerTaskMemory(StaticTask_t** ppxTimerTaskTCBBuf
     *ppxTimerTaskStackBuffer = timer_task_stack;
     *pulTimerTaskStackSize = configTIMER_TASK_STACK_DEPTH;
 }
+
+#include <arch/arm/cortex_m/fault.h>
+
+extern "C" void vApplicationStackOverflowHook(TaskHandle_t, char *pcTaskName)
+{
+    hal::fault::print("\nSTACK OVERFLOW: ");
+    hal::fault::print(pcTaskName ? pcTaskName : "?");
+    hal::fault::putc('\n');
+    for (;;) { __asm__("cpsid i"); __asm__("wfi"); }
+}
+
+extern "C" void vApplicationMallocFailedHook()
+{
+    hal::fault::print("\nMALLOC FAILED\n");
+    for (;;) { __asm__("cpsid i"); __asm__("wfi"); }
+}

@@ -243,6 +243,15 @@ source "embedded/arch/Kconfig"
 source "embedded/drivers/Kconfig"
 source "embedded/modules/Kconfig"
 source "embedded/osal/Kconfig"
+
+config ASSERT
+    bool "Enable assertion checks"
+    default n
+
+config ASSERT_LEVEL
+    int "Assertion level (1 or 2)"
+    default 2
+    depends on ASSERT
 source "embedded/soc/Kconfig"
 # zephyr-keep-sorted-stop
 

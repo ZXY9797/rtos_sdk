@@ -4,6 +4,7 @@
 #include <init.h>
 #include <log.h>
 #include <osal.h>
+#include <arch/arm/cortex_m/fault.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -76,6 +77,7 @@ SYS_INIT(demo_application_init, INITCALL_LEVEL_APPLICATION, 80);
 int main(void)
 {
     (void)log_uart(device_get(uart0), LogLevel::Info);
+    hal::fault::bootCheck();
 
     LOGI("demo", "rtos_sdk demo: initcall + key + led + uart console + PeriodicThread");
     LOGI("demo", "LED blinks at 1Hz, key0 forces LED on and logs edge changes");

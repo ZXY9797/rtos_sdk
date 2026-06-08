@@ -22,7 +22,8 @@ SECTIONS
     {
         . = ALIGN(4);
         _vector_start = .;
-        KEEP(*(.isr_vector))
+        KEEP(*(.exc_vector_table))
+        KEEP(*(".exc_vector_table.*"))
         _vector_end = .;
         . = ALIGN(4);
     } > FLASH
@@ -126,15 +127,6 @@ SECTIONS
         . = ALIGN(4);
     } > FLASH
     __rodata_region_end = .;
-
-    irq_info : ALIGN_WITH_INPUT
-    {
-        . = ALIGN(4);
-        __static_irq_info_start = .;
-        KEEP(*(SORT(.static_irq_info*)));
-        __static_irq_info_end = .;
-        . = ALIGN(4);
-    } > FLASH
 
     . = ALIGN(_region_min_align);
     . = ALIGN( 1 << LOG2CEIL(__rodata_region_end - ADDR(rom_start)));

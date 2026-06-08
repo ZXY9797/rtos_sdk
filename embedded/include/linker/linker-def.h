@@ -4,6 +4,10 @@
 #include <sys/util.h>
 #include <devicetree.h>
 
+/* Vector table boundaries */
+extern char _vector_start[];
+extern char _vector_end[];
+
 /* BSS boundaries — cleared by sct_load() at startup */
 extern char __bss_start[];
 extern char __bss_end[];

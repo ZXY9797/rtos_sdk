@@ -27,8 +27,6 @@
 #define __ASSERT_ON 0
 #endif
 
-// TODO
-static inline void assert_print(const char *fmt, ...) {};
 /* Wrapper around printk to avoid including printk.h in assert.h */
 void __printf_like(1, 2) assert_print(const char *fmt, ...);
 

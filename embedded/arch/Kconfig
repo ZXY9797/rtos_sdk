@@ -22,8 +22,6 @@ config ARCH_IS_SET
 
 menu "General Architecture Options"
 
-rsource "common/Kconfig"
-
 module = ARCH
 module-str = arch
 

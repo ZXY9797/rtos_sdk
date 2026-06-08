@@ -18,11 +18,15 @@ dt_get_soc_name(soc_name)
 set(LINKER_SCRIPT ${BSP_DIR}/linkscript/${soc_name}.ld)
 message(STATUS "Link script: ${LINKER_SCRIPT}")
 
+# -u Default_Handler: 强制链接器从 libarch.a 中拉入 vector_table.S.obj
+# （向量表 section 无外部引用，--gc-sections 会将其丢弃）
+set(VECTOR_TABLE_LINK_FLAG "-Wl,-u,Default_Handler")
+
 set(CMAKE_C_LINK_FLAGS
-    "${CMAKE_EXE_LINKER_FLAGS} -T ${LINKER_SCRIPT} -Wl,-Map=${PROJECT_BINARY_DIR}/${PROJECT_NAME}.map -Wl,--gc-sections,--print-memory-usage"
+    "${CMAKE_EXE_LINKER_FLAGS} -T ${LINKER_SCRIPT} -Wl,-Map=${PROJECT_BINARY_DIR}/${PROJECT_NAME}.map -Wl,--gc-sections,--print-memory-usage ${VECTOR_TABLE_LINK_FLAG}"
 )
 set(CMAKE_CXX_LINK_FLAGS
-    "${CMAKE_EXE_LINKER_FLAGS} -T ${LINKER_SCRIPT} -Wl,-Map=${PROJECT_BINARY_DIR}/${PROJECT_NAME}.map -Wl,--gc-sections,--print-memory-usage"
+    "${CMAKE_EXE_LINKER_FLAGS} -T ${LINKER_SCRIPT} -Wl,-Map=${PROJECT_BINARY_DIR}/${PROJECT_NAME}.map -Wl,--gc-sections,--print-memory-usage ${VECTOR_TABLE_LINK_FLAG}"
 )
 
 # 搜索规则

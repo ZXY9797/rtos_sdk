@@ -1,13 +1,8 @@
 #include <drivers/uart.h>
 #include <drivers_generated.h>
-#include <arch/arch_interface.h>
 #include <irq.h>
 
 namespace hal {
-
-static void uart_isr_dispatch(const void *arg) {
-    static_cast<UartBase *>(const_cast<void *>(arg))->isr_handler();
-}
 
 // USART 寄存器结构体（映射 STM32H7 USART）
 struct UartRegs {
@@ -75,8 +70,7 @@ Status UartBase::init(const UartConfig &config) {
     regs->ICR = ICR_PECF | ICR_FECF | ICR_NCF | ICR_ORECF | ICR_IDLECF | ICR_TCCF;
     regs->CR1 |= CR1_RXNEIE | CR1_TE | CR1_RE | CR1_UE;
 
-    arch_irq_connect_dynamic(m_irq, 0, uart_isr_dispatch, this, 0);
-    arch_irq_enable(m_irq);
+    hal::Irq::enable(m_irq);
 
     m_initialized = true;
     return Status::Ok;

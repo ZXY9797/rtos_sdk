@@ -1,6 +1,5 @@
 #ifndef ZEPHYR_INCLUDE_ARCH_ARM_IRQ_H_
 #define ZEPHYR_INCLUDE_ARCH_ARM_IRQ_H_
-#include <sw_isr_table.h>
 #include <stdbool.h>
 
 #ifdef _ASMLANGUAGE
@@ -51,7 +50,6 @@ void z_soc_irq_eoi(unsigned int irq);
 
 #endif
 
-/* Flags for use with IRQ_CONNECT() */
 /**
  * Set this interrupt up as a zero-latency IRQ. If CONFIG_ZERO_LATENCY_LEVELS
  * is 1 it has a fixed hardware priority level (discarding what was supplied
@@ -69,34 +67,7 @@ void z_soc_irq_eoi(unsigned int irq);
 #define ZERO_LATENCY_LEVELS 1
 #endif
 
-#define _CHECK_PRIO(priority_p, flags_p) \
-	BUILD_ASSERT(((flags_p & IRQ_ZERO_LATENCY) && \
-		      ((ZERO_LATENCY_LEVELS == 1) || \
-		       (priority_p < ZERO_LATENCY_LEVELS))) || \
-		     (priority_p <= IRQ_PRIO_LOWEST), \
-		     "Invalid interrupt priority. Values must not exceed IRQ_PRIO_LOWEST");
-
 #endif /* CONFIG_CPU_CORTEX_M */
-
-/*
- *
- */
-#define ARCH_IRQ_CONNECT(irq_p, priority_p, isr_p, isr_param_p, flags_p) \
-{ \
-	BUILD_ASSERT(!(flags_p & IRQ_ZERO_LATENCY), \
-			"ZLI interrupts must be registered using IRQ_DIRECT_CONNECT()"); \
-	_CHECK_PRIO(priority_p, flags_p) \
-	Z_ISR_DECLARE(irq_p, 0, isr_p, isr_param_p); \
-	z_arm_irq_priority_set(irq_p, priority_p, flags_p); \
-}
-
-#define ARCH_IRQ_DIRECT_CONNECT(irq_p, priority_p, isr_p, flags_p) \
-{ \
-	BUILD_ASSERT(IS_ENABLED(CONFIG_ZERO_LATENCY_IRQS) || !(flags_p & IRQ_ZERO_LATENCY), \
-			"ZLI interrupt registered but feature is disabled"); \
-	_CHECK_PRIO(priority_p, flags_p) \
-	z_arm_irq_priority_set(irq_p, priority_p, flags_p); \
-}
 
 #ifdef __cplusplus
 }
