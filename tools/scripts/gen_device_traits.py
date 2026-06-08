@@ -558,7 +558,7 @@ def write_cc_output(specs, cc_path, dt_data):
     # initcall 注册（namespace 外，C linkage）
     for alias, func_name in init_funcs:
         lines.append(
-            f'DECLARE_INITCALL(hal::{func_name}, 5);'
+            f'DECLARE_INITCALL(hal::{func_name}, INITCALL_LEVEL_DRIVER);'
         )
 
     lines.append('')
