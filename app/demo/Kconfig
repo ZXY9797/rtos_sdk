@@ -1,6 +1,7 @@
-menu "Demo APP Configure"
+menu "Application Configuration"
 
-config DEMO_APP_CONFIG_TEST
-    bool "DEMO_APP_CONFIG_TEST.."
+config APP_NAME
+    string "Application name"
+    default "demo"
 
 endmenu

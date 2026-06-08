@@ -4,7 +4,7 @@
 #include <sys/util.h>
 #include <devicetree.h>
 
-/* Used by arch_bss_zero or arch-specific implementation */
+/* BSS boundaries — cleared by sct_load() at startup */
 extern char __bss_start[];
 extern char __bss_end[];
 

@@ -3,7 +3,6 @@
 #include <cmsis_core.h>
 #include <sys/barrier.h>
 #include <arch/cpu.h>
-#include <arch/common/init.h>
 #include <arch/common/xip.h>
 #include <sct_load.h>
 

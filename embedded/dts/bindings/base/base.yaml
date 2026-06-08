@@ -21,6 +21,49 @@ properties:
       - "fail"
       - "fail-sss"
 
+  init-priority:
+    type: int
+    description: |
+      Optional auto-initialization priority for generated C++ initcalls.
+
+      The value is consumed by tools/scripts/gen_device_traits.py when a
+      matching binding has a cxx-driver init-cfg section. It overrides the
+      binding's cxx-driver init-priority for this specific devicetree node.
+
+      Lower numbers run earlier within the same init level. The current linker
+      scripts accept priorities from 0 to 999. If omitted, the binding default
+      is used; if the binding also omits it, priority 25 is used.
+
+  init-level:
+    type: string
+    description: |
+      Optional auto-initialization level for generated C++ initcalls.
+
+      The value is consumed by tools/scripts/gen_device_traits.py when a
+      matching binding has a cxx-driver init-cfg section. It overrides the
+      binding's cxx-driver init-level for this specific devicetree node.
+
+      Supported values are:
+
+        - "early": earliest hardware setup
+        - "pre-kernel-1": core pre-kernel infrastructure
+        - "pre-kernel-2": bus controllers and low-level HAL drivers
+        - "pre-kernel-3": devices that depend on PRE_KERNEL_2 bus/HAL drivers
+          but do not need RTOS services; runs after PRE_KERNEL_2 and before
+          osal_init()
+        - "post-kernel": drivers that need RTOS services
+        - "application": application-level initialization
+
+      If omitted, the binding default is used; if the binding also omits it,
+      "pre-kernel-2" is used.
+    enum:
+      - "early"
+      - "pre-kernel-1"
+      - "pre-kernel-2"
+      - "pre-kernel-3"
+      - "post-kernel"
+      - "application"
+
   compatible:
     type: string-array
     required: true

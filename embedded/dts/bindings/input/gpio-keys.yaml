@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  GPIO-connected keys or buttons.
+
+  Each key is defined in a child node of the gpio-keys node. The child node
+  exposes a single GPIO as a generated C++ GpioPort device, matching the
+  gpio-leds style used by board demos.
+
+compatible: "gpio-keys"
+
+child-binding:
+  description: GPIO key child node
+
+  properties:
+    gpios:
+      type: phandle-array
+      required: true
+
+    label:
+      type: string
+
+cxx-driver:
+  template: GpioPort
+  header: drivers/gpio.h
+  args:
+    - phandle-reg: gpios
+    - field: gpios/pin
+    - field: gpios/flags

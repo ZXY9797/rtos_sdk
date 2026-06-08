@@ -1,9 +1,0 @@
-# GD32F503 demo application Kconfig
-
-menu "Application Configuration"
-
-config APP_NAME
-    string "Application name"
-    default "demo_gd32"
-
-endmenu

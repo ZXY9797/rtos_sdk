@@ -121,6 +121,10 @@ SECTIONS
             KEEP(*(SORT(.z_init_PRE_KERNEL_2_P_?_*)));
             KEEP(*(SORT(.z_init_PRE_KERNEL_2_P_??_*)));
             KEEP(*(SORT(.z_init_PRE_KERNEL_2_P_???_*)));
+        __init_PRE_KERNEL_3_start = .;
+            KEEP(*(SORT(.z_init_PRE_KERNEL_3_P_?_*)));
+            KEEP(*(SORT(.z_init_PRE_KERNEL_3_P_??_*)));
+            KEEP(*(SORT(.z_init_PRE_KERNEL_3_P_???_*)));
         __init_POST_KERNEL_start = .;
             KEEP(*(SORT(.z_init_POST_KERNEL_P_?_*)));
             KEEP(*(SORT(.z_init_POST_KERNEL_P_??_*)));
@@ -309,20 +313,6 @@ SECTIONS
         KEEP(*(.last_section))
     } > FLASH
 
-    /* C++ Initcall sections */
-    preinitcall_table :
-    {
-        PROVIDE_HIDDEN(__preinitcall_start = .);
-        KEEP(*(SORT_BY_NAME(.preinitcall.*)))
-        PROVIDE_HIDDEN(__preinitcall_end = .);
-    } > FLASH
-
-    initcall_table :
-    {
-        PROVIDE_HIDDEN(__initcall_start = .);
-        KEEP(*(SORT_BY_NAME(.initcall.*)))
-        PROVIDE_HIDDEN(__initcall_end = .);
-    } > FLASH
     _flash_used = LOADADDR(.last_section) + SIZEOF(.last_section) - __rom_region_start;
 
     bss (NOLOAD) : ALIGN_WITH_INPUT

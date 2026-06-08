@@ -1,67 +1,89 @@
 /dts-v1/;
-#include <st/h7/stm32h743Xi.dtsi>
-#include <st/h7/pinctrl/stm32h743vitx-pinctrl.dtsi>
+
+#include <arm/gd/gd32f50x.dtsi>
+#include <dt-bindings/gpio/gpio.h>
 
 / {
-    compatible = "st,stm32h743xx";
+    compatible = "gd,gd32f503";
+    model = "GD32F503 Demo Board";
+
+    chosen {
+        zephyr,console = &usart0;
+        zephyr,shell-uart = &usart0;
+    };
 
     aliases {
         led0 = &green_led;
-        sw0 = &key_pc13;
-        console = &usart1;
+        key0 = &user_key;
+        uart0 = &usart0;
+        spi0 = &spi0;
     };
 
-    chosen {
-        sram = &sram0;
-        flash = &flash0;
-        dtcm = &dtcm;
-        itcm = &itcm;
-    };
-
-    leds: leds {
+    leds {
         compatible = "gpio-leds";
-
-        green_led: led_0 {
-            gpios = <&gpioe 3 GPIO_ACTIVE_HIGH>;
-            label = "User LD1";
+        green_led: green_led {
+            gpios = <&gpioa 5 0>;
+            label = "Green LED";
         };
+    };
 
-        key_pc13: led_1 {
-            gpios = <&gpioc 13 GPIO_ACTIVE_LOW>;
+    keys {
+        compatible = "gpio-keys";
+        user_key: user_key {
+            gpios = <&gpioa 0 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
             label = "User Key";
         };
     };
-};
 
-&clk_hse {
-    clock-frequency = <DT_FREQ_M(25)>;
-    status = "okay";
-};
+    soc {
+        usart0: usart@40013800 {
+            compatible = "gd,gd32-usart";
+            reg = <0x40013800 0x400>;
+            interrupts = <37 0>;
+            status = "okay";
+            current-speed = <115200>;
+            label = "USART0";
+        };
 
-&pll {
-    div-m = <5>;
-    mul-n = <192>;
-    div-p = <2>;
-    div-q = <2>;
-    div-r = <2>;
-    clocks = <&clk_hse>;
-    status = "okay";
-};
+        spi0: spi@40013000 {
+            compatible = "gd,gd32-spi";
+            reg = <0x40013000 0x400>;
+            interrupts = <35 0>;
+            status = "okay";
+            spi-max-frequency = <1000000>;
+            label = "SPI0";
+            #address-cells = <1>;
+            #size-cells = <0>;
+        };
 
-&rcc {
-    clocks = <&pll>;
-    clock-frequency = <DT_FREQ_M(480)>;
-    d1cpre = <1>;
-    hpre = <2>;
-    d1ppre = <2>;
-    d2ppre1 = <2>;
-    d2ppre2 = <2>;
-    d3ppre = <2>;
-};
+        dma0: dma@40020000 {
+            compatible = "gd,gd32-dma";
+            reg = <0x40020000 0x400>;
+            interrupts = <11 0>, <12 0>, <13 0>, <14 0>, <15 0>, <16 0>, <17 0>;
+            label = "DMA0";
+            dma-channels = <7>;
+            mux-channels = <7>;
+            #dma-cells = <2>;
+        };
 
-&usart1 {
-    pinctrl-0 = <&usart3_tx_pd8 &usart3_rx_pd9>;
-    pinctrl-names = "default";
-    current-speed = <115200>;
-    status = "okay";
+        dma1: dma@40020400 {
+            compatible = "gd,gd32-dma";
+            reg = <0x40020400 0x400>;
+            interrupts = <56 0>, <57 0>, <58 0>, <59 0>, <68 0>, <69 0>, <70 0>;
+            label = "DMA1";
+            dma-channels = <7>;
+            mux-channels = <5>;
+            #dma-cells = <2>;
+        };
+
+        gpioa: gpio@40010800 {
+            compatible = "gd,gd32-gpio";
+            reg = <0x40010800 0x400>;
+            interrupts = <0 0>;
+            label = "GPIOA";
+            gpio-controller;
+            #gpio-cells = <2>;
+            ngpios = <16>;
+        };
+    };
 };

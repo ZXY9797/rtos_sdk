@@ -1,44 +1,98 @@
-/**
- * @brief 初始化系统声明 (最小化版本)
- *
- * 供 device.h 等 arch 层代码使用。
- * 新代码应使用 init.h 中的 C++ 接口。
- */
+#pragma once
 
-#ifndef RTOS_SDK_INCLUDE_INIT_H_
-#define RTOS_SDK_INCLUDE_INIT_H_
-
-#include <stdint.h>
+#include <toolchain.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/** 初始化级别 */
-#define PRE_KERNEL_1  0
-#define PRE_KERNEL_2  1
-#define POST_KERNEL   2
-#define APPLICATION   3
+typedef int (*initcall_fn_t)(void);
 
-/** 初始化优先级 */
-#define CONFIG_APPLICATION_INIT_PRIORITY 90
-#define CONFIG_KERNEL_INIT_PRIORITY 40
-
-struct init_entry {
-    int (*init)(void);
+struct initcall_entry {
+	initcall_fn_t fn;
 };
 
-/**
- * @brief 简化的 SYS_INIT 宏
+/*
+ * Initcall levels.
  *
- * 简化版本：定义一个调用包装器，可在启动时手动调用。
- * 后续可改为段注册机制。
+ * PRE_KERNEL levels run before osal_init(), so they must not use RTOS services.
+ *   EARLY        - earliest hardware setup
+ *   PRE_KERNEL_1 - core pre-kernel infrastructure
+ *   PRE_KERNEL_2 - low-level HAL/bus controllers, such as UART/SPI/DMA
+ *   PRE_KERNEL_3 - devices that depend on PRE_KERNEL_2 drivers but do not
+ *                  need RTOS services, such as simple SPI/I2C sensors
+ *
+ * POST_KERNEL levels run after osal_init().
+ *   POST_KERNEL  - drivers that need RTOS services
+ *   APPLICATION  - application-level initialization
  */
-#define SYS_INIT(init_fn, level, prio) \
-    __attribute__((used)) static void _sys_init_##init_fn(void) { (void)init_fn(); }
+
+enum init_level {
+	INITCALL_LEVEL_EARLY = 0,
+	INITCALL_LEVEL_PRE_KERNEL_1,
+	INITCALL_LEVEL_PRE_KERNEL_2,
+	INITCALL_LEVEL_PRE_KERNEL_3,
+	INITCALL_LEVEL_POST_KERNEL,
+	INITCALL_LEVEL_APPLICATION,
+	INITCALL_LEVEL_COUNT,
+};
+
+/*
+ * Section name: .z_init_<LEVEL>_P_<PRIORITY>_<COUNTER>
+ * The linker scripts keep and sort these sections within each init level.
+ */
+#define _STRINGIFY(x) #x
+#define _STRINGIFY2(x) _STRINGIFY(x)
+
+#define _LEVEL_NAME_FOR_INITCALL_LEVEL_EARLY         "EARLY"
+#define _LEVEL_NAME_FOR_INITCALL_LEVEL_PRE_KERNEL_1  "PRE_KERNEL_1"
+#define _LEVEL_NAME_FOR_INITCALL_LEVEL_PRE_KERNEL_2  "PRE_KERNEL_2"
+#define _LEVEL_NAME_FOR_INITCALL_LEVEL_PRE_KERNEL_3  "PRE_KERNEL_3"
+#define _LEVEL_NAME_FOR_INITCALL_LEVEL_POST_KERNEL   "POST_KERNEL"
+#define _LEVEL_NAME_FOR_INITCALL_LEVEL_APPLICATION   "APPLICATION"
+#define _LEVEL_NAME_FOR(l)  _LEVEL_NAME_FOR2(l)
+#define _LEVEL_NAME_FOR2(l) _LEVEL_NAME_FOR_ ## l
+
+#define _INITCALL_SECTION(level, prio, counter)                              \
+	".z_init_" _LEVEL_NAME_FOR(level) "_P_" _STRINGIFY2(prio) "_"          \
+	_STRINGIFY2(counter)
+
+#define _INITCALL_VAR2(counter)  _initcall_entry_##counter
+#define _INITCALL_VAR(counter)   _INITCALL_VAR2(counter)
+
+#define _SYS_INIT_ENTRY_WITH_ID(fn, level, prio, id)                         \
+	static const Z_DECL_ALIGN(struct initcall_entry)                         \
+		__attribute__((section(_INITCALL_SECTION(level, prio, id)))) __used \
+		_INITCALL_VAR(id) = { reinterpret_cast<initcall_fn_t>(fn) }
+
+#define _SYS_INIT_ENTRY(fn, level, prio)                                     \
+	_SYS_INIT_ENTRY_WITH_ID(fn, level, prio, __COUNTER__)
+
+/* Default priorities. */
+#define _INITCALL_PRIO_DRIVER  25
+#define _INITCALL_PRIO_APP     50
+
+/**
+ * SYS_INIT helper.
+ *
+ * Usage:
+ *   SYS_INIT(my_init);
+ *   SYS_INIT(my_init, INITCALL_LEVEL_PRE_KERNEL_2);
+ *   SYS_INIT(my_init, INITCALL_LEVEL_PRE_KERNEL_3, 25);
+ */
+#define SYS_INIT_1(fn) \
+	_SYS_INIT_ENTRY(fn, INITCALL_LEVEL_PRE_KERNEL_2, _INITCALL_PRIO_DRIVER)
+
+#define SYS_INIT_2(fn, level) \
+	_SYS_INIT_ENTRY(fn, level, _INITCALL_PRIO_DRIVER)
+
+#define SYS_INIT_3(fn, level, prio) \
+	_SYS_INIT_ENTRY(fn, level, prio)
+
+/* Variadic dispatch */
+#define SYS_INIT_GET(_1, _2, _3, NAME, ...) NAME
+#define SYS_INIT(...) SYS_INIT_GET(__VA_ARGS__, SYS_INIT_3, SYS_INIT_2, SYS_INIT_1)(__VA_ARGS__)
 
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* RTOS_SDK_INCLUDE_INIT_H_ */

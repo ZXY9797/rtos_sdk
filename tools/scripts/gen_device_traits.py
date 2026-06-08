@@ -18,6 +18,46 @@ import re
 import sys
 import yaml
 
+DEFAULT_INIT_PRIORITY = 25
+DEFAULT_INIT_LEVEL = 'pre-kernel-2'
+
+INIT_LEVELS = {
+    'early': 'INITCALL_LEVEL_EARLY',
+    'pre-kernel-1': 'INITCALL_LEVEL_PRE_KERNEL_1',
+    'pre-kernel-2': 'INITCALL_LEVEL_PRE_KERNEL_2',
+    'pre-kernel-3': 'INITCALL_LEVEL_PRE_KERNEL_3',
+    'post-kernel': 'INITCALL_LEVEL_POST_KERNEL',
+    'application': 'INITCALL_LEVEL_APPLICATION',
+}
+
+
+def normalize_init_level(value):
+    if value is None:
+        value = DEFAULT_INIT_LEVEL
+    if not isinstance(value, str):
+        raise ValueError(f'init-level must be a string, got {value!r}')
+
+    key = value.strip().lower().replace('_', '-')
+    if key.startswith('initcall-level-'):
+        key = key[len('initcall-level-'):]
+
+    aliases = {
+        'prekernel1': 'pre-kernel-1',
+        'prekernel2': 'pre-kernel-2',
+        'prekernel3': 'pre-kernel-3',
+        'pre-kernel1': 'pre-kernel-1',
+        'pre-kernel2': 'pre-kernel-2',
+        'pre-kernel3': 'pre-kernel-3',
+        'postkernel': 'post-kernel',
+    }
+    key = aliases.get(key, key)
+
+    if key not in INIT_LEVELS:
+        valid = ', '.join(sorted(INIT_LEVELS))
+        raise ValueError(f'unknown init-level {value!r}; expected one of: {valid}')
+
+    return key
+
 
 # ─── 解析 binding YAML 的 cxx-driver 节 ────────────────────────────────
 
@@ -49,9 +89,24 @@ def parse_yaml_comments(filepath):
     template = cxx_raw.get('template')
     header = cxx_raw.get('header')
     raw_args = cxx_raw.get('args', [])
+    init_level = cxx_raw.get('init-level', DEFAULT_INIT_LEVEL)
+    init_priority = cxx_raw.get('init-priority', DEFAULT_INIT_PRIORITY)
 
     if not template or not header:
         return None, None
+
+    try:
+        init_level = normalize_init_level(init_level)
+    except ValueError as e:
+        raise ValueError(f'invalid init-level in {filepath}: {e}')
+
+    try:
+        init_priority = int(init_priority)
+    except (TypeError, ValueError):
+        raise ValueError(f'invalid init-priority in {filepath}: {init_priority!r}')
+
+    if init_priority < 0 or init_priority > 999:
+        raise ValueError(f'init-priority out of range in {filepath}: {init_priority}')
 
     args = []
     for item in raw_args:
@@ -82,7 +137,13 @@ def parse_yaml_comments(filepath):
             elif key == 'literal':
                 args.append(('literal', val))
 
-    cxx = {'template': template, 'header': header, 'args': args}
+    cxx = {
+        'template': template,
+        'header': header,
+        'args': args,
+        'init_level': init_level,
+        'init_priority': init_priority,
+    }
 
     # 解析 init-cfg（init() 参数映射）
     init_cfg_raw = cxx_raw.get('init-cfg')
@@ -199,6 +260,14 @@ def parse_generated_header(filepath):
             continue
         direct_props[(m.group(1), prop)] = int(m.group(3))
 
+    # 直接字符串属性，例如 node_P_init_level "pre-kernel-3"
+    string_prop_re = re.compile(
+        r'^#define\s+(DT_N_(?:S_\w+)+)_P_(\w+)\s+"([^"]*)"',
+        re.MULTILINE)
+    string_props = {}
+    for m in string_prop_re.finditer(content):
+        string_props[(m.group(1), m.group(2))] = m.group(3)
+
     # alias
     alias_re = re.compile(
         r'^#define\s+DT_N_ALIAS_(\w+)\s+(DT_N_(?:S_\w+)+)', re.MULTILINE)
@@ -240,6 +309,7 @@ def parse_generated_header(filepath):
         'phandles': phandles,
         'prop_fields': prop_fields,
         'direct_props': direct_props,
+        'string_props': string_props,
         'aliases': aliases,
         'parent_compat': parent_compat,
         'node_status': node_status,
@@ -357,6 +427,8 @@ def generate_specializations(dt_data, compat_map):
             'header': driver['header'],
             'enabled': enabled,
             'node_id': node_id,
+            'init_level': driver.get('init_level', DEFAULT_INIT_LEVEL),
+            'init_priority': driver.get('init_priority', DEFAULT_INIT_PRIORITY),
         }
         if 'init_cfg' in driver:
             spec['init_cfg'] = driver['init_cfg']
@@ -482,19 +554,56 @@ def _resolve_init_cfg_field(spec, field_name, field_def, dt_data):
     return None, None
 
 
+def resolve_init_priority(spec, dt_data):
+    """Return DTS node init-priority override, or the binding default."""
+    node_id = spec['node_id']
+    prop_key = (node_id, 'init_priority')
+    if prop_key in dt_data.get('direct_props', {}):
+        prio = dt_data['direct_props'][prop_key]
+    else:
+        prio = spec.get('init_priority', DEFAULT_INIT_PRIORITY)
+
+    try:
+        prio = int(prio)
+    except (TypeError, ValueError):
+        raise ValueError(f'invalid init-priority for {node_id}: {prio!r}')
+
+    if prio < 0 or prio > 999:
+        raise ValueError(f'init-priority out of range for {node_id}: {prio}')
+
+    return prio
+
+
+def resolve_init_level(spec, dt_data):
+    """Return DTS node init-level override, or the binding default."""
+    node_id = spec['node_id']
+    prop_key = (node_id, 'init_level')
+    if prop_key in dt_data.get('string_props', {}):
+        level = dt_data['string_props'][prop_key]
+    else:
+        level = spec.get('init_level', DEFAULT_INIT_LEVEL)
+
+    try:
+        level = normalize_init_level(level)
+    except ValueError as e:
+        raise ValueError(f'invalid init-level for {node_id}: {e}')
+
+    return INIT_LEVELS[level]
+
+
 def write_cc_output(specs, cc_path, dt_data):
     """生成 drivers_generated.cc — 实例定义 + initcall 注册。"""
     lines = [
         '// Auto-generated by gen_device_traits.py. DO NOT EDIT.',
         '',
         '#include <drivers_generated.h>',
-        '#include <initcall.h>',
+        '#include <init.h>',
         '',
         'namespace hal {',
         '',
     ]
 
-    init_funcs = []  # (alias, func_name)
+    init_funcs = []  # (alias, func_name, level_macro, priority)
 
     for spec in specs:
         if not spec['enabled']:
@@ -548,7 +657,12 @@ def write_cc_output(specs, cc_path, dt_data):
             lines.append('}')
             lines.append('')
 
-            init_funcs.append((alias, func_name))
+            init_funcs.append((
+                alias,
+                func_name,
+                resolve_init_level(spec, dt_data),
+                resolve_init_priority(spec, dt_data),
+            ))
 
     lines.extend([
         '} // namespace hal',
@@ -556,9 +670,9 @@ def write_cc_output(specs, cc_path, dt_data):
     ])
 
     # initcall 注册（namespace 外，C linkage）
-    for alias, func_name in init_funcs:
+    for alias, func_name, level_macro, prio in init_funcs:
         lines.append(
-            f'DECLARE_INITCALL(hal::{func_name}, INITCALL_LEVEL_DRIVER);'
+            f'SYS_INIT(hal::{func_name}, {level_macro}, {prio});'
         )
 
     lines.append('')

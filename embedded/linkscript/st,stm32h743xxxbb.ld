@@ -65,6 +65,10 @@ SECTIONS
             KEEP(*(SORT(.z_init_PRE_KERNEL_2_P_?_*)));
             KEEP(*(SORT(.z_init_PRE_KERNEL_2_P_??_*)));
             KEEP(*(SORT(.z_init_PRE_KERNEL_2_P_???_*)));
+        __init_PRE_KERNEL_3_start = .;
+            KEEP(*(SORT(.z_init_PRE_KERNEL_3_P_?_*)));
+            KEEP(*(SORT(.z_init_PRE_KERNEL_3_P_??_*)));
+            KEEP(*(SORT(.z_init_PRE_KERNEL_3_P_???_*)));
         __init_POST_KERNEL_start = .;
             KEEP(*(SORT(.z_init_POST_KERNEL_P_?_*)));
             KEEP(*(SORT(.z_init_POST_KERNEL_P_??_*)));

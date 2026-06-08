@@ -27,7 +27,11 @@
 
 // <o>the stack size of main thread<1-4086>
 //  <i>Default: 512
-#define RT_MAIN_THREAD_STACK_SIZE     256
+#ifdef CONFIG_MAIN_STACK_SIZE
+#define RT_MAIN_THREAD_STACK_SIZE     CONFIG_MAIN_STACK_SIZE
+#else
+#define RT_MAIN_THREAD_STACK_SIZE     1024
+#endif
 #define RT_MAIN_THREAD_PRIORITY       (RT_THREAD_PRIORITY_MAX / 3)
 
 // </h>
@@ -59,10 +63,7 @@
 
 // <e>Software timers Configuration
 // <i> Enables user timers
-#define RT_USING_TIMER_SOFT         0
-#if RT_USING_TIMER_SOFT == 0
-    #undef RT_USING_TIMER_SOFT
-#endif
+#define RT_USING_TIMER_SOFT         1
 // <o>The priority level of timer thread <0-31>
 //  <i>Default: 4
 #define RT_TIMER_THREAD_PRIO        4
@@ -82,7 +83,7 @@
 // </c>
 // <c1>Using Event
 //  <i>Using Event
-//#define RT_USING_EVENT
+#define RT_USING_EVENT
 // </c>
 // <c1>Using MailBox
 //  <i>Using MailBox
@@ -94,7 +95,7 @@
 // </c>
 // <c1>Using Message Queue
 //  <i>Using Message Queue
-//#define RT_USING_MESSAGEQUEUE
+#define RT_USING_MESSAGEQUEUE
 // </c>
 // </h>
 

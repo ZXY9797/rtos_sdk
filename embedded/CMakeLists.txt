@@ -12,16 +12,16 @@ add_subdirectory(drivers)
 add_subdirectory(modules)
 add_subdirectory(arch)
 add_subdirectory(osal)
+add_subdirectory(system)
 
 target_link_libraries(${MODULE_NAME}
     PUBLIC
-        -Wl,--start-group
         -Wl,--whole-archive
         arch
         soc
         drivers
         modules
         osal
+        system
         -Wl,--no-whole-archive
-        -Wl,--end-group
 )

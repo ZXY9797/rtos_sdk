@@ -10,6 +10,14 @@ cxx-driver:
   args:
     - node-reg
     - irq
+  # GD32 USART is a low-level bus/HAL driver. It initializes before
+  # PRE_KERNEL_3 dependent devices and before OS services are available.
+  init-level: pre-kernel-2
+  # Default PRE_KERNEL_2 initcall priority for GD32 USART instances.
+  # A board DTS node may override this with:
+  #   init-priority = <N>;
+  # Lower values run earlier within the same init level.
+  init-priority: 25
   init-cfg:
     type: UartConfig
     rx-buffer-size:
