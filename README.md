@@ -249,7 +249,71 @@ inline constexpr Priority kDefaultThreadPriority =
 }
 ```
 
-### 7. 异常处理框架 — 可插拔后端 + noinit 故障记录
+### 7. IRQ/ISR — 向量表弱别名 + 编译期零开销绑定
+
+中断处理采用向量表弱别名直接覆盖方案，无运行时开销：
+
+```
+vector_table.S                    驱动代码
+┌──────────────────────┐          ┌──────────────────────────────┐
+│ .weak IRQ37_Handler  │          │ HAL_ISR_CONNECT(37, UartBase, │
+│ .thumb_set → Default │  ──────→│     &DeviceTrait<14>::instance)│
+│                      │  覆盖   │                              │
+│ .word IRQ37_Handler  │         │ extern "C" void IRQ37_Handler │
+│   ↑ 向量表入口        │         │   { obj->isr_handler(); }     │
+└──────────────────────┘          └──────────────────────────────┘
+                                         │
+                                         ▼
+                                  void UartBase::isr_handler() {
+                                      // 读寄存器、写 ring buffer
+                                  }
+```
+
+**`HAL_ISR_CONNECT` 宏** — 生成 `extern "C"` 函数，直接覆盖向量表弱别名：
+
+```cpp
+// irq.h
+#define HAL_ISR_CONNECT(irq_n, type, obj_p)                         \
+    extern "C" void IRQ##irq_n##_Handler(void) {                    \
+        static_cast<type *>(const_cast<void *>(                     \
+            static_cast<const void *>(obj_p)))                       \
+            ->isr_handler();                                         \
+    }
+```
+
+**驱动示例：**
+
+```cpp
+class UartBase {
+public:
+    void isr_handler();  // 中断处理逻辑
+};
+
+void UartBase::isr_handler() {
+    auto *regs = reinterpret_cast<UsartRegs *>(m_base);
+    if (regs->STAT & STAT_RBNE) {
+        uint8_t ch = static_cast<uint8_t>(regs->DATA);
+        m_rx_ring.write(&ch, 1);
+        m_rx_sem.release();
+    }
+}
+
+// 由 gen_device_traits.py 自动生成：
+HAL_ISR_CONNECT(37, UartBase, &DeviceTrait<14>::instance)
+```
+
+| | 运行时查表（Zephyr） | 直接覆盖（RTOS SDK） |
+|:---|:---:|:---:|
+| 中断延迟 | sw_isr_table 间接跳转 | **硬件直接跳转** |
+| RAM 开销 | isr_table_entry 数组 | **零** |
+| 代码生成 | irq_connect() 运行时注册 | **编译期宏展开** |
+
+**配套工具：**
+- `hal::Irq` — 静态方法：enable / disable / setPriority / isEnabled
+- `hal::IrqGuard` — RAII 中断锁（构造锁中断，析构恢复）
+- `gen_irq_entries` / `gen_irq_Weaks` — `.altmacro` 宏，根据 `CONFIG_NUM_IRQS` 自动生成向量表条目和弱别名
+
+### 8. 异常处理框架 — 可插拔后端 + noinit 故障记录
 
 统一处理 HardFault/MemManage/BusFault/UsageFault，支持帧指针回溯、栈快照、noinit 故障记录持久化：
 
@@ -283,7 +347,7 @@ int main() {
 
 > 详细设计见 [doc/EXCEPTION_DESIGN.md](doc/EXCEPTION_DESIGN.md)
 
-### 8. 分层命名空间
+### 9. 分层命名空间
 
 ```cpp
 namespace hal {      // 硬件抽象层：驱动、寄存器访问
