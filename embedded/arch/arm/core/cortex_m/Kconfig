@@ -10,6 +10,45 @@
 # else is captured inside the if CPU_CORTEX_M block so they are not exposed
 # if one select a different ARM Cortex Family (Cortex-A or Cortex-R)
 
+menuconfig FAULT
+	bool "Fault handling framework"
+	depends on CPU_CORTEX_M
+	default y
+	help
+	  Enable the fault handling framework for HardFault/MemManage/
+	  BusFault/UsageFault. Provides noinit fault recording, backtrace,
+	  and pluggable backends.
+
+if FAULT
+
+config FAULT_NOINIT_BACKEND
+	bool "Noinit backend (record to .noinit RAM)"
+	default y
+	help
+	  Save fault records to .noinit RAM section. Survives warm reset
+	  and can be read back on next boot.
+
+config FAULT_UART_BACKEND
+	bool "UART backend (print fault on exception + boot)"
+	default y
+	help
+	  Print fault diagnostics via putc on exception, and via LOG
+	  on boot if a previous fault was recorded.
+
+config FAULT_STACK_SNAPSHOT
+	bool "Stack snapshot capture"
+	default y
+	help
+	  Capture 128 bytes of stack memory on fault for offline analysis.
+
+config FAULT_BACKTRACE
+	bool "Frame pointer backtrace"
+	default y
+	help
+	  Capture up to 16 frames of backtrace using frame pointer unwinding.
+
+endif # FAULT
+
 config CPU_CORTEX_M0
 	bool
 	select CPU_CORTEX_M

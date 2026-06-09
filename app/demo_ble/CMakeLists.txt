@@ -7,6 +7,8 @@ target_include_directories(${MODULE_NAME}
     PRIVATE
         ${BSP_DIR}/include
         ${BSP_DIR}/modules/cmsis/CMSIS/Core/Include
+        ${TOP_DIR}/component/ble/include
+        ${TOP_DIR}/component/ble/goodix/sdk
 )
 
 target_sources(${MODULE_NAME}
@@ -21,5 +23,7 @@ target_link_libraries(${MODULE_NAME}
     PRIVATE
         drivers
         osal
+        -Wl,--whole-archive
         ble_gr5525
+        -Wl,--no-whole-archive
 )

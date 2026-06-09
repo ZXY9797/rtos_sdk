@@ -19,5 +19,8 @@ target_link_libraries(${MODULE_NAME}
     PUBLIC
     PRIVATE
         soc
-        dma
 )
+
+if(CONFIG_DMA)
+    target_link_libraries(${MODULE_NAME} PRIVATE dma)
+endif()

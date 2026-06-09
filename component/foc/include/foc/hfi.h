@@ -13,7 +13,8 @@ public:
         bool dual_axis {false};    // 双轴注入
     };
 
-    explicit HfiInjector(const Config &cfg = {});
+    HfiInjector();
+    explicit HfiInjector(const Config &cfg);
 
     // 注入信号生成
     // 返回附加到 v_ab 上的注入电压

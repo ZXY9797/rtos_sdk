@@ -13,7 +13,8 @@ public:
         float v_ref {3.3f};            // 参考电压
     };
 
-    explicit TemperatureEstimator(const Config &cfg = {});
+    TemperatureEstimator();
+    explicit TemperatureEstimator(const Config &cfg);
 
     // 更新温度估算
     // adc_value: ADC 原始值 (12-bit)

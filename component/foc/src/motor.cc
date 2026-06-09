@@ -6,9 +6,9 @@
 namespace foc {
 
 Motor::Motor(const MotorConfig &cfg,
-             hal::PwmBase &pwm_u, hal::PwmBase &pwm_v, hal::PwmBase &pwm_w,
+             hal::PwmBase &pwm, hal::PwmChannel ch_u, hal::PwmChannel ch_v, hal::PwmChannel ch_w,
              hal::AdcBase &adc)
-    : pwm_u_(pwm_u), pwm_v_(pwm_v), pwm_w_(pwm_w), adc_(adc)
+    : pwm_(pwm), ch_u_(ch_u), ch_v_(ch_v), ch_w_(ch_w), adc_(adc)
     , cfg_(cfg)
     , foc_(cfg.foc)
     , hfi_(HfiInjector::Config{})
@@ -25,14 +25,12 @@ void Motor::init() {
     pwm_cfg.complementary = true;
     pwm_period_ = pwm_cfg.period;
 
-    pwm_u_.init(pwm_cfg);
-    pwm_v_.init(pwm_cfg);
-    pwm_w_.init(pwm_cfg);
+    (void)pwm_.init(pwm_cfg);
 
     // 配置 ADC 注入通道 (TIMER0 TRGO 触发)
     hal::AdcConfig adc_cfg;
     adc_cfg.resolution = 12;
-    adc_.init(adc_cfg);
+    (void)adc_.init(adc_cfg);
 
     hal::AdcInjectedConfig inj_cfg;
     inj_cfg.trigger_source = 0; // TIMER0 TRGO
@@ -40,7 +38,7 @@ void Motor::init() {
     inj_cfg.channels[0] = {hal::AdcChannel::Ch0, hal::AdcSampleTime::Cycles64}; // Iu
     inj_cfg.channels[1] = {hal::AdcChannel::Ch1, hal::AdcSampleTime::Cycles64}; // Iw
     inj_cfg.channels[2] = {hal::AdcChannel::Ch2, hal::AdcSampleTime::Cycles64}; // Vbus
-    adc_.config_injected(inj_cfg);
+    (void)adc_.config_injected(inj_cfg);
 
     // FOC 参数计算
     foc_.calculate_gains(cfg_.rs, cfg_.ld, cfg_.lq, cfg_.flux_linkage, cfg_.pole_pairs);
@@ -103,21 +101,15 @@ void Motor::slow_loop() {
 void Motor::enable() {
     if (state_ == MotorState::Idle && !errors_.has_error()) {
         state_ = MotorState::Aligning;
-        pwm_u_.enable_output();
-        pwm_v_.enable_output();
-        pwm_w_.enable_output();
-        pwm_u_.start();
-        pwm_v_.start();
-        pwm_w_.start();
+        (void)pwm_.enable_output();
+        (void)pwm_.start();
     }
 }
 
 void Motor::disable() {
     state_ = MotorState::Idle;
     apply_duty(0, 0, 0);
-    pwm_u_.disable_output();
-    pwm_v_.disable_output();
-    pwm_w_.disable_output();
+    (void)pwm_.disable_output();
 }
 
 void Motor::set_speed(float rpm) {
@@ -130,9 +122,7 @@ void Motor::set_torque(float iq) {
 
 void Motor::emergency_stop() {
     apply_duty(0, 0, 0);
-    pwm_u_.disable_output();
-    pwm_v_.disable_output();
-    pwm_w_.disable_output();
+    (void)pwm_.disable_output();
     state_ = MotorState::Error;
 }
 
@@ -149,9 +139,9 @@ void Motor::start_measurement() {
 
 void Motor::read_adc() {
     uint16_t iu_raw, iw_raw, vbus_raw;
-    adc_.read_injected(0, iu_raw);
-    adc_.read_injected(1, iw_raw);
-    adc_.read_injected(2, vbus_raw);
+    (void)adc_.read_injected(0, iu_raw);
+    (void)adc_.read_injected(1, iw_raw);
+    (void)adc_.read_injected(2, vbus_raw);
 
     // 转换为实际值 (需要根据硬件校准)
     // 假设: 12-bit ADC, 3.3V 参考, 电流传感器增益 0.1V/A, 偏置 1.65V
@@ -214,9 +204,9 @@ void Motor::state_machine() {
 }
 
 void Motor::apply_duty(uint32_t du, uint32_t dv, uint32_t dw) {
-    pwm_u_.set_pulse(hal::PwmChannel::Ch1, du);
-    pwm_v_.set_pulse(hal::PwmChannel::Ch2, dv);
-    pwm_w_.set_pulse(hal::PwmChannel::Ch3, dw);
+    (void)pwm_.set_pulse(ch_u_, du);
+    (void)pwm_.set_pulse(ch_v_, dv);
+    (void)pwm_.set_pulse(ch_w_, dw);
 }
 
 } // namespace foc

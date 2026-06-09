@@ -24,7 +24,7 @@ static void hid_task_entry(void *param) {
     auto &key = device_get(key0);
     auto &led = device_get(led0);
 
-    key.configure(GPIO_INPUT | GPIO_PULL_UP);
+    (void)key.configure(GPIO_INPUT | GPIO_PULL_UP);
 
     static const uint8_t KEY_A = 0x04;
     bool prev_pressed = false;
@@ -93,21 +93,21 @@ int main(void) {
     /* BLE scheduler task */
     auto *sched_task = osal::Thread::create(
         "ble_sched", ble_sched_task_entry, nullptr, 512, 1, 0);
-    if (sched_task) sched_task->startup();
+    if (sched_task) (void)sched_task->startup();
 
     /* HID keyboard task */
     auto *hid_task = osal::Thread::create(
         "hid", hid_task_entry, nullptr, 1024, 5, 0);
-    if (hid_task) hid_task->startup();
+    if (hid_task) (void)hid_task->startup();
 
     /* UART transparent task */
     auto *uart_task = osal::Thread::create(
         "uart", uart_task_entry, nullptr, 1024, 4, 0);
-    if (uart_task) uart_task->startup();
+    if (uart_task) (void)uart_task->startup();
 
     /* Main task: LED heartbeat */
     auto &led = device_get(led0);
-    led.configure(GPIO_OUTPUT_LOW);
+    (void)led.configure(GPIO_OUTPUT_LOW);
 
     while (true) {
         led.toggle();

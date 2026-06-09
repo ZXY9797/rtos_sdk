@@ -216,8 +216,10 @@ SECTIONS
         *(".stack.*")
         . = . + _system_stack_size;
         . = ALIGN(8);
+        _estack = .;
     } > RAM
 
     _end = .;
+    end = .;
     __bss_size__ = __bss_end - __bss_start;
 }

@@ -188,6 +188,9 @@ def menuconfig(kconf):
     # Load existing configuration and check if it's outdated
     _set_conf_changed(_load_config())
 
+    # Show config path in status bar
+    _set_status_file(_conf_filename)
+
     # Filename to save minimal configuration to
     _minconf_filename = "defconfig"
 
@@ -299,6 +302,7 @@ def _create_ui():
     _fix_treeview_issues()
 
     _create_top_widgets()
+    _create_menubar()
     # Create the pane with the Kconfig tree and description text
     panedwindow, _tree = _create_kconfig_tree_and_desc(_root)
     panedwindow.grid(column=0, row=1, sticky="nsew")
@@ -376,11 +380,10 @@ def _fix_treeview_issues():
     style = ttk.Style()
 
     # The treeview rowheight isn't adjusted automatically on high-DPI displays,
-    # so do it ourselves. The font will probably always be TkDefaultFont, but
-    # play it safe and look it up.
+    # so do it ourselves. Add extra padding for a more spacious look.
 
     _treeview_rowheight = font.Font(font=style.lookup("Treeview", "font")) \
-        .metrics("linespace") + 2
+        .metrics("linespace") + 6
 
     style.configure("Treeview", rowheight=_treeview_rowheight)
 
@@ -408,12 +411,141 @@ def _init_misc_ui():
     _root.minsize(128, 128)
     _root.protocol("WM_DELETE_WINDOW", _on_quit)
 
-    # Use the 'clam' theme on *nix if it's available. It looks nicer than the
-    # 'default' theme.
-    if _root.tk.call("tk", "windowingsystem") == "x11":
-        style = ttk.Style()
-        if "clam" in style.theme_names():
-            style.theme_use("clam")
+    # Use the 'vista' theme on Windows, fall back to 'clam'
+    style = ttk.Style()
+    preferred = "vista" if "vista" in style.theme_names() else "clam"
+    if preferred in style.theme_names():
+        style.theme_use(preferred)
+
+    # -- Custom style --
+    _apply_custom_styles(style)
+
+
+def _apply_custom_styles(style):
+    # Applies a modern look to the UI
+
+    # Color palette
+    BG = "#f5f5f5"
+    FG = "#2c3e50"
+    ACCENT = "#3498db"
+    ACCENT_DARK = "#2980b9"
+    TREE_BG = "#ffffff"
+    TREE_ALT = "#f0f4f8"
+    TREE_SEL = "#d4e6f1"
+    STATUS_MODIFIED = "#e67e22"
+    STATUS_SAVED = "#27ae60"
+
+    _root.configure(bg=BG)
+
+    # General frame/button style
+    style.configure(".", background=BG, foreground=FG, font=("Segoe UI", 9))
+    style.configure("TFrame", background=BG)
+    style.configure("TLabel", background=BG, foreground=FG)
+    style.configure("TButton", padding=(8, 3), font=("Segoe UI", 9))
+    style.configure("Accent.TButton", background=ACCENT, foreground="white",
+                    font=("Segoe UI", 9, "bold"), padding=(10, 4))
+    style.map("Accent.TButton",
+              background=[("active", ACCENT_DARK), ("pressed", ACCENT_DARK)])
+    style.configure("TCheckbutton", background=BG, foreground=FG,
+                    font=("Segoe UI", 9))
+
+    # Treeview style
+    style.configure("Treeview",
+                    background=TREE_BG, foreground=FG,
+                    fieldbackground=TREE_BG, font=("Segoe UI", 9))
+    style.configure("Treeview.Heading",
+                    background="#e8e8e8", foreground=FG,
+                    font=("Segoe UI", 9, "bold"), relief="flat")
+    style.map("Treeview",
+              background=[("selected", TREE_SEL)],
+              foreground=[("selected", FG)])
+
+    # Search entry style
+    style.configure("Search.TEntry", padding=(6, 4), font=("Segoe UI", 10))
+
+    # Status label styles
+    style.configure("StatusModified.TLabel", foreground=STATUS_MODIFIED,
+                    font=("Segoe UI", 9, "italic"))
+    style.configure("StatusSaved.TLabel", foreground=STATUS_SAVED,
+                    font=("Segoe UI", 9))
+
+    # Toolbar separator
+    style.configure("Toolbar.TSeparator", background="#dcdcdc")
+
+    # Store colors for use in tags
+    global _COLORS
+    _COLORS = {
+        "bg": BG, "fg": FG, "accent": ACCENT,
+        "tree_bg": TREE_BG, "tree_alt": TREE_ALT, "tree_sel": TREE_SEL,
+        "status_modified": STATUS_MODIFIED, "status_saved": STATUS_SAVED,
+    }
+
+
+# Available ttk themes (populated at runtime)
+_AVAILABLE_THEMES = []
+
+
+def _create_menubar():
+    # Creates the menu bar with View > Theme submenu
+
+    global _available_themes
+
+    style = ttk.Style()
+    _available_themes = list(style.theme_names())
+
+    menubar = Menu(_root)
+
+    # File menu
+    file_menu = Menu(menubar, tearoff=0)
+    file_menu.add_command(label="Open...", command=_open, accelerator="Ctrl+O")
+    file_menu.add_command(label="Save", command=_save, accelerator="Ctrl+S")
+    file_menu.add_command(label="Save as...", command=_save_as)
+    file_menu.add_command(label="Save minimal...", command=_save_minimal)
+    file_menu.add_separator()
+    file_menu.add_command(label="Exit", command=_on_quit)
+    menubar.add_cascade(label="File", menu=file_menu)
+
+    # View menu
+    view_menu = Menu(menubar, tearoff=0)
+
+    # Theme submenu
+    theme_menu = Menu(view_menu, tearoff=0)
+    _theme_var = StringVar(value=style.theme_use())
+    for theme_name in sorted(_available_themes):
+        theme_menu.add_radiobutton(
+            label=theme_name, variable=_theme_var, value=theme_name,
+            command=lambda t=theme_name: _set_theme(t))
+    view_menu.add_cascade(label="Theme", menu=theme_menu)
+
+    view_menu.add_separator()
+    view_menu.add_checkbutton(label="Show name", accelerator="Ctrl+N",
+                              variable=_show_name_var, command=_do_showname)
+    view_menu.add_checkbutton(label="Show all", accelerator="Ctrl+A",
+                              variable=_show_all_var, command=_do_showall)
+    view_menu.add_checkbutton(label="Single-menu mode", accelerator="Ctrl+M",
+                              variable=_single_menu_var, command=_do_tree_mode)
+    menubar.add_cascade(label="View", menu=view_menu)
+
+    # Search menu (just for discoverability)
+    search_menu = Menu(menubar, tearoff=0)
+    search_menu.add_command(label="Jump to...", command=_jump_to_dialog,
+                            accelerator="Ctrl+F")
+    menubar.add_cascade(label="Search", menu=search_menu)
+
+    _root.config(menu=menubar)
+
+
+def _set_theme(theme_name):
+    # Switches the ttk theme and reapplies custom styles
+
+    style = ttk.Style()
+    style.theme_use(theme_name)
+    _apply_custom_styles(style)
+
+    # Update treeview zebra tags with new colors
+    if _tree:
+        _tree.tag_configure("even", background=_COLORS["tree_bg"])
+        _tree.tag_configure("odd", background=_COLORS["tree_alt"])
 
 
 def _create_top_widgets():
@@ -424,36 +556,63 @@ def _create_top_widgets():
     global _single_menu_var
     global _menupath
     global _backbutton
+    global _search_var
+    global _search_entry
 
+    # Single container for all top widgets
     topframe = ttk.Frame(_root)
-    topframe.grid(column=0, row=0, sticky="ew")
+    topframe.grid(column=0, row=0, sticky="ew", padx=4, pady=(4, 0))
 
-    ttk.Button(topframe, text="Save", command=_save) \
-        .grid(column=0, row=0, sticky="ew", padx=".05c", pady=".05c")
+    # -- Row 0: toolbar (buttons + search) --
+    toolbar = ttk.Frame(topframe)
+    toolbar.pack(fill="x")
 
-    ttk.Button(topframe, text="Save as...", command=_save_as) \
-        .grid(column=1, row=0, sticky="ew")
+    # Left: action buttons
+    btn_frame = ttk.Frame(toolbar)
+    btn_frame.pack(side="left")
 
-    ttk.Button(topframe, text="Save minimal (advanced)...",
-               command=_save_minimal) \
-        .grid(column=2, row=0, sticky="ew", padx=".05c")
+    ttk.Button(btn_frame, text="Save", command=_save) \
+        .pack(side="left", padx=(0, 2))
+    ttk.Button(btn_frame, text="Save as...", command=_save_as) \
+        .pack(side="left", padx=2)
+    ttk.Button(btn_frame, text="Open...", command=_open) \
+        .pack(side="left", padx=2)
+    ttk.Button(btn_frame, text="Jump to...", command=_jump_to_dialog) \
+        .pack(side="left", padx=2)
 
-    ttk.Button(topframe, text="Open...", command=_open) \
-        .grid(column=3, row=0)
+    # Right: search box
+    search_frame = ttk.Frame(toolbar)
+    search_frame.pack(side="right", padx=(4, 0))
 
-    ttk.Button(topframe, text="Jump to...", command=_jump_to_dialog) \
-        .grid(column=4, row=0, padx=".05c")
+    ttk.Label(search_frame, text="Search:").pack(side="left", padx=(0, 2))
+
+    _search_var = StringVar()
+    _search_entry = ttk.Entry(search_frame, textvariable=_search_var,
+                              width=25, style="Search.TEntry")
+    _search_entry.pack(side="left")
+
+    _search_clear_btn = ttk.Button(search_frame, text="×", width=3,
+                                   command=_clear_search)
+    _search_clear_btn.pack(side="left", padx=(2, 0))
+
+    # Search bindings: live filter on key release, ESC to clear
+    _search_entry.bind("<KeyRelease>", _on_search_key)
+    _search_entry.bind("<Escape>", lambda _: _clear_search())
+    _search_entry.bind("<Return>", lambda _: "break")
+
+    # -- Row 1: checkboxes --
+    opts_frame = ttk.Frame(topframe)
+    opts_frame.pack(fill="x", pady=(4, 0))
 
     _show_name_var = BooleanVar()
-    ttk.Checkbutton(topframe, text="Show name", command=_do_showname,
+    ttk.Checkbutton(opts_frame, text="Show name", command=_do_showname,
                     variable=_show_name_var) \
-        .grid(column=0, row=1, sticky="nsew", padx=".05c", pady="0 .05c",
-              ipady=".2c")
+        .pack(side="left", padx=(0, 8))
 
     _show_all_var = BooleanVar()
-    ttk.Checkbutton(topframe, text="Show all", command=_do_showall,
+    ttk.Checkbutton(opts_frame, text="Show all", command=_do_showall,
                     variable=_show_all_var) \
-        .grid(column=1, row=1, sticky="nsew", pady="0 .05c")
+        .pack(side="left", padx=(0, 8))
 
     # Allow the show-all and single-menu status to be queried via plain global
     # Python variables, which is faster and simpler
@@ -466,33 +625,28 @@ def _create_top_widgets():
     _show_all_var.set(False)
 
     _single_menu_var = BooleanVar()
-    ttk.Checkbutton(topframe, text="Single-menu mode", command=_do_tree_mode,
+    ttk.Checkbutton(opts_frame, text="Single-menu mode", command=_do_tree_mode,
                     variable=_single_menu_var) \
-        .grid(column=2, row=1, sticky="nsew", padx=".05c", pady="0 .05c")
+        .pack(side="left", padx=(0, 8))
 
-    _backbutton = ttk.Button(topframe, text="<--", command=_leave_menu,
+    _backbutton = ttk.Button(opts_frame, text="< Back", command=_leave_menu,
                              state="disabled")
-    _backbutton.grid(column=0, row=4, sticky="nsew", padx=".05c", pady="0 .05c")
 
     def tree_mode_updated(*_):
         global _single_menu
         _single_menu = _single_menu_var.get()
 
         if _single_menu:
-            _backbutton.grid()
+            _backbutton.pack(side="left", padx=(8, 0))
         else:
-            _backbutton.grid_remove()
+            _backbutton.pack_forget()
 
     _trace_write(_single_menu_var, tree_mode_updated)
     _single_menu_var.set(False)
 
-    # Column to the right of the buttons that the menu path extends into, so
-    # that it can grow wider than the buttons
-    topframe.columnconfigure(5, weight=1)
-
-    _menupath = ttk.Label(topframe)
-    _menupath.grid(column=0, row=3, columnspan=6, sticky="w", padx="0.05c",
-                   pady="0 .05c")
+    # -- Row 2: menu path --
+    _menupath = ttk.Label(topframe, font=("Segoe UI", 9, "italic"))
+    _menupath.pack(fill="x", pady=(4, 0))
 
 
 def _create_kconfig_tree_and_desc(parent):
@@ -565,6 +719,10 @@ def _create_kconfig_tree(parent):
     tree.tag_configure("edit", image=_edit_img)
     tree.tag_configure("invisible", foreground="red")
 
+    # Zebra striping
+    tree.tag_configure("even", background=_COLORS["tree_bg"])
+    tree.tag_configure("odd", background=_COLORS["tree_alt"])
+
     tree.grid(column=0, row=0, sticky="nsew")
 
     _add_vscrollbar(frame, tree)
@@ -591,7 +749,9 @@ def _create_kconfig_desc(parent):
     frame = ttk.Frame(parent)
 
     desc = Text(frame, height=12, wrap="word", borderwidth=0,
-                state="disabled")
+                state="disabled", font=("Consolas", 9),
+                bg=_COLORS["tree_bg"], fg=_COLORS["fg"],
+                padx=8, pady=6, selectbackground=_COLORS["tree_sel"])
     desc.grid(column=0, row=0, sticky="nsew")
 
     # Work around not being to Ctrl-C/V text from a disabled Text widget, with a
@@ -630,15 +790,30 @@ def _create_status_bar():
     # Creates the status bar at the bottom of the main window
 
     global _status_label
+    global _status_file_label
 
-    _status_label = ttk.Label(_root, anchor="e", padding="0 0 0.4c 0")
-    _status_label.grid(column=0, row=3, sticky="ew")
+    status_frame = ttk.Frame(_root)
+    status_frame.grid(column=0, row=3, sticky="ew", padx=4, pady=(0, 2))
+
+    _status_file_label = ttk.Label(status_frame, anchor="w",
+                                   font=("Segoe UI", 8))
+    _status_file_label.pack(side="left", padx=(4, 0))
+
+    _status_label = ttk.Label(status_frame, anchor="e",
+                              font=("Segoe UI", 9, "bold"))
+    _status_label.pack(side="right", padx=(0, 4))
 
 
 def _set_status(s):
     # Sets the text in the status bar to 's'
 
     _status_label["text"] = s
+
+
+def _set_status_file(path):
+    # Shows the config file path in the status bar
+
+    _status_file_label["text"] = path
 
 
 def _set_conf_changed(changed):
@@ -649,12 +824,18 @@ def _set_conf_changed(changed):
     _conf_changed = changed
     if changed:
         _set_status("Modified")
+        _status_label.configure(style="StatusModified.TLabel")
+    else:
+        _status_label.configure(style="StatusSaved.TLabel")
 
 
 def _update_tree():
     # Updates the Kconfig tree in the main window by first detaching all nodes
     # and then updating and reattaching them. The tree structure might have
     # changed.
+
+    global _tree_row_counter
+    _tree_row_counter = 0
 
     # If a selected/focused item is detached and later reattached, it stays
     # selected/focused. That can give multiple selections even though
@@ -779,17 +960,22 @@ def _add_to_tree(node, top):
     # the nodes linearly to get the correct order. 'top' holds the menu that
     # corresponds to the top-level menu, and can vary in single-menu mode.
 
+    global _tree_row_counter
+
     parent = node.parent
     _tree.move(id(node), "" if parent is top else id(parent), "end")
-    _tree.item(
-        id(node),
-        text=_node_str(node),
-        # The _show_all test avoids showing invisible items in red outside
-        # show-all mode, which could look confusing/broken. Invisible symbols
-        # are shown outside show-all mode if an invisible symbol has visible
-        # children in an implicit menu.
-        tags=_img_tag(node) if _visible(node) or not _show_all else
-            _img_tag(node) + " invisible")
+
+    # Build tag list: image tag + zebra + optional invisible
+    img = _img_tag(node)
+    zebra = "even" if _tree_row_counter % 2 == 0 else "odd"
+    _tree_row_counter += 1
+
+    if not _visible(node) and _show_all:
+        tags = (img, zebra, "invisible") if img else (zebra, "invisible")
+    else:
+        tags = (img, zebra) if img else (zebra,)
+
+    _tree.item(id(node), text=_node_str(node), tags=tags)
 
 
 def _node_str(node):
@@ -1066,6 +1252,62 @@ def _update_menu_path(_):
 
     sel = _tree.selection()
     _menupath["text"] = _menu_path_info(_id_to_node[sel[0]]) if sel else ""
+
+
+def _on_search_key(_):
+    # Called on each key release in the search entry — live filter
+
+    query = _search_var.get().strip()
+    if not query:
+        _clear_search()
+        return
+    _filter_tree(query)
+
+
+def _clear_search():
+    # Clears the search box and restores the full tree
+
+    _search_var.set("")
+    _update_tree()
+
+
+def _filter_tree(query):
+    # Filters the Kconfig tree to show only nodes matching 'query'.
+    # Matches against prompt text and symbol name (case-insensitive).
+
+    query_lower = query.lower()
+    matching_ids = set()
+
+    for node_id, node in _id_to_node.items():
+        text = _node_str(node).lower()
+        name = ""
+        if hasattr(node.item, "name") and node.item.name:
+            name = node.item.name.lower()
+
+        if query_lower in text or query_lower in name:
+            matching_ids.add(node_id)
+            # Also mark all ancestor nodes so the tree structure is preserved
+            parent = _tree.parent(node_id)
+            while parent:
+                matching_ids.add(parent)
+                parent = _tree.parent(parent)
+
+    # Detach all, then reattach matching ones
+    _tree.detach(*_id_to_node.keys())
+    for node_id in matching_ids:
+        if node_id in _id_to_node:
+            node = _id_to_node[node_id]
+            parent = node.parent
+            top = _cur_menu if _single_menu else _kconf.top_node
+            _tree.move(node_id, "" if parent is top else id(parent), "end")
+
+            img = _img_tag(node)
+            if not _visible(node) and _show_all:
+                tags = (img, "invisible") if img else ("invisible",)
+            else:
+                tags = (img,) if img else ()
+
+            _tree.item(node_id, text=_node_str(node), tags=tags)
 
 
 def _item_row(item):
@@ -1348,6 +1590,7 @@ def _save(_=None):
 
     if _try_save(_kconf.write_config, _conf_filename, "configuration"):
         _set_conf_changed(False)
+        _set_status_file(_conf_filename)
 
     _tree.focus_set()
 
@@ -1370,6 +1613,7 @@ def _save_as():
 
         if _try_save(_kconf.write_config, filename, "configuration"):
             _conf_filename = filename
+            _set_status_file(_conf_filename)
             break
 
     _tree.focus_set()
@@ -1929,10 +2173,12 @@ def _update_jump_to_display():
     img_tag = _img_tag
     visible = _visible
     for node in _jump_to_matches:
-        item(id_(node),
-             text=node_str(node),
-             tags=img_tag(node) if visible(node) else
-                 img_tag(node) + " invisible")
+        img = img_tag(node)
+        if not visible(node):
+            tags = (img, "invisible") if img else ("invisible",)
+        else:
+            tags = (img,) if img else ()
+        item(id_(node), text=node_str(node), tags=tags)
 
     _jump_to_tree.set_children("", *map(id, _jump_to_matches))
 

@@ -10,6 +10,8 @@ target_include_directories(${MODULE_NAME}
         ${BSP_DIR}/include
         ${BSP_DIR}/soc/gd/gd32f50x/include
         ${BSP_DIR}/modules/cmsis/CMSIS/Core/Include
+        ${BSP_DIR}/modules/cmsis
+        ${BSP_DIR}/soc/gd/gd32f50x
 )
 
 target_sources(${MODULE_NAME}
@@ -25,4 +27,9 @@ target_link_libraries(${MODULE_NAME}
         osal
         foc
 )
+
+# NVS
+if(TARGET nvs)
+    target_link_libraries(${MODULE_NAME} PRIVATE nvs)
+endif()
 

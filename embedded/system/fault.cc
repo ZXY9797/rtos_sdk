@@ -1,6 +1,7 @@
 #include <arch/arm/cortex_m/fault.h>
 #include <cmsis_core.h>
 #include <log.h>
+#include <init.h>
 #include <cstdarg>
 #include <cstdio>
 
@@ -153,14 +154,11 @@ static void printRecord(const FaultRecord &rec) {
 //  noinit 故障记录
 // ============================================================
 
+#ifdef CONFIG_FAULT_NOINIT_BACKEND
 __attribute__((section(".noinit")))
 static FaultRecord s_faultRecord;
 
 const FaultRecord *getRecord() { return &s_faultRecord; }
-
-// ============================================================
-//  NoinitBackend（默认内置）
-// ============================================================
 
 class NoinitBackend : public IBackend {
 public:
@@ -174,13 +172,17 @@ public:
 };
 
 static NoinitBackend s_noinitBackend;
+#else
+const FaultRecord *getRecord() { return nullptr; }
+#endif
 
 // ============================================================
-//  UartBackend（默认内置）
+//  UartBackend
 //  - onFault: 异常上下文，使用 putc 弱符号（不依赖 RTOS）
 //  - onBoot:  正常线程上下文，使用 LOG 模块
 // ============================================================
 
+#ifdef CONFIG_FAULT_UART_BACKEND
 class UartBackend : public IBackend {
 public:
     void onFault(const FaultRecord &rec) override {
@@ -189,15 +191,18 @@ public:
         print("==================\n");
     }
     void onBoot() override {
+#ifdef CONFIG_FAULT_NOINIT_BACKEND
         if (!s_faultRecord.valid()) return;
         char buf[RECORD_BUF_SIZE];
         formatRecord(s_faultRecord, buf, sizeof(buf));
         log_write(LogLevel::Error, "fault", "===== LAST FAULT (noinit) =====\n%s"
                    "================================", buf);
+#endif
     }
 };
 
 static UartBackend s_uartBackend;
+#endif
 
 // ============================================================
 //  后端注册
@@ -205,14 +210,6 @@ static UartBackend s_uartBackend;
 
 static IBackend *s_backends[MAX_BACKENDS] = {};
 static int s_backendCount = 0;
-static bool s_initialized = false;
-
-static void ensureInitialized() {
-    if (s_initialized) return;
-    s_initialized = true;
-    registerBackend(&s_noinitBackend);
-    registerBackend(&s_uartBackend);
-}
 
 void registerBackend(IBackend *backend) {
     if (s_backendCount < MAX_BACKENDS) {
@@ -220,27 +217,37 @@ void registerBackend(IBackend *backend) {
     }
 }
 
-// 强制链接器包含异常入口（防止 --gc-sections 移除）
-extern "C" void MemManage_Handler(), BusFault_Handler(), UsageFault_Handler();
+void notifyFault(const FaultRecord &rec) {
+    for (int i = 0; i < s_backendCount; ++i) {
+        s_backends[i]->onFault(rec);
+    }
+}
 
-void bootCheck() {
-    ensureInitialized();
-
-    __asm__ volatile("" :: "r"(MemManage_Handler),
-                           "r"(BusFault_Handler),
-                           "r"(UsageFault_Handler));
+// SYS_INIT 自动初始化：注册后端 + 触发 onBoot
+static int fault_init() {
+#ifdef CONFIG_FAULT_NOINIT_BACKEND
+    registerBackend(&s_noinitBackend);
+#endif
+#ifdef CONFIG_FAULT_UART_BACKEND
+    registerBackend(&s_uartBackend);
+#endif
 
     for (int i = 0; i < s_backendCount; ++i) {
         s_backends[i]->onBoot();
     }
+    return 0;
 }
 
+SYS_INIT(fault_init, INITCALL_LEVEL_PRE_KERNEL_1, 10);
+
 void dump() {
+#ifdef CONFIG_FAULT_NOINIT_BACKEND
     if (!s_faultRecord.valid()) return;
     char buf[RECORD_BUF_SIZE];
     formatRecord(s_faultRecord, buf, sizeof(buf));
     log_write(LogLevel::Error, "fault", "===== LAST FAULT (noinit) =====\n%s"
                "================================", buf);
+#endif
 }
 
 void clear() {
@@ -297,66 +304,24 @@ static FaultRecord buildRecord(const Frame *frame, uint32_t excReturn) {
     rec.msp        = msp;
     rec.psp        = psp;
 
+#ifdef CONFIG_FAULT_BACKTRACE
     // 帧指针回溯
     uint32_t fpReg = usedPsp ? frame->r7 : frame->r11;
     rec.backtrace[0] = frame->lr;
     rec.backtraceDepth = 1 +
         unwindFramePointer(fpReg, &rec.backtrace[1],
                            FaultRecord::MAX_BACKTRACE - 1);
+#endif
 
+#ifdef CONFIG_FAULT_STACK_SNAPSHOT
     // 栈快照
     captureStackSnapshot(activeSp, rec);
+#endif
 
     return rec;
 }
 
 } // namespace hal::fault
-
-// ============================================================
-//  异常入口（naked 函数，纯汇编）
-//  放在 fault.cc 中确保与 bootCheck 一起被链接器拉入
-// ============================================================
-
-#define FAULT_ENTRY(name)                                                    \
-extern "C" [[gnu::naked, gnu::used]]                                         \
-void name()                                                                  \
-{                                                                            \
-    __asm__ volatile(                                                        \
-        "TST     lr, #0x04          \n"                                      \
-        "ITE     EQ                 \n"                                      \
-        "MRSEQ   r12, msp           \n"                                      \
-        "MRSNE   r12, psp           \n"                                      \
-        "SUB     sp, sp, #32        \n"                                      \
-        "STMIA   sp, {r4-r11}       \n"                                      \
-        /* 复制硬件帧 (r0-xpsr) 到 [SP+32]..[SP+60] */                       \
-        "LDR     r4, [r12, #0]      \n"                                      \
-        "LDR     r5, [r12, #4]      \n"                                      \
-        "LDR     r6, [r12, #8]      \n"                                      \
-        "LDR     r7, [r12, #12]     \n"                                      \
-        "LDR     r8, [r12, #16]     \n"                                      \
-        "LDR     r9, [r12, #20]     \n"                                      \
-        "LDR     r10, [r12, #24]    \n"                                      \
-        "LDR     r11, [r12, #28]    \n"                                      \
-        "STR     r4, [sp, #32]      \n"                                      \
-        "STR     r5, [sp, #36]      \n"                                      \
-        "STR     r6, [sp, #40]      \n"                                      \
-        "STR     r7, [sp, #44]      \n"                                      \
-        "STR     r8, [sp, #48]      \n"                                      \
-        "STR     r9, [sp, #52]      \n"                                      \
-        "STR     r10, [sp, #56]     \n"                                      \
-        "STR     r11, [sp, #60]     \n"                                      \
-        "MOV     r0, sp             \n"                                      \
-        "MOV     r1, lr             \n"                                      \
-        "BL      arm_fault_handler  \n"                                      \
-        "1: B     1b                \n"                                      \
-    );                                                                       \
-}
-
-FAULT_ENTRY(MemManage_Handler)
-FAULT_ENTRY(BusFault_Handler)
-FAULT_ENTRY(UsageFault_Handler)
-
-#undef FAULT_ENTRY
 
 // ============================================================
 //  extern "C" 入口
@@ -367,21 +332,14 @@ void arm_fault_handler(const hal::fault::Frame *frame, uint32_t excReturn)
 {
     using namespace hal::fault;
 
-    ensureInitialized();
-
     // 1. 构建完整记录
     FaultRecord rec = buildRecord(frame, excReturn);
 
     // 2. 遍历所有后端
-    for (int i = 0; i < s_backendCount; ++i) {
-        s_backends[i]->onFault(rec);
-    }
+    notifyFault(rec);
 
     // 3. 死循环
-    for (;;) {
-        __asm__ volatile("cpsid i");
-        __asm__ volatile("wfi");
-    }
+    for (;;) {}
 }
 
 void assert_print(const char *fmt, ...) {
@@ -400,8 +358,5 @@ assert_post_action(const char *file, unsigned int line) {
     print(":");
     printDec(line);
     putc('\n');
-    for (;;) {
-        __asm__ volatile("cpsid i");
-        __asm__ volatile("wfi");
-    }
+    for (;;) {}
 }

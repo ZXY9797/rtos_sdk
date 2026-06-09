@@ -963,11 +963,11 @@ __STATIC_FORCEINLINE void __set_FPSCR(uint32_t fpscr)
       }
       else
       {
-          result = __SXTB16(__ROR(op1, rotate));
+          __ASM volatile("sxtb16 %0, %1" : "=r"(result) : "r"(__ROR(op1, rotate)));
       }
       return result;
   }
-  
+
   __STATIC_FORCEINLINE uint32_t __SXTAB16_RORn(uint32_t op1, uint32_t op2, uint32_t rotate)
   {
       uint32_t result;
@@ -977,7 +977,9 @@ __STATIC_FORCEINLINE void __set_FPSCR(uint32_t fpscr)
       }
       else
       {
-          result = __SXTAB16(op1, __ROR(op2, rotate));
+          uint32_t tmp;
+          __ASM volatile("ror %0, %1, %2" : "=r"(tmp) : "r"(op2), "i"(rotate));
+          __ASM volatile("sxtab16 %0, %1, %2" : "=r"(result) : "r"(op1), "r"(tmp));
       }
       return result;
   }

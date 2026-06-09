@@ -1,5 +1,6 @@
 #include <drivers/gpio.h>
 #include <arch/arch_interface.h>
+#include <irq.h>
 
 namespace hal {
 namespace {
@@ -25,13 +26,13 @@ int GpioPortBase::configure(int pin, uint32_t flags) {
 
     if (flags & GPIO_OUTPUT) {
         regs->OUTENSET = mask;
-        unsigned int key = irq_lock();
+        unsigned int key = arch_irq_lock();
         if (flags & GPIO_OUTPUT_HIGH) {
             regs->DATAOUT |= mask;
         } else if (flags & GPIO_OUTPUT_LOW) {
             regs->DATAOUT &= ~mask;
         }
-        irq_unlock(key);
+        arch_irq_unlock(key);
     } else if (flags & GPIO_INPUT) {
         regs->OUTENCLR = mask;
     }
@@ -41,23 +42,23 @@ int GpioPortBase::configure(int pin, uint32_t flags) {
 
 void GpioPortBase::set(int pin) {
     auto *regs = reinterpret_cast<Gr5525GpioRegs *>(base_);
-    unsigned int key = irq_lock();
+    unsigned int key = arch_irq_lock();
     regs->DATAOUT |= pin_mask(pin);
-    irq_unlock(key);
+    arch_irq_unlock(key);
 }
 
 void GpioPortBase::clear(int pin) {
     auto *regs = reinterpret_cast<Gr5525GpioRegs *>(base_);
-    unsigned int key = irq_lock();
+    unsigned int key = arch_irq_lock();
     regs->DATAOUT &= ~pin_mask(pin);
-    irq_unlock(key);
+    arch_irq_unlock(key);
 }
 
 void GpioPortBase::toggle(int pin) {
     auto *regs = reinterpret_cast<Gr5525GpioRegs *>(base_);
-    unsigned int key = irq_lock();
+    unsigned int key = arch_irq_lock();
     regs->DATAOUT ^= pin_mask(pin);
-    irq_unlock(key);
+    arch_irq_unlock(key);
 }
 
 int GpioPortBase::get(int pin) const {

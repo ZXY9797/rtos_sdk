@@ -33,7 +33,7 @@ fault.S (汇编存根，覆盖弱别名)
 fault.cc (C++ 实现，RTOS 无关)
     ├── buildRecord()        — 构建 FaultRecord
     ├── 遍历已注册后端 → onFault(rec)
-    ├── bootCheck()          — 启动时遍历后端 → onBoot()
+    ├── fault_init()         — SYS_INIT 自动初始化（注册后端 + onBoot）
     ├── assert_post_action   — 断言失败处理
     └── FreeRTOS hooks       — 栈溢出/malloc 失败
 ```
@@ -55,7 +55,7 @@ fault.cc (C++ 实现，RTOS 无关)
   (.noinit RAM)   (putc 弱符号)  (Flash 分区)
 ```
 
-默认后端通过懒初始化自动注册，无需手动调用 `registerBackend()`。
+后端通过 Kconfig 选择性编译，由 `SYS_INIT(fault_init, PRE_KERNEL_1)` 自动注册。
 
 ## 3. 文件结构
 
@@ -153,13 +153,14 @@ CFSR 包含三个子域，每个位代表一种故障原因：
 ### 5.2 启动时
 
 ```
-1. main() 中调用 hal::fault::bootCheck()
-2. bootCheck() 遍历所有后端 → onBoot()
-3. UartBackend::onBoot()：
+1. SYS_INIT(fault_init, INITCALL_LEVEL_PRE_KERNEL_1, 10) 自动执行
+2. fault_init() 注册 Kconfig 选择的后端（NoinitBackend + UartBackend）
+3. 遍历所有后端 → onBoot()
+4. UartBackend::onBoot()：
    a. 检查 s_faultRecord.magic == MAGIC
    b. 有记录 → 通过 log_write(LogLevel::Error) 输出 "===== LAST FAULT (noinit) ====="
    c. 输出完整诊断信息
-4. 应用层可调用 hal::fault::clear() 清除记录
+5. 应用层可调用 hal::fault::clear() 清除记录
 ```
 
 ### 5.3 输出策略（双路径）
@@ -362,7 +363,8 @@ STACK OVERFLOW: my_task
 
 | 决策 | 原因 |
 |------|------|
-| 懒初始化替代静态构造函数 | 嵌入式系统中 C++ 静态构造函数执行时机不确定 |
+| SYS_INIT 替代懒初始化 | PRE_KERNEL_1 阶段自动初始化，无需手动调用 bootCheck() |
+| Kconfig 控制后端选择 | 一键切换后端，条件编译减少代码体积 |
 | `HardFault_Handler` 使用 `.weak` | RT-Thread 的 `context_gcc.S` 需要强符号覆盖 |
 | `MemManage/BusFault/UsageFault` 使用 `.global` | 覆盖 vector_table.S 中的弱别名 |
 | `putc` 使用弱符号 | SoC 层可覆盖为 UART 寄存器直写 |

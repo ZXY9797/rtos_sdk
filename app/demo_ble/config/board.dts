@@ -16,7 +16,7 @@
         led0 = &green_led;
         key0 = &user_key;
         uart0 = &uart0;
-        ble_uart = &uart1;
+        ble-uart = &uart1;
     };
 
     leds {

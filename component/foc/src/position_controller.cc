@@ -4,6 +4,7 @@
 
 namespace foc {
 
+PositionController::PositionController() : cfg_{} {}
 PositionController::PositionController(const Config &cfg) : cfg_(cfg) {}
 
 float PositionController::update(float setpoint, float measurement, float dt) {

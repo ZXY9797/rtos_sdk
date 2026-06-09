@@ -24,7 +24,8 @@ public:
         float lambda_sq {0.0f};   // 磁链幅值平方
     };
 
-    explicit MxLemmingObserver(const Config &cfg = {});
+    MxLemmingObserver();
+    explicit MxLemmingObserver(const Config &cfg);
 
     void update(const Vec2 &v_ab, const Vec2 &i_ab, float dt) override;
     uint16_t angle() const override;
@@ -52,7 +53,8 @@ public:
         float gain {0.0f};
     };
 
-    explicit OrtegaObserver(const Config &cfg = {});
+    OrtegaObserver();
+    explicit OrtegaObserver(const Config &cfg);
 
     void update(const Vec2 &v_ab, const Vec2 &i_ab, float dt) override;
     uint16_t angle() const override;

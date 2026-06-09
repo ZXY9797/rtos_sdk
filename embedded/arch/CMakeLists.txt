@@ -7,6 +7,8 @@ target_include_directories(${MODULE_NAME}
         .
     PRIVATE
         ${BSP_DIR}/include
+        ${BSP_DIR}/modules/cmsis/CMSIS/Core/Include
+        ${BSP_DIR}/modules/cmsis
         common/include
 )
 

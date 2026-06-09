@@ -2,6 +2,7 @@
 
 #include "types.h"
 #include "pid.h"
+#include "svpwm.h"
 #include <cstdint>
 
 namespace foc {
@@ -55,6 +56,7 @@ private:
     Pid id_pid_;
     Pid iq_pid_;
     Pid speed_pid_;
+    Svpwm svpwm_;
 
     // 电流/电压状态
     Polar idq_ {};

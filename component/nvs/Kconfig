@@ -1,0 +1,22 @@
+menuconfig NVS
+    bool "NVS (Non-Volatile Storage)"
+    help
+      NVS 追加日志 KV 存储，支持磨损均衡和掉电恢复。
+      8 字节 ATE，16 位 ID，CRC-8 校验。
+
+if NVS
+
+config NVS_SECTOR_COUNT
+    int "NVS 使用的扇区数"
+    default 3
+    range 2 16
+    help
+      最少 2 个。更多扇区减少 GC 频率，改善磨损均衡。
+
+config NVS_DATA_CRC
+    bool "启用数据 CRC-32 校验"
+    default y
+    help
+      数据条目附加 CRC-32，增加 4 字节开销。
+
+endif # NVS

@@ -4,11 +4,9 @@
 #include <drivers_generated.h>
 #include <log.h>
 #include <osal.h>
-#include <arch/arm/cortex_m/fault.h>
 
 int main(void) {
     (void)log_uart(device_get(uart0), LogLevel::Info);
-    hal::fault::bootCheck();
 
     LOGI("foc", "=== FOC Motor Control Demo ===");
     LOGI("foc", "Type 'help' for CLI commands");

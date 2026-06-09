@@ -43,7 +43,7 @@ struct MotorConfig {
 class Motor {
 public:
     Motor(const MotorConfig &cfg,
-          hal::PwmBase &pwm_u, hal::PwmBase &pwm_v, hal::PwmBase &pwm_w,
+          hal::PwmBase &pwm, hal::PwmChannel ch_u, hal::PwmChannel ch_v, hal::PwmChannel ch_w,
           hal::AdcBase &adc);
 
     // 初始化
@@ -81,7 +81,8 @@ public:
 
 private:
     // 硬件引用
-    hal::PwmBase &pwm_u_, &pwm_v_, &pwm_w_;
+    hal::PwmBase &pwm_;
+    hal::PwmChannel ch_u_, ch_v_, ch_w_;
     hal::AdcBase &adc_;
 
     // 配置

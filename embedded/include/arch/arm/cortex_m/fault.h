@@ -90,8 +90,8 @@ public:
 static constexpr int MAX_BACKENDS = 4;
 void registerBackend(IBackend *backend);
 
-// 启动时调用 — 遍历所有后端执行 onBoot()
-void bootCheck();
+// 供架构层调用：遍历所有后端执行 onFault
+void notifyFault(const FaultRecord &rec);
 
 // ---- 底层输出（工具函数）----
 

@@ -23,6 +23,7 @@
 | 内存管理 | 动态分配 + Slab + Heap | **全部静态分配** |
 | RTOS 绑定 | 仅支持 Zephyr 内核 | **OSAL 多内核**（FreeRTOS、RT-Thread） |
 | SoC 支持 | 内置 400+ | **STM32、GD32、Goodix GR5525** |
+| BLE 支持 | 内置 | **GR5525 BLE（HID + UART 透传）** |
 | 代码规模 | ~500K 行 | **~5K 行**（不含 SOC HAL） |
 
 ---
@@ -254,7 +255,53 @@ aliases {
 
 > **FOC 组件位于 `component/foc/`，可独立于应用复用。**
 
-### 6. ADC 驱动 — GD32 支持
+### 6. BLE 蓝牙组件 — 厂商无关 API
+
+SDK 提供厂商无关的 BLE API（`ble::` 命名空间），当前实现基于 Goodix GR5525：
+
+```cpp
+#include "ble/ble_stack.h"
+#include "ble/ble_hid.h"
+
+static ble::BleStack s_ble;
+static ble::BleHidService s_hid;
+
+static void on_event(const ble::Event &evt, void *) {
+    if (evt.id == ble::EventId::StackInit) {
+        s_hid.init_keyboard({report_map, sizeof(report_map)});
+        s_ble.adv_start();
+    }
+}
+
+void ble_app_init() {
+    ble::StackConfig cfg{};
+    cfg.device_name = "GR5525_BLE";
+    cfg.adv_interval_min = 48;
+    s_ble.init(cfg, on_event, nullptr);
+}
+```
+
+**API 模块：**
+- `ble::BleStack` — 协议栈初始化、广播、连接管理
+- `ble::BleHidService` — HID over GATT（键盘/消费者控制）
+- `ble::BleUartService` — UART 透传（NUS）
+- `ble::BleBattService` — 电池电量服务
+- `ble::BleDisService` — 设备信息服务
+
+**架构：**
+```
+app/demo_ble/          应用层（HID + UART 透传）
+    ↓
+component/ble/include  厂商无关 ble:: API
+    ↓
+component/ble/goodix   GR5525 适配层 + libble_sdk.a
+    ↓
+embedded/soc           GR5525 HAL（BLE 控制器 ROM + 射频）
+```
+
+> **BLE 组件位于 `component/ble/`，API 接口可移植到其他 BLE 芯片。**
+
+### 7. ADC 驱动 — GD32 支持
 
 新增 GD32 ADC 驱动，支持多通道采样、DMA 传输：
 
@@ -268,7 +315,7 @@ adc0: adc@40022800 {
 };
 ```
 
-### 7. PWM 驱动增强 — 多通道 + 输出控制
+### 8. PWM 驱动增强 — 多通道 + 输出控制
 
 PWM 驱动新增多通道支持、输出使能控制和更新中断回调：
 
@@ -281,7 +328,7 @@ pwm.set_update_callback(my_isr, arg);   // 更新中断回调（FOC 电流环）
 pwm.start();
 ```
 
-### 8. OSAL — 头文件零 RTOS 依赖
+### 9. OSAL — 头文件零 RTOS 依赖
 
 `osal.h` 是纯 C++ 接口，不包含任何 RTOS 特定宏。所有 OS 相关的类型定义和常量集中在各 RTOS 的 `osal_types.h` 中：
 
@@ -307,7 +354,7 @@ inline constexpr Priority kDefaultThreadPriority =
 }
 ```
 
-### 9. IRQ/ISR — 向量表弱别名 + 编译期零开销绑定
+### 10. IRQ/ISR — 向量表弱别名 + 编译期零开销绑定
 
 中断处理采用向量表弱别名直接覆盖方案，无运行时开销：
 
@@ -371,17 +418,32 @@ HAL_ISR_CONNECT(37, UartBase, &DeviceTrait<14>::instance)
 - `hal::IrqGuard` — RAII 中断锁（构造锁中断，析构恢复）
 - `gen_irq_entries` / `gen_irq_Weaks` — `.altmacro` 宏，根据 `CONFIG_NUM_IRQS` 自动生成向量表条目和弱别名
 
-### 10. 异常处理框架 — 可插拔后端 + noinit 故障记录
+### 11. 异常处理框架 — 可插拔后端 + noinit 故障记录
 
 统一处理 HardFault/MemManage/BusFault/UsageFault，支持帧指针回溯、栈快照、noinit 故障记录持久化：
 
 ```cpp
-#include <arch/arm/cortex_m/fault.h>
+// fault 模块由 SYS_INIT 自动初始化，无需手动调用
+// 启动时自动：注册后端 → 检查 noinit 记录 → 输出历史 fault
 
 int main() {
-    hal::fault::bootCheck();  // 检查 noinit 记录，有历史 fault 则通过 LOG 输出
+    // 直接使用，fault 框架已在 PRE_KERNEL_1 阶段自动初始化
     // ...
 }
+```
+
+**Kconfig 配置：**
+```kconfig
+# 启用/禁用整个 fault 框架
+CONFIG_FAULT=y
+
+# 选择后端（可同时启用多个）
+CONFIG_FAULT_NOINIT_BACKEND=y   # .noinit RAM 记录
+CONFIG_FAULT_UART_BACKEND=y     # UART 输出诊断
+
+# 可选功能
+CONFIG_FAULT_STACK_SNAPSHOT=y   # 栈快照捕获
+CONFIG_FAULT_BACKTRACE=y        # 帧指针回溯
 ```
 
 **特性：**
@@ -393,6 +455,12 @@ int main() {
 - **FreeRTOS 钩子**：栈溢出 / malloc 失败自动捕获
 
 ```
+启动: SYS_INIT(fault_init, PRE_KERNEL_1)
+        ↓
+  注册后端 (NoinitBackend + UartBackend)
+        ↓
+  遍历后端 onBoot() → 检查 noinit 记录 → 输出历史 fault
+        ↓
 异常发生 → fault.S/naked 入口 → buildRecord() → 遍历后端 onFault()
                                        ↓
                               NoinitBackend: 写 .noinit RAM
@@ -400,12 +468,12 @@ int main() {
                                        ↓
                                   死循环 (cpsid i + wfi)
                                        ↓
-                              热复位 → bootCheck() → log_write 输出历史记录
+                              热复位 → SYS_INIT 自动 onBoot()
 ```
 
 > 详细设计见 [doc/EXCEPTION_DESIGN.md](doc/EXCEPTION_DESIGN.md)
 
-### 11. 分层命名空间
+### 12. 分层命名空间
 
 ```cpp
 namespace hal {      // 硬件抽象层：驱动、寄存器访问
@@ -430,12 +498,17 @@ namespace osal {     // OS 抽象层：线程、同步原语
 ```
 rtos_sdk/
 ├── app/                          # 应用项目
-│   └── demo/
+│   ├── demo/                     # GD32 FOC 电机控制 Demo
+│   │   ├── config/board.dts      # 板级设备树
+│   │   ├── config/Kconfig        # 板级配置
+│   │   ├── main.cc               # 应用代码
+│   │   ├── foc_app.cc            # FOC 电机控制应用
+│   │   └── foc_app.h
+│   └── demo_ble/                 # GR5525 BLE Demo（HID 键盘 + UART 透传）
 │       ├── config/board.dts      # 板级设备树
-│       ├── config/Kconfig        # 板级配置
-│       ├── main.cc               # 应用代码
-│       ├── foc_app.cc            # FOC 电机控制应用
-│       └── foc_app.h
+│       ├── main.cc               # 主入口
+│       ├── ble_app.cc            # BLE 应用逻辑
+│       └── ble_app.h
 │
 ├── component/                    # 应用级组件
 │   ├── foc/                      # FOC 电机控制库
@@ -443,8 +516,12 @@ rtos_sdk/
 │   │   ├── src/                  # 实现（SVPWM、电流采样、CLI）
 │   │   └── Kconfig               # 配置选项
 │   └── ble/                      # BLE 蓝牙组件
-│       ├── include/
-│       └── goodix/               # Goodix BLE 实现
+│       ├── include/              # 厂商无关的 ble:: API
+│       └── goodix/               # Goodix GR5525 BLE 实现
+│           ├── src/              # BLE Stack/HID/UART/BATT/DIS 适配
+│           ├── profiles/         # GATT Profile 实现
+│           ├── libraries/        # BLE SDK 辅助库
+│           └── lib/libble_sdk.a  # Goodix 预编译 BLE 协议栈
 │
 ├── embedded/                     # SDK 核心
 │   ├── include/                  # 公共头文件
@@ -497,17 +574,20 @@ rtos_sdk/
 ### 环境要求
 
 ```bash
-# 仅需 4 个工具
+# 基础工具
 python3           # 设备树解析 + 驱动特化生成
-cmake             # 构建系统
-gcc-arm-none-eabi # ARM 交叉编译器
+cmake (>= 3.20)   # 构建系统
 ninja             # 构建后端
+
+# ARM 交叉编译器（按项目选择）
+# demo (GD32):     arm-gnu-toolchain >= 13.x（支持 -std=c++20）
+# demo_ble (GR5525): xPack GCC 9.3.1（兼容 Goodix libble_sdk.a）
 ```
 
-### 构建 Demo
+### 构建 Demo（GD32 FOC 电机控制）
 
 ```bash
-# 配置
+# 配置（默认 armgcc 工具链）
 cmake -B out -GNinja -Dp=demo
 
 # 编译
@@ -518,6 +598,26 @@ ls out/demo.elf  out/demo.bin  out/demo.hex
 ```
 
 Demo 源码在 `app/demo/main.cc`，面向 GD32F503，展示 FOC 电机控制（PWM + ADC + CLI 调试）。
+
+### 构建 Demo BLE（GR5525 HID 键盘 + UART 透传）
+
+```bash
+# 设置 GCC 9.3.1 工具链路径（Goodix libble_sdk.a 要求）
+export ARMGCC9_TOOLCHAIN_PATH=/path/to/xpack-arm-none-eabi-gcc-9.3.1-1.4
+
+# 配置（使用 armgcc9 工具链）
+cmake -B out_ble -GNinja -Dp=demo_ble -Dt=armgcc9
+
+# 编译
+ninja -C out_ble
+
+# 产物
+ls out_ble/demo_ble.elf  out_ble/demo_ble.bin
+```
+
+Demo BLE 源码在 `app/demo_ble/`，面向 Goodix GR5525RGNI，展示 BLE HID 键盘 + UART 透传。
+
+> **为什么需要 GCC 9.3.1？** Goodix 预编译的 `libble_sdk.a` 使用 GCC 9.3.1 编译，与 GCC 15.x 的 binutils 存在二进制兼容性问题（dangerous relocation）。`-Dt=armgcc9` 会自动启用兼容标记（`-std=c++2a`、`--unresolved-symbols=ignore-in-object-files`）。
 
 ---
 

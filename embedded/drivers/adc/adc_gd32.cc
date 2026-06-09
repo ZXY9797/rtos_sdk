@@ -40,8 +40,8 @@ constexpr uint32_t OVSMOD_OVSEN = (1U << 9); // 过采样使能
 // ADC0 中断号 (GD32F503)
 static constexpr int ADC0_1_IRQn = 18; // ADC0_1_IRQn
 
-static volatile AdcBase::IrqCallback s_adc0_eoc_cb = nullptr;
-static volatile void *s_adc0_eoc_arg = nullptr;
+static AdcBase::IrqCallback s_adc0_eoc_cb = nullptr;
+static void *s_adc0_eoc_arg = nullptr;
 
 extern "C" void ADC0_1_IRQHandler() {
     auto *regs = reinterpret_cast<AdcRegs *>(ADC0_BASE);

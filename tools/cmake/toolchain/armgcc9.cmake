@@ -1,0 +1,50 @@
+set(CMAKE_SYSTEM_NAME Generic)
+set(CMAKE_SYSTEM_PROCESSOR ARM)
+
+set(CMAKE_C_COMPILER_FORCED TRUE)
+set(CMAKE_CXX_COMPILER_FORCED TRUE)
+set(CMAKE_C_COMPILER_ID GNU)
+set(CMAKE_CXX_COMPILER_ID GNU)
+
+# GCC 9.x 工具链（用于兼容 libble_sdk.a）
+# 优先级：环境变量 ARMGCC9_TOOLCHAIN_PATH > PATH
+if(DEFINED ENV{ARMGCC9_TOOLCHAIN_PATH})
+    set(_TOOLCHAIN_BIN "$ENV{ARMGCC9_TOOLCHAIN_PATH}/bin")
+elseif(DEFINED ARMGCC9_TOOLCHAIN_PATH)
+    set(_TOOLCHAIN_BIN "${ARMGCC9_TOOLCHAIN_PATH}/bin")
+else()
+    set(_TOOLCHAIN_BIN "")
+endif()
+
+if(WIN32)
+    set(_EXE ".exe")
+else()
+    set(_EXE "")
+endif()
+
+if(_TOOLCHAIN_BIN)
+    set(TOOLCHAIN_PREFIX "${_TOOLCHAIN_BIN}/arm-none-eabi-")
+else()
+    set(TOOLCHAIN_PREFIX "arm-none-eabi-")
+endif()
+
+# 工具链设置
+set(CMAKE_C_COMPILER    ${TOOLCHAIN_PREFIX}gcc${_EXE})
+set(CMAKE_CXX_COMPILER  ${TOOLCHAIN_PREFIX}g++${_EXE})
+set(CMAKE_ASM_COMPILER  ${TOOLCHAIN_PREFIX}gcc${_EXE})
+set(CMAKE_AR            ${TOOLCHAIN_PREFIX}ar${_EXE})
+set(CMAKE_OBJCOPY       ${TOOLCHAIN_PREFIX}objcopy${_EXE})
+set(CMAKE_OBJDUMP       ${TOOLCHAIN_PREFIX}objdump${_EXE})
+set(CMAKE_SIZE          ${TOOLCHAIN_PREFIX}size${_EXE})
+
+set(CMAKE_OUTPUT_SUFFIX ".elf")
+set(CMAKE_EXECUTABLE_SUFFIX_ASM     ${CMAKE_OUTPUT_SUFFIX})
+set(CMAKE_EXECUTABLE_SUFFIX_C       ${CMAKE_OUTPUT_SUFFIX})
+set(CMAKE_EXECUTABLE_SUFFIX_CXX     ${CMAKE_OUTPUT_SUFFIX})
+
+# GCC 9.x 兼容标记 — compiler.cmake 读取
+set(ARMGCC9_CXX2A TRUE)       # -std=c++2a 替代 -std=c++20
+set(ARMGCC9_UNRESOLVED TRUE)  # --unresolved-symbols=ignore-in-object-files
+
+unset(_TOOLCHAIN_BIN)
+unset(_EXE)

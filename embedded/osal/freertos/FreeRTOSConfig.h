@@ -3,6 +3,11 @@
 
 #include <soc.h>
 
+/* ARMv8-M specific */
+#define configENABLE_FPU                         1
+#define configENABLE_MPU                         0
+#define configENABLE_TRUSTZONE                   0
+
 /* System */
 #define configUSE_PREEMPTION                     1
 #define configUSE_PORT_OPTIMISED_TASK_SELECTION  1

@@ -6,8 +6,13 @@ target_include_directories(soc
         include/app
         include/platform
         include/cmsis
+        ${PROJECT_CONFIG_DIR}
     PRIVATE
         ${BSP_DIR}/include
+        ${TOP_DIR}/component/ble/goodix/libraries/ring_buffer
+        ${TOP_DIR}/component/ble/goodix/libraries/app_assert
+        ${TOP_DIR}/component/ble/goodix/libraries/app_timer
+        ${TOP_DIR}/component/ble/goodix/sdk
 )
 
 set(SOC_SOURCES
@@ -59,6 +64,16 @@ target_compile_definitions(soc
     PUBLIC
         GR5525X
         USE_HAL_DRIVER
+        CFG_LAYER_TAG_SDK
+)
+
+# Goodix SDK has type-punning, deprecated 'register', volatile-param, sign-compare warnings
+target_compile_options(soc
+    PRIVATE
+        -Wno-strict-aliasing
+        -Wno-sign-compare
+        $<$<COMPILE_LANGUAGE:CXX>:-Wno-register>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wno-volatile>
 )
 
 target_link_libraries(soc

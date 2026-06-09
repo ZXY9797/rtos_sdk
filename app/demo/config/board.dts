@@ -17,9 +17,7 @@
         key0 = &user_key;
         uart0 = &usart0;
         spi0 = &spi0;
-        pwm_u = &timer0_ch0;
-        pwm_v = &timer0_ch1;
-        pwm_w = &timer0_ch2;
+        pwm0 = &timer0;
         adc0 = &adc0;
     };
 
@@ -90,33 +88,13 @@
             ngpios = <16>;
         };
 
-        timer0_ch0: pwm@40012C00 {
+        timer0: pwm@40012C00 {
             compatible = "gd,gd32-timer";
             reg = <0x40012C00 0x400>;
             interrupts = <25 0>;
             status = "okay";
-            label = "TIMER0_CH0";
+            label = "TIMER0";
             channel = <0>;
-            #pwm-cells = <3>;
-        };
-
-        timer0_ch1: pwm@40012C01 {
-            compatible = "gd,gd32-timer";
-            reg = <0x40012C00 0x400>;
-            interrupts = <25 0>;
-            status = "okay";
-            label = "TIMER0_CH1";
-            channel = <1>;
-            #pwm-cells = <3>;
-        };
-
-        timer0_ch2: pwm@40012C02 {
-            compatible = "gd,gd32-timer";
-            reg = <0x40012C00 0x400>;
-            interrupts = <25 0>;
-            status = "okay";
-            label = "TIMER0_CH2";
-            channel = <2>;
             #pwm-cells = <3>;
         };
 

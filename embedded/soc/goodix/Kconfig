@@ -5,6 +5,7 @@ config SOC_SERIES_GR5525X
     select ARM
     select CPU_CORTEX_M4
     select CPU_HAS_FPU
+    select CPU_HAS_ARM_MPU
     select SOC_FAMILY_GOODIX
     help
       Goodix GR5525x BLE SoC series

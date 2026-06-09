@@ -1,5 +1,6 @@
 #include <drivers/spi.h>
 #include <arch/arch_interface.h>
+#include <system_gr55xx.h>
 
 namespace hal {
 namespace {

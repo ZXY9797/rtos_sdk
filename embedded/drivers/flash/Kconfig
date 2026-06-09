@@ -4,6 +4,7 @@ menuconfig FLASH
 	  Include Flash drivers in system config
 
 rsource "Kconfig.stm32"
+rsource "Kconfig.gd32"
 
 if FLASH
 

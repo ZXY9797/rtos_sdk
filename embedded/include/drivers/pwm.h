@@ -46,4 +46,11 @@ public:
     constexpr Pwm() : PwmBase(Base, Ch) {}
 };
 
+// 特化：用于区分相同基地址不同通道的实例
+template <uintptr_t Base, int ChannelIdx>
+class PwmCh : public PwmBase {
+public:
+    constexpr PwmCh() : PwmBase(Base, static_cast<PwmChannel>(ChannelIdx)) {}
+};
+
 } // namespace hal

@@ -4,6 +4,7 @@
 
 namespace foc {
 
+HfiInjector::HfiInjector() : cfg_{} {}
 HfiInjector::HfiInjector(const Config &cfg) : cfg_(cfg) {}
 
 Vec2 HfiInjector::inject(float dt) {
@@ -46,8 +47,8 @@ void HfiInjector::analyze(const Vec2 &i_ab, uint16_t angle) {
     }
 
     // 角度误差 = (id_pos - id_neg) / (iq_pos - iq_neg)
-    float d_diff = i_d_pos_ - i_d_neg;
-    float q_diff = i_q_pos_ - i_q_neg;
+    float d_diff = i_d_pos_ - i_d_neg_;
+    float q_diff = i_q_pos_ - i_q_neg_;
     if (fabsf(q_diff) > 1e-6f) {
         angle_error_ = d_diff / q_diff;
     }

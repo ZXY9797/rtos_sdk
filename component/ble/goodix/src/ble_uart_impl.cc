@@ -26,7 +26,7 @@ static void gus_evt_handler(gus_evt_t *p_evt) {
         break;
     case GUS_EVT_RX_DATA_RECEIVED:
         if (s_rx_cb) {
-            s_rx_cb(p_evt->p_data, p_evt->length, s_rx_user_data);
+            s_rx_cb(p_evt->p_data, p_evt->length, const_cast<void *>(static_cast<const volatile void *>(s_rx_user_data)));
         }
         break;
     case GUS_EVT_TX_DATA_SENT:
@@ -49,7 +49,7 @@ Status BleUartService::init(UartDataCallback rx_cb, void *user_data) {
 
 Status BleUartService::send(uint8_t conn_idx, const uint8_t *data, size_t len) {
     if (!s_tx_enabled) return Status::NotConnected;
-    sdk_err_t err = gus_gattc_data_send(conn_idx, const_cast<uint8_t *>(data), len);
+    sdk_err_t err = gus_tx_data_send(conn_idx, const_cast<uint8_t *>(data), len);
     return (err == SDK_SUCCESS) ? Status::Ok : Status::Error;
 }
 

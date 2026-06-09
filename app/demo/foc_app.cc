@@ -4,12 +4,14 @@
 #include <drivers/gpio.h>
 #include <drivers/pwm.h>
 #include <drivers/adc.h>
+#include <drivers/flash.h>
 #include <drivers_generated.h>
 #include <init.h>
 #include <log.h>
 #include <osal.h>
 #include <irq.h>
 
+#include <nvs/nvs.h>
 #include <foc/motor.h>
 #include <foc/config.h>
 
@@ -32,16 +34,79 @@ constexpr int32_t LED_PRIORITY = 10;
 
 constexpr size_t CLI_BUF_SIZE = 128;
 
+// NVS：Flash 最后 3 页（6KB）
+constexpr uint32_t NVS_OFFSET = 512U * 1024U - 3U * 2048U;
+constexpr uint16_t NVS_ID_CALIB = 0x0001;
+
+// ─── 标定数据 ───
+
+struct CalibData {
+    float rs;
+    float ld;
+    float lq;
+    float flux_linkage;
+    uint8_t pole_pairs;
+    uint8_t reserved[3];
+};
+static_assert(sizeof(CalibData) == 20);
+
 // ─── 状态 ───
 
 static foc::MotorConfig motor_cfg;
 static foc::Motor *g_motor = nullptr;
+
+static hal::Flash g_flash(hal::flash_create_gd32());
+static nvs::Nvs<hal::Flash> g_nvs(g_flash, NVS_OFFSET);
 
 static osal::PeriodicThread *g_slow_loop = nullptr;
 static osal::PeriodicThread *g_led_thread = nullptr;
 
 static char cli_buf[CLI_BUF_SIZE];
 static size_t cli_pos = 0;
+
+// ─── NVS 辅助 ───
+
+void nvs_load_config() {
+    CalibData cal{};
+    int32_t r = g_nvs.read(NVS_ID_CALIB, cal);
+    if (r > 0) {
+        motor_cfg.rs = cal.rs;
+        motor_cfg.ld = cal.ld;
+        motor_cfg.lq = cal.lq;
+        motor_cfg.flux_linkage = cal.flux_linkage;
+        motor_cfg.pole_pairs = cal.pole_pairs;
+        LOGI("nvs", "loaded calib: Rs=%.4f Ld=%.6f Lq=%.6f Flux=%.5f pp=%d",
+             cal.rs, cal.ld, cal.lq, cal.flux_linkage, cal.pole_pairs);
+    } else {
+        LOGI("nvs", "no saved calibration, using Kconfig defaults");
+    }
+}
+
+void nvs_save_config() {
+    CalibData cal{};
+    cal.rs = motor_cfg.rs;
+    cal.ld = motor_cfg.ld;
+    cal.lq = motor_cfg.lq;
+    cal.flux_linkage = motor_cfg.flux_linkage;
+    cal.pole_pairs = motor_cfg.pole_pairs;
+    int32_t r = g_nvs.write(NVS_ID_CALIB, cal);
+    if (r > 0) {
+        LOGI("nvs", "calibration saved: Rs=%.4f Ld=%.6f Lq=%.6f",
+             cal.rs, cal.ld, cal.lq);
+    } else {
+        LOGE("nvs", "save failed (%ld)", static_cast<long>(r));
+    }
+}
+
+void nvs_reset_config() {
+    (void)g_nvs.remove(NVS_ID_CALIB);
+    motor_cfg.rs = CONFIG_FOC_RS_OHMS * 0.001f;
+    motor_cfg.ld = CONFIG_FOC_LD_HENRIES * 1e-6f;
+    motor_cfg.lq = CONFIG_FOC_LQ_HENRIES * 1e-6f;
+    motor_cfg.flux_linkage = CONFIG_FOC_FLUX_LINKAGE * 1e-3f;
+    motor_cfg.pole_pairs = static_cast<uint8_t>(CONFIG_FOC_POLE_PAIRS);
+    LOGI("nvs", "calibration reset to Kconfig defaults");
+}
 
 // ─── PWM ISR 回调 (快速循环) ───
 
@@ -55,6 +120,16 @@ void pwm_isr_callback(void *arg) {
 void slow_loop_entry(void *, const osal::PeriodicStats &stats) {
     if (!g_motor) return;
     g_motor->slow_loop();
+
+    // 测量完成后自动保存
+    if (g_motor->measurement().is_done()) {
+        auto &meas = g_motor->measurement();
+        motor_cfg.rs = meas.rs();
+        motor_cfg.ld = meas.ld();
+        motor_cfg.lq = meas.lq();
+        motor_cfg.flux_linkage = meas.flux_linkage();
+        nvs_save_config();
+    }
 
     if ((stats.sequence % SLOW_LOOP_HZ) == 0) {
         LOGI("foc", "speed=%.1f rpm, id=%.2f, iq=%.2f, vbus=%.1fV, state=%d",
@@ -137,12 +212,20 @@ void cli_process(const char *cmd) {
             LOGI("cli", "  Temp:    %.1f C", g_motor->temperature());
             LOGI("cli", "  Errors:  0x%08lx",
                  static_cast<unsigned long>(g_motor->errors().error_flags()));
+            LOGI("cli", "  Rs:      %.4f ohm", motor_cfg.rs);
+            LOGI("cli", "  Ld:      %.6f H", motor_cfg.ld);
+            LOGI("cli", "  Lq:      %.6f H", motor_cfg.lq);
+            LOGI("cli", "  Flux:    %.5f Wb", motor_cfg.flux_linkage);
         }
     } else if (strcmp(cmd, "measure") == 0 || strcmp(cmd, "meas") == 0) {
         if (g_motor) {
             g_motor->start_measurement();
             LOGI("cli", "motor parameter measurement started");
         }
+    } else if (strcmp(cmd, "save") == 0) {
+        nvs_save_config();
+    } else if (strcmp(cmd, "reset") == 0) {
+        nvs_reset_config();
     } else if (strcmp(cmd, "estop") == 0) {
         if (g_motor) {
             g_motor->emergency_stop();
@@ -156,6 +239,8 @@ void cli_process(const char *cmd) {
         LOGI("cli", "  torque <A>        - Set torque current");
         LOGI("cli", "  status / st       - Show status");
         LOGI("cli", "  measure / meas    - Auto-measure motor params");
+        LOGI("cli", "  save              - Save calibration to NVS");
+        LOGI("cli", "  reset             - Reset to Kconfig defaults");
         LOGI("cli", "  estop             - Emergency stop");
         LOGI("cli", "  help              - Show this help");
     } else {
@@ -173,9 +258,7 @@ int foc_gpio_init() {
 }
 
 int foc_motor_init() {
-    auto &pwm_u = device_get(pwm_u);
-    auto &pwm_v = device_get(pwm_v);
-    auto &pwm_w = device_get(pwm_w);
+    auto &pwm = device_get(pwm0);
     auto &adc = device_get(adc0);
 
     // Kconfig 用工程单位 (mOhm/uH/mWb)，C++ 用基本单位 (Ohm/H/Wb)
@@ -195,11 +278,21 @@ int foc_motor_init() {
     motor_cfg.foc.pwm_frequency = CONFIG_FOC_PWM_FREQUENCY_HZ;
     motor_cfg.foc.current_bandwidth = CONFIG_FOC_CURRENT_LOOP_BW_HZ;
 
-    static foc::Motor motor(motor_cfg, pwm_u, pwm_v, pwm_w, adc);
+    // NVS：加载标定参数（覆盖 Kconfig 默认值）
+    (void)g_flash.init();
+    if (g_nvs.mount() == nvs::Status::Ok) {
+        nvs_load_config();
+    } else {
+        LOGW("nvs", "mount failed, using Kconfig defaults");
+    }
+
+    static foc::Motor motor(motor_cfg, pwm,
+                            hal::PwmChannel::Ch1, hal::PwmChannel::Ch2, hal::PwmChannel::Ch3,
+                            adc);
     motor.init();
     g_motor = &motor;
 
-    pwm_u.set_update_callback(pwm_isr_callback, g_motor);
+    (void)pwm.set_update_callback(pwm_isr_callback, g_motor);
 
     return 0;
 }

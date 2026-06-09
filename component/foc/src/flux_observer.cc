@@ -6,6 +6,7 @@ namespace foc {
 
 // ─── MxLemming Observer ───
 
+MxLemmingObserver::MxLemmingObserver() : cfg_{} {}
 MxLemmingObserver::MxLemmingObserver(const Config &cfg) : cfg_(cfg) {}
 
 void MxLemmingObserver::set_params(float rs, float ld, float lq) {
@@ -38,7 +39,7 @@ void MxLemmingObserver::update(const Vec2 &v_ab, const Vec2 &i_ab, float dt) {
 
     // 速度估算
     if (flux_mag_ > 1e-6f) {
-        float cross = psi_s_alpha * e_beta - psi_s_beta * e_alpha;
+        float cross = psi_s_alpha * e_beta_ - psi_s_beta * e_alpha_;
         speed_est_ = cross / (flux_mag_ * flux_mag_);
     }
 }
@@ -51,6 +52,7 @@ float MxLemmingObserver::speed_estimate() const { return speed_est_; }
 
 // ─── Ortega Observer ───
 
+OrtegaObserver::OrtegaObserver() : cfg_{} {}
 OrtegaObserver::OrtegaObserver(const Config &cfg) : cfg_(cfg) {}
 
 void OrtegaObserver::set_params(float rs, float ld, float lq) {
@@ -84,7 +86,7 @@ void OrtegaObserver::update(const Vec2 &v_ab, const Vec2 &i_ab, float dt) {
     e_beta_ = e_b;
 
     if (flux_mag_ > 1e-6f) {
-        float cross = psi_s_alpha * e_beta - psi_s_beta * e_alpha;
+        float cross = psi_s_alpha * e_beta_ - psi_s_beta * e_alpha_;
         speed_est_ = cross / (flux_mag_ * flux_mag_);
     }
 }

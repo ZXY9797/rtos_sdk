@@ -16,6 +16,9 @@ extern "C" {
 
 #include "ble_cfg.h"
 
+/* Stub for BLE SDK internal logging — not provided by the SDK library */
+extern "C" void stack_raw_log_output(const char *fmt, ...) { (void)fmt; }
+
 namespace ble {
 
 /* ---- GR5525 BLE heap (must be global, allocated before ble_stack_init) ---- */
@@ -53,8 +56,8 @@ static void gr5525_evt_handler(const ble_evt_t *p_evt) {
         s_is_connected = true;
         s_conn_idx = evt.conn_idx;
         memcpy(s_peer_addr.addr,
-               p_evt->evt.gapc_evt.params.connected.peer_addr.gap_addr.addr, 6);
-        s_peer_addr.addr_type = p_evt->evt.gapc_evt.params.connected.peer_addr.addr_type;
+               p_evt->evt.gapc_evt.params.connected.peer_addr.addr, 6);
+        s_peer_addr.addr_type = p_evt->evt.gapc_evt.params.connected.peer_addr_type;
         evt.peer_addr = s_peer_addr;
         break;
 
@@ -92,7 +95,7 @@ static void gr5525_evt_handler(const ble_evt_t *p_evt) {
     }
 
     if (s_event_cb) {
-        s_event_cb(evt, s_event_user_data);
+        s_event_cb(evt, const_cast<void *>(static_cast<const volatile void *>(s_event_user_data)));
     }
 }
 
@@ -125,7 +128,7 @@ Status BleStack::init(const StackConfig &cfg, EventCallback cb, void *user_data)
     ble_sec_param_t sec_param{};
     switch (cfg.sec_param.level) {
     case SecParam::Level::None:
-        sec_param.level = BLE_SEC_NO_SECURITY;
+        sec_param.level = BLE_SEC_MODE1_LEVEL1;
         break;
     case SecParam::Level::Open:
         sec_param.level = BLE_SEC_MODE1_LEVEL1;
@@ -188,11 +191,12 @@ uint8_t BleStack::conn_index() const { return s_conn_idx; }
 BdAddr BleStack::peer_addr() const { return s_peer_addr; }
 
 Status BleStack::conn_param_update(uint8_t conn_idx, const ConnParam &param) {
-    ble_gap_conn_param_t p{};
+    ble_gap_conn_update_param_t p{};
     p.interval_min = param.interval_min;
     p.interval_max = param.interval_max;
     p.slave_latency = param.slave_latency;
     p.sup_timeout = param.sup_timeout;
+    p.ce_len = 0x0002;
     ble_gap_conn_param_update(conn_idx, &p);
     return Status::Ok;
 }

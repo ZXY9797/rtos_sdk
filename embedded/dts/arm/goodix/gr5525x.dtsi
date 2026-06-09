@@ -18,5 +18,9 @@
 
 	soc {
 		compatible = "goodix,gr5525x";
+
+		nvic: interrupt-controller@e000e100 {
+			arm,num-irq-priority-bits = <8>;
+		};
 	};
 };

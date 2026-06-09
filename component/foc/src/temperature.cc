@@ -3,6 +3,7 @@
 
 namespace foc {
 
+TemperatureEstimator::TemperatureEstimator() : cfg_{} {}
 TemperatureEstimator::TemperatureEstimator(const Config &cfg) : cfg_(cfg) {}
 
 void TemperatureEstimator::update(uint16_t adc_value) {

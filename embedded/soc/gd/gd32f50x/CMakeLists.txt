@@ -10,6 +10,7 @@ target_include_directories(soc
 set(SOC_SOURCES
     soc.c
     src/system_gd32f50x.c
+    src/gd32f50x_fmc.c
 )
 
 target_sources(soc

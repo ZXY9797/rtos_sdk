@@ -11,7 +11,8 @@ public:
         float max_velocity {1000.0f};  // 最大速度 (RPM)
     };
 
-    explicit PositionController(const Config &cfg = {});
+    PositionController();
+    explicit PositionController(const Config &cfg);
 
     // 位置环更新
     // setpoint: 目标位置 (rad)
