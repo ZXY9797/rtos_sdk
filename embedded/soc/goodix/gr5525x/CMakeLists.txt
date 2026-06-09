@@ -1,0 +1,69 @@
+target_include_directories(soc
+    PUBLIC
+        .
+        include
+        include/hal
+        include/app
+        include/platform
+        include/cmsis
+    PRIVATE
+        ${BSP_DIR}/include
+)
+
+set(SOC_SOURCES
+    soc.c
+    src/system_gr5525x.c
+    src/startup_gr55xx.s
+    src/platform/gr_interrupt.c
+    src/platform/gr_platform.c
+    src/platform/gr_system.c
+    src/hal/app_uart.c
+    src/hal/app_uart_dma.c
+    src/hal/app_spi.c
+    src/hal/app_spi_dma.c
+    src/hal/app_i2c.c
+    src/hal/app_i2c_dma.c
+    src/hal/app_dma.c
+    src/hal/app_gpiote.c
+    src/hal/app_io.c
+    src/hal/app_pwm.c
+    src/hal/app_pwm_dma.c
+    src/hal/app_adc.c
+    src/hal/app_adc_dma.c
+    src/hal/app_rtc.c
+    src/hal/app_tim.c
+    src/hal/app_dual_tim.c
+    src/hal/app_qspi.c
+    src/hal/app_qspi_dma.c
+    src/hal/app_dspi.c
+    src/hal/app_dspi_dma.c
+    src/hal/app_i2s.c
+    src/hal/app_i2s_dma.c
+    src/hal/app_pdm.c
+    src/hal/app_rng.c
+    src/hal/app_aon_wdt.c
+    src/hal/app_bod.c
+    src/hal/app_comp.c
+    src/hal/app_pwr_mgmt.c
+    src/hal/app_soft_encoder.c
+    src/hal/app_rtos_cfg.c
+    src/hal/app_graphics_qspi.c
+)
+
+target_sources(soc
+    PRIVATE
+        ${SOC_SOURCES}
+)
+
+target_compile_definitions(soc
+    PUBLIC
+        GR5525X
+        USE_HAL_DRIVER
+)
+
+target_link_libraries(soc
+    PUBLIC
+        cmsis
+    PRIVATE
+        arch
+)

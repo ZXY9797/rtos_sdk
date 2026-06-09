@@ -1,0 +1,47 @@
+description: GD32 TIMER (PWM) controller
+
+compatible: "gd,gd32-timer"
+
+include: [pwm-controller.yaml, base.yaml]
+
+cxx-driver:
+  template: Pwm
+  header: drivers/pwm.h
+  args:
+    - node-reg
+    - node-prop:channel
+  init-level: pre-kernel-2
+  init-priority: 25
+  init-cfg:
+    type: PwmConfig
+    fields:
+      prescaler:
+        default: 0
+      period:
+        default: 0
+
+properties:
+  reg:
+    type: array
+    required: true
+
+  interrupts:
+    type: array
+    required: true
+
+  label:
+    type: string
+    required: true
+
+  channel:
+    type: int
+    required: true
+    description: PWM channel index (0=Ch1, 1=Ch2, 2=Ch3, 3=Ch4)
+
+  "#pwm-cells":
+    const: 3
+
+pwm-cells:
+  - channel
+  - period
+  - flags

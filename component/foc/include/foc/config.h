@@ -1,0 +1,52 @@
+#pragma once
+
+// Kconfig → C++ 常量桥接
+// 这些宏由 Kconfig 自动生成，此处提供默认值
+
+#ifndef CONFIG_FOC_PWM_FREQUENCY_HZ
+#define CONFIG_FOC_PWM_FREQUENCY_HZ 20000
+#endif
+
+#ifndef CONFIG_FOC_CURRENT_LOOP_BW_HZ
+#define CONFIG_FOC_CURRENT_LOOP_BW_HZ 1000
+#endif
+
+#ifndef CONFIG_FOC_SPEED_LOOP_HZ
+#define CONFIG_FOC_SPEED_LOOP_HZ 100
+#endif
+
+#ifndef CONFIG_FOC_POLE_PAIRS
+#define CONFIG_FOC_POLE_PAIRS 7
+#endif
+
+#ifndef CONFIG_FOC_RS_OHMS
+#define CONFIG_FOC_RS_OHMS 0.05f
+#endif
+
+#ifndef CONFIG_FOC_LD_HENRIES
+#define CONFIG_FOC_LD_HENRIES 0.0001f
+#endif
+
+#ifndef CONFIG_FOC_LQ_HENRIES
+#define CONFIG_FOC_LQ_HENRIES 0.0001f
+#endif
+
+#ifndef CONFIG_FOC_FLUX_LINKAGE
+#define CONFIG_FOC_FLUX_LINKAGE 0.0f
+#endif
+
+#ifndef CONFIG_FOC_MAX_CURRENT_A
+#define CONFIG_FOC_MAX_CURRENT_A 20.0f
+#endif
+
+#ifndef CONFIG_FOC_MAX_VOLTAGE_V
+#define CONFIG_FOC_MAX_VOLTAGE_V 48.0f
+#endif
+
+#ifndef CONFIG_FOC_MAX_SPEED_RPM
+#define CONFIG_FOC_MAX_SPEED_RPM 10000.0f
+#endif
+
+#ifndef CONFIG_FOC_CLI_ENABLE
+#define CONFIG_FOC_CLI_ENABLE 1
+#endif

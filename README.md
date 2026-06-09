@@ -22,6 +22,7 @@
 | 驱动模型 | 运行时 `struct device` + vtable | **编译期模板 + initcall 自动初始化** |
 | 内存管理 | 动态分配 + Slab + Heap | **全部静态分配** |
 | RTOS 绑定 | 仅支持 Zephyr 内核 | **OSAL 多内核**（FreeRTOS、RT-Thread） |
+| SoC 支持 | 内置 400+ | **STM32、GD32、Goodix GR5525** |
 | 代码规模 | ~500K 行 | **~5K 行**（不含 SOC HAL） |
 
 ---
@@ -50,7 +51,7 @@
 │                    BSP (板级支持包)                           │
 │  SOC HAL/LL 库 · 时钟配置 · 引脚复用                         │
 │  ┌──────────┬──────────┬──────────┐                         │
-│  │  STM32   │  GD32    │  CH32    │                         │
+│  │  STM32   │  GD32    │  GR5525  │                         │
 │  └──────────┴──────────┴──────────┘                         │
 ├─────────────────────────────────────────────────────────────┤
 │                    设备树 + Kconfig                          │
@@ -223,7 +224,64 @@ SYS_INIT(hal::_init_uart0, INITCALL_LEVEL_PRE_KERNEL_2, 25);
 - **声明式**：驱动映射 + init 参数在 binding YAML 中声明
 - **自动初始化**：DTS `status = "okay"` → 启动时自动 init，业务层零配置
 
-### 5. OSAL — 头文件零 RTOS 依赖
+### 5. FOC 电机控制组件 — 内置应用级模块
+
+SDK 提供开箱即用的 FOC（磁场定向控制）电机控制组件，基于 PWM + ADC 驱动构建：
+
+```cpp
+#include "foc_app.h"
+
+int main(void) {
+    foc_app::start();  // 启动 FOC 系统（PWM 20kHz + ADC 采样 + CLI 调试）
+}
+```
+
+**特性：**
+- **空间矢量调制（SVPWM）** — 三相 PWM 输出，20kHz 默认频率
+- **电流采样** — ADC 同步采样，支持内嵌（inline）和低侧（low-side）模式
+- **CLI 调试** — UART 命令行，实时调节参数
+- **可配置** — Kconfig 选择 PWM 频率、电机参数、调试选项
+
+**设备树配置：**
+```dts
+aliases {
+    pwm_u = &timer0_ch0;
+    pwm_v = &timer0_ch1;
+    pwm_w = &timer0_ch2;
+    adc0  = &adc0;
+};
+```
+
+> **FOC 组件位于 `component/foc/`，可独立于应用复用。**
+
+### 6. ADC 驱动 — GD32 支持
+
+新增 GD32 ADC 驱动，支持多通道采样、DMA 传输：
+
+```dts
+adc0: adc@40022800 {
+    compatible = "gd,gd32-adc";
+    reg = <0x40022800 0x400>;
+    interrupts = <18 0>;
+    status = "okay";
+    #io-channel-cells = <1>;
+};
+```
+
+### 7. PWM 驱动增强 — 多通道 + 输出控制
+
+PWM 驱动新增多通道支持、输出使能控制和更新中断回调：
+
+```cpp
+auto &pwm = device_get(pwm_u);
+
+pwm.enable_output();                    // 使能 MOE（高级定时器）
+pwm.set_pulse(PwmChannel::Ch1, 500);   // 多通道独立设置占空比
+pwm.set_update_callback(my_isr, arg);   // 更新中断回调（FOC 电流环）
+pwm.start();
+```
+
+### 8. OSAL — 头文件零 RTOS 依赖
 
 `osal.h` 是纯 C++ 接口，不包含任何 RTOS 特定宏。所有 OS 相关的类型定义和常量集中在各 RTOS 的 `osal_types.h` 中：
 
@@ -249,7 +307,7 @@ inline constexpr Priority kDefaultThreadPriority =
 }
 ```
 
-### 7. IRQ/ISR — 向量表弱别名 + 编译期零开销绑定
+### 9. IRQ/ISR — 向量表弱别名 + 编译期零开销绑定
 
 中断处理采用向量表弱别名直接覆盖方案，无运行时开销：
 
@@ -313,7 +371,7 @@ HAL_ISR_CONNECT(37, UartBase, &DeviceTrait<14>::instance)
 - `hal::IrqGuard` — RAII 中断锁（构造锁中断，析构恢复）
 - `gen_irq_entries` / `gen_irq_Weaks` — `.altmacro` 宏，根据 `CONFIG_NUM_IRQS` 自动生成向量表条目和弱别名
 
-### 8. 异常处理框架 — 可插拔后端 + noinit 故障记录
+### 10. 异常处理框架 — 可插拔后端 + noinit 故障记录
 
 统一处理 HardFault/MemManage/BusFault/UsageFault，支持帧指针回溯、栈快照、noinit 故障记录持久化：
 
@@ -347,7 +405,7 @@ int main() {
 
 > 详细设计见 [doc/EXCEPTION_DESIGN.md](doc/EXCEPTION_DESIGN.md)
 
-### 9. 分层命名空间
+### 11. 分层命名空间
 
 ```cpp
 namespace hal {      // 硬件抽象层：驱动、寄存器访问
@@ -375,7 +433,18 @@ rtos_sdk/
 │   └── demo/
 │       ├── config/board.dts      # 板级设备树
 │       ├── config/Kconfig        # 板级配置
-│       └── main.cc               # 应用代码
+│       ├── main.cc               # 应用代码
+│       ├── foc_app.cc            # FOC 电机控制应用
+│       └── foc_app.h
+│
+├── component/                    # 应用级组件
+│   ├── foc/                      # FOC 电机控制库
+│   │   ├── include/              # 公共接口
+│   │   ├── src/                  # 实现（SVPWM、电流采样、CLI）
+│   │   └── Kconfig               # 配置选项
+│   └── ble/                      # BLE 蓝牙组件
+│       ├── include/
+│       └── goodix/               # Goodix BLE 实现
 │
 ├── embedded/                     # SDK 核心
 │   ├── include/                  # 公共头文件
@@ -387,17 +456,31 @@ rtos_sdk/
 │   │   └── devicetree/           # 设备树解析
 │   │
 │   ├── drivers/                  # MCU 驱动实现
-│   │   ├── gpio/gpio_stm32.cc
-│   │   ├── clock_control/clock_stm32.cc
+│   │   ├── gpio/                 # GPIO（STM32、GD32、GR5525）
+│   │   ├── uart/                 # UART（STM32、GD32、GR5525）
+│   │   ├── spi/                  # SPI（STM32、GD32、GR5525）
+│   │   ├── pwm/                  # PWM（STM32、GD32）
+│   │   ├── adc/                  # ADC（GD32）
+│   │   ├── dma/                  # DMA（GD32）
+│   │   ├── clock_control/
 │   │   └── interrupt_controller/
 │   │
-│   ├── soc/st/                   # STM32 SOC 支持
-│   │   ├── stm32cube/            # ST HAL/LL 库
-│   │   └── include/              # SOC 特定头文件
+│   ├── soc/                      # SoC 支持
+│   │   ├── st/                   # STM32
+│   │   │   ├── stm32cube/        # ST HAL/LL 库
+│   │   │   └── include/
+│   │   ├── gd/                   # GD32
+│   │   │   └── gd32f50x/
+│   │   └── goodix/               # Goodix GR5525
+│   │       └── gr5525x/
 │   │
 │   ├── arch/                     # 架构实现（ARM Cortex-M）
 │   ├── osal/                     # RTOS 适配层
 │   ├── dts/                      # 设备树源文件
+│   │   ├── arm/st/               # STM32 DTS
+│   │   ├── arm/gd/               # GD32 DTS
+│   │   ├── arm/goodix/           # Goodix DTS
+│   │   └── bindings/             # DT 绑定 YAML
 │   └── linkscript/               # 链接脚本
 │
 └── tools/                        # 构建工具
@@ -434,7 +517,7 @@ ninja -C out
 ls out/demo.elf  out/demo.bin  out/demo.hex
 ```
 
-Demo 源码在 `app/demo/main.cc`，面向 GD32F503，展示 UART echo 和 SPI 同步传输。
+Demo 源码在 `app/demo/main.cc`，面向 GD32F503，展示 FOC 电机控制（PWM + ADC + CLI 调试）。
 
 ---
 

@@ -1,0 +1,31 @@
+description: GD32 ADC controller
+
+compatible: "gd,gd32-adc"
+
+include: [adc-controller.yaml, base.yaml]
+
+cxx-driver:
+  template: Adc
+  header: drivers/adc.h
+  args:
+    - node-reg
+  init-level: pre-kernel-2
+  init-priority: 30
+  init-cfg:
+    type: AdcConfig
+    fields:
+      resolution:
+        default: 12
+
+properties:
+  reg:
+    type: array
+    required: true
+
+  interrupts:
+    type: array
+    required: true
+
+  label:
+    type: string
+    required: true

@@ -1,4 +1,4 @@
-CMAKE_MINIMUM_REQUIRED(VERSION 3.20)
+cmake_minimum_required(VERSION 3.20)
 
 if(NOT DEFINED p)
     message(FATAL_ERROR "You must defined Project. eg.-Dp=xxx")
@@ -27,6 +27,7 @@ include_directories(${BINARY_DIR_INCLUDE_GENERATED})
 
 
 add_subdirectory(embedded)
+add_subdirectory(component)
 add_subdirectory(${PROJECT_DIR})
 
 add_executable(${PROJECT_NAME} ${NULL_C})

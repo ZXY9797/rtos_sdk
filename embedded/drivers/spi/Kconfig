@@ -5,6 +5,7 @@ menuconfig SPI
 
 rsource "Kconfig.stm32"
 rsource "Kconfig.gd32"
+rsource "Kconfig.gr5525"
 
 if SPI
 

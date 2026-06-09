@@ -1,0 +1,21 @@
+rsource "Kconfig.soc"
+
+config SOC_SERIES_GR5525X
+    bool "Goodix GR5525x series"
+    select ARM
+    select CPU_CORTEX_M4
+    select CPU_HAS_FPU
+    select SOC_FAMILY_GOODIX
+    help
+      Goodix GR5525x BLE SoC series
+
+if SOC_SERIES_GR5525X
+
+rsource "Kconfig.defconfig"
+
+rsource "gr5525x/Kconfig"
+
+config SOC_SERIES
+    default "gr5525x"
+
+endif # SOC_SERIES_GR5525X

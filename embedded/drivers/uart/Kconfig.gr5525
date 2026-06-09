@@ -1,0 +1,7 @@
+config UART_GR5525
+    bool "GR5525 UART driver"
+    select UART
+    depends on SOC_SERIES_GR5525X
+    default y
+    help
+      Enable GR5525 UART driver.

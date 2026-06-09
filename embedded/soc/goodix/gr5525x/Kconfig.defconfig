@@ -1,0 +1,15 @@
+# Goodix GR5525x series SoC defconfig
+
+if SOC_SERIES_GR5525X
+
+config ROM_START_OFFSET
+    hex
+    default 0x0
+
+config SYS_CLOCK_HW_CYCLES_PER_SEC
+    default 96000000
+
+config NUM_IRQS
+    default 64
+
+endif # SOC_SERIES_GR5525X

@@ -1,0 +1,14 @@
+# Motor-specific configuration overrides
+# Board DTS or prj.conf can override these
+
+config FOC_MOTOR_RS
+    int "Override stator resistance (mOhm)"
+    default 0
+    help
+      Override motor Rs. 0 = use FOC_RS_OHMS default.
+
+config FOC_MOTOR_LS
+    int "Override stator inductance (uH)"
+    default 0
+    help
+      Override motor Ls. 0 = use FOC_LD/LQ default.

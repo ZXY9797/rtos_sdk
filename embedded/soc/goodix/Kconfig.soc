@@ -1,0 +1,11 @@
+# Goodix SoC configuration
+
+config SOC_FAMILY_GOODIX
+    bool
+
+config SOC_VENDOR
+    string
+    default "goodix" if SOC_SERIES_GR5525X
+
+config SOC_FAMILY
+    default "goodix" if SOC_FAMILY_GOODIX

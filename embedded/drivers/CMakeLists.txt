@@ -3,7 +3,6 @@ add_library(${MODULE_NAME} ${NULL_C})
 
 target_include_directories(${MODULE_NAME}
     PUBLIC
-    PRIVATE
 )
 
 add_subdirectory_ifdef(CONFIG_GPIO gpio)
@@ -27,8 +26,11 @@ target_link_libraries_ifdef(CONFIG_FLASH ${MODULE_NAME} PUBLIC flash)
 add_subdirectory_ifdef(CONFIG_PWM pwm)
 target_link_libraries_ifdef(CONFIG_PWM ${MODULE_NAME} PUBLIC pwm)
 
-add_subdirectory_ifdef(CONFIG_DMA_GD32 dma)
-target_link_libraries_ifdef(CONFIG_DMA_GD32 ${MODULE_NAME} PUBLIC dma)
+add_subdirectory_ifdef(CONFIG_ADC adc)
+target_link_libraries_ifdef(CONFIG_ADC ${MODULE_NAME} PUBLIC adc)
+
+add_subdirectory_ifdef(CONFIG_DMA dma)
+target_link_libraries_ifdef(CONFIG_DMA ${MODULE_NAME} PUBLIC dma)
 
 add_subdirectory(log)
 
@@ -40,6 +42,5 @@ target_link_libraries(${MODULE_NAME}
         interrupt_controller
         clock_control
         log
-    PRIVATE
 )
 

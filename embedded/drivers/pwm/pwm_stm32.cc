@@ -51,6 +51,8 @@ constexpr uint32_t CCER_CC3E = (1U << 8);
 constexpr uint32_t CCER_CC4E = (1U << 12);
 // BDTR
 constexpr uint32_t BDTR_MOE = (1U << 15);
+// DIER
+constexpr uint32_t DIER_UIE = (1U << 0); // 更新中断使能
 // EGR
 constexpr uint32_t EGR_UG   = (1U << 0);
 
@@ -78,8 +80,10 @@ Status PwmBase::init(const PwmConfig &config) {
         break;
     }
 
-    // 使能 BDTR MOE（高级定时器需要）
-    regs->BDTR |= BDTR_MOE;
+    // 使能 BDTR MOE（仅高级定时器 TIM1/TIM8/TIM20 有 BDTR 寄存器）
+    // 通用定时器 (TIM2-TIM5, TIM12-TIM15) 没有 BDTR，访问偏移 0x44 会 HardFault
+    // 注意: STM32 高级定时器基地址需与实际芯片匹配
+    // 当前由 enable_output() 单独控制 MOE，此处不再无条件写入
 
     m_initialized = true;
     return Status::Ok;
@@ -111,6 +115,7 @@ Status PwmBase::stop() {
     if (!m_initialized) return Status::InvalidArgument;
     auto *regs = reinterpret_cast<TimRegs *>(m_base);
 
+    regs->CR1 &= ~CR1_CEN;
     switch (m_channel) {
     case PwmChannel::Ch1: regs->CCER &= ~CCER_CC1E; break;
     case PwmChannel::Ch2: regs->CCER &= ~CCER_CC2E; break;
@@ -129,6 +134,45 @@ Status PwmBase::set_pulse(uint32_t pulse) {
     case PwmChannel::Ch2: regs->CCR2 = pulse; break;
     case PwmChannel::Ch3: regs->CCR3 = pulse; break;
     case PwmChannel::Ch4: regs->CCR4 = pulse; break;
+    }
+    return Status::Ok;
+}
+
+Status PwmBase::set_pulse(PwmChannel ch, uint32_t pulse) {
+    if (!m_initialized) return Status::InvalidArgument;
+    auto *regs = reinterpret_cast<TimRegs *>(m_base);
+
+    switch (ch) {
+    case PwmChannel::Ch1: regs->CCR1 = pulse; break;
+    case PwmChannel::Ch2: regs->CCR2 = pulse; break;
+    case PwmChannel::Ch3: regs->CCR3 = pulse; break;
+    case PwmChannel::Ch4: regs->CCR4 = pulse; break;
+    }
+    return Status::Ok;
+}
+
+Status PwmBase::enable_output() {
+    if (!m_initialized) return Status::InvalidArgument;
+    auto *regs = reinterpret_cast<TimRegs *>(m_base);
+    regs->BDTR |= BDTR_MOE;
+    return Status::Ok;
+}
+
+Status PwmBase::disable_output() {
+    if (!m_initialized) return Status::InvalidArgument;
+    auto *regs = reinterpret_cast<TimRegs *>(m_base);
+    regs->BDTR &= ~BDTR_MOE;
+    return Status::Ok;
+}
+
+Status PwmBase::set_update_callback(IrqCallback cb, void *arg) {
+    m_update_cb = cb;
+    m_update_arg = arg;
+    auto *regs = reinterpret_cast<TimRegs *>(m_base);
+    if (cb) {
+        regs->DIER |= DIER_UIE;
+    } else {
+        regs->DIER &= ~DIER_UIE;
     }
     return Status::Ok;
 }

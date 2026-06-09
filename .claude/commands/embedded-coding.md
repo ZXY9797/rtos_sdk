@@ -1,9 +1,9 @@
 ---
-name: embedded-c-coding
-description: 嵌入式C语言编码规范，适用于安全关键嵌入式系统。强制执行OOP设计模式、内存安全、线程安全、硬件交互规则和强制的编辑后安全审查。在编写、修改或审查C代码、嵌入式固件、驱动、HAL代码、RTOS任务或任何运行在嵌入式平台上的代码时使用此Skill。当用户提到C语言、嵌入式系统、MCU、STM32、驱动、外设或固件开发时也会触发。
+name: embedded-coding
+description: 嵌入式C/C++编码规范，适用于安全关键嵌入式系统。强制执行OOP设计模式、内存安全、线程安全、硬件交互规则和强制的编辑后安全审查。在编写、修改或审查C/C++代码、嵌入式固件、驱动、HAL代码、RTOS任务或任何运行在嵌入式平台上的代码时使用此Skill。当用户提到C/C++、嵌入式系统、MCU、STM32、驱动、外设或固件开发时也会触发。
 ---
 
-# 嵌入式C编码规范（安全关键嵌入式系统）
+# 嵌入式编码规范（安全关键嵌入式系统）
 
 这是安全关键嵌入式系统代码。缺陷可能导致系统故障甚至安全事故。
 每一行代码都必须以极其谨慎的态度编写和审查。
@@ -12,17 +12,20 @@ description: 嵌入式C语言编码规范，适用于安全关键嵌入式系统
 
 1. **安全第一** - 这是安全关键嵌入式系统软件，对每一次修改
    都要像生命攸关一样对待
-2. **C语言中的SOLID** - 即使在C语言中也要应用SOLID原则；
-   使用函数指针接口、不透明类型和依赖注入
+2. **SOLID 原则** - 在 C 中使用函数指针接口和不透明类型，
+   在 C++ 中使用虚函数或 CRTP 静态多态
 3. **Clean Code** - 函数只做一件事、命名揭示意图、不重复、
    无副作用、一致的抽象层级
-4. **C语言中的OOP** - 即使在C语言中也要使用面向对象设计模式；
+4. **OOP 设计** - 使用面向对象设计模式；在 C 中通过
+   结构体+函数指针实现，在 C++ 中使用类和 RAII；
    仅通过统一的外部接口访问设备
-5. **零容忍阻塞** - 如果应用层使用事件驱动框架 / RTC（运行至完成）
+5. **零开销抽象**（C++） - 只使用编译期解析或零额外运行时开销的
+   C++ 特性；禁用异常和 RTTI
+6. **零容忍阻塞** - 如果应用层使用事件驱动框架 / RTC（运行至完成）
    执行模型，整个调用链必须是非阻塞的
-6. **验证到底层** - 检查硬件交互到寄存器级别；
+7. **验证到底层** - 检查硬件交互到寄存器级别；
    永远不要假设API是非阻塞的
-7. **防御性编程** - 断言内部契约、校验外部输入、传播错误、
+8. **防御性编程** - 断言内部契约、校验外部输入、传播错误、
    绝不静默吞掉失败
 
 ## 决策树：应该阅读哪个参考文档
@@ -38,11 +41,35 @@ description: 嵌入式C语言编码规范，适用于安全关键嵌入式系统
 ├── 编写函数、命名、错误处理？
 │   └── 阅读 references/clean-code.md
 │
+├── 使用 C++ 编写嵌入式代码？
+│   └── 阅读 references/cpp-embedded.md
+│
 ├── 使用堆内存、线程、共享资源？
 │   └── 阅读 references/memory-safety.md
 │
 ├── 与硬件、外设、HAL交互？
 │   └── 阅读 references/hardware-interaction.md
+│
+├── 编写中断服务程序（ISR）？
+│   └── 阅读 references/interrupt-handling.md
+│
+├── 使用 RTOS（FreeRTOS/RT-Thread）？
+│   └── 阅读 references/rtos-programming.md
+│
+├── 实现低功耗功能？
+│   └── 阅读 references/low-power-design.md
+│
+├── 实现调试日志系统？
+│   └── 阅读 references/debug-logging.md
+│
+├── 实现通信协议（SPI/I2C/UART）？
+│   └── 阅读 references/communication-protocols.md
+│
+├── 编写测试代码？
+│   └── 阅读 references/embedded-testing.md
+│
+├── 实现安全相关功能？
+│   └── 阅读 references/embedded-security.md
 │
 ├── 任何代码修改？
 │   ├── 阅读 references/code-style.md
@@ -74,12 +101,15 @@ description: 嵌入式C语言编码规范，适用于安全关键嵌入式系统
 | 最大行宽 | 80列 |
 | 最大函数参数数 | 5个（超过则组合成结构体） |
 | 线程中大型局部变量 | 评估栈使用，紧张时用堆 |
-| 魔法数字 | 禁止，使用宏 |
+| 魔法数字 | 禁止，C 用宏，C++ 用 `constexpr` |
 | 死代码/未使用代码 | 必须删除 |
-| 非公共符号 | 必须声明为 `static` |
-| 未修改的指针 | 必须使用 `const` |
-| 头文件 | 必须有头文件保护宏 |
+| 非公共符号 | 必须声明为 `static`（C）或匿名命名空间（C++） |
+| 未修改的指针/引用 | 必须使用 `const` |
+| 头文件 | 必须有头文件保护宏（`#pragma once` 或 include guard） |
 | 注释语言 | 推荐英文，或与项目一致 |
+| C++ 异常 | 禁止（`-fno-exceptions`） |
+| C++ RTTI | 禁止（`-fno-rtti`） |
+| C++ 堆分配 | 仅允许在初始化阶段，运行时禁止 |
 
 ## 上下文感知编码
 
@@ -111,10 +141,10 @@ description: 嵌入式C语言编码规范，适用于安全关键嵌入式系统
 设计或修改模块结构时：
 
 - **SRP（单一职责）**：一个模块 = 一个职责 = 一个变更理由
-- **OCP（开闭原则）**：通过函数指针表扩展，而非修改代码
+- **OCP（开闭原则）**：C 中通过函数指针表扩展，C++ 中通过虚函数/模板扩展
 - **LSP（里氏替换）**：所有接口实现遵守相同的契约
 - **ISP（接口隔离）**：使用者只依赖其使用的接口
-- **DIP（依赖倒置）**：高层依赖抽象，而非底层
+- **DIP（依赖倒置）**：高层依赖抽象，而非底层；C++ 中优先使用 CRTP 而非虚函数
 
 ## Clean Code速查
 
@@ -134,9 +164,17 @@ description: 嵌入式C语言编码规范，适用于安全关键嵌入式系统
 | 参考文档 | 何时阅读 |
 |---------|---------|
 | [architecture.md](references/architecture.md) | 模块设计、OOP模式、接口、回调 |
-| [design-patterns.md](references/design-patterns.md) | SOLID原则、C语言GoF模式（状态机、观察者、策略、工厂） |
+| [design-patterns.md](references/design-patterns.md) | SOLID原则、GoF模式（状态机、观察者、策略、工厂） |
 | [clean-code.md](references/clean-code.md) | Clean Code + 华为规范：命名、防御性编程、错误处理、const/static |
+| [cpp-embedded.md](references/cpp-embedded.md) | C++ 嵌入式编程：RAII、constexpr、CRTP、编译器标志、C/C++ 混合编程 |
 | [memory-safety.md](references/memory-safety.md) | 堆分配、线程安全、共享资源、防御性编码 |
 | [hardware-interaction.md](references/hardware-interaction.md) | HAL、寄存器、外设、事件驱动框架 / RTC |
+| [interrupt-handling.md](references/interrupt-handling.md) | 中断服务程序、优先级管理、ISR安全API、中断调试 |
+| [rtos-programming.md](references/rtos-programming.md) | RTOS任务设计、同步原语、队列、内存管理、死锁防范 |
+| [low-power-design.md](references/low-power-design.md) | 时钟管理、睡眠模式、外设功耗、电源状态机 |
+| [debug-logging.md](references/debug-logging.md) | 日志级别、输出后端、断言、栈溢出检测、崩溃记录 |
+| [communication-protocols.md](references/communication-protocols.md) | SPI/I2C/UART驱动、协议帧格式、错误处理、重试机制 |
+| [embedded-testing.md](references/embedded-testing.md) | 单元测试、Mock/Stub、集成测试、HIL测试、覆盖率 |
+| [embedded-security.md](references/embedded-security.md) | 输入验证、密码学、安全启动、通信安全、审计日志 |
 | [code-style.md](references/code-style.md) | 格式、命名、注释、宏、头文件保护 |
 | [safety-checklist.md](references/safety-checklist.md) | **每次编辑后强制执行** - 12阶段安全审查 |

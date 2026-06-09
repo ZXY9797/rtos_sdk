@@ -1,0 +1,7 @@
+menu "Application Configuration"
+
+config APP_NAME
+    string "Application name"
+    default "demo_ble"
+
+endmenu

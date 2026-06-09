@@ -1,0 +1,16 @@
+menuconfig ADC
+    bool "ADC drivers"
+    help
+      Include ADC drivers in system config
+
+rsource "Kconfig.gd32"
+
+if ADC
+
+config ADC_INIT_PRIORITY
+    int "ADC init priority"
+    default KERNEL_INIT_PRIORITY_DEFAULT
+    help
+      ADC driver device initialization priority.
+
+endif # ADC

@@ -47,6 +47,12 @@ elseif(SOC_VENDOR STREQUAL "gd")
         PUBLIC
             GD32F50X
     )
+elseif(SOC_VENDOR STREQUAL "goodix")
+    target_compile_definitions(soc
+        PUBLIC
+            GR5525X
+            USE_HAL_DRIVER
+    )
 endif()
 
 add_subdirectory(${SOC_VENDOR})

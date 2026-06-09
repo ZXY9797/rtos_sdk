@@ -1,8 +1,10 @@
 
-# SOLID原则与GoF设计模式在C语言中的实现
+# SOLID原则与GoF设计模式实现
 
 C语言没有类、继承和虚方法，但每一条SOLID原则和许多GoF设计模式
-都可以通过结构体、函数指针和不透明类型来实现。本文档将逐一说明。
+都可以通过结构体、函数指针和不透明类型来实现。C++ 则可利用语言
+原生特性更自然地表达这些模式。本文档以 C 实现为主，末尾补充
+C++ 的关键差异。
 
 ---
 
@@ -593,3 +595,122 @@ static const event_subscriber_t SUBSCRIBE_TABLE[] = {
 3. **基本类型偏执** — 传递10个原始整数而非结构体。应将相关数据组合为有意义的类型。
 4. **复制粘贴复用** — 复制代码而非提取共享函数。应用DRY原则。
 5. **魔法Switch** — 无限增长的巨型switch语句。应用OCP并使用表驱动分发。
+
+---
+
+## 第六部分：C++ 中的关键模式差异
+
+C++ 可以用语言原生特性替代 C 中的手工模式。以下是关键差异点。
+
+### 状态机 — C++ 实现
+
+```cpp
+/* 使用虚函数的运行时多态 */
+class State {
+public:
+    virtual ~State() = default;
+    virtual State *handleEvent(Event evt) = 0;
+};
+
+class IdleState : public State {
+public:
+    State *handleEvent(Event evt) override
+    {
+        if (evt == Event::Start) {
+            return &running_state_;
+        }
+        return this;
+    }
+private:
+    static RunningState running_state_;
+};
+```
+
+```cpp
+/* 使用 CRTP 的静态多态（零开销） */
+template<typename Derived>
+class StateBase {
+public:
+    StateBase *handleEvent(Event evt)
+    {
+        return static_cast<Derived*>(this)->handle_impl(evt);
+    }
+};
+
+class IdleState : public StateBase<IdleState> {
+public:
+    StateBase *handle_impl(Event evt);
+};
+```
+
+### 观察者 — C++ 实现
+
+```cpp
+/* 使用模板替代 void* + 回调 */
+template<typename EventData>
+class Observer {
+public:
+    virtual ~Observer() = default;
+    virtual void onEvent(const EventData &data) = 0;
+};
+
+template<typename EventData, size_t MaxObservers = 8>
+class Subject {
+    std::array<Observer<EventData>*, MaxObservers> observers_{};
+    size_t count_ = 0;
+public:
+    bool subscribe(Observer<EventData> *obs)
+    {
+        if (count_ >= MaxObservers) return false;
+        observers_[count_++] = obs;
+        return true;
+    }
+
+    void notify(const EventData &data)
+    {
+        for (size_t i = 0; i < count_; i++) {
+            observers_[i]->onEvent(data);
+        }
+    }
+};
+```
+
+### 策略 — C++ 实现
+
+```cpp
+/* 使用模板参数（编译期策略，零开销） */
+template<typename ChecksumPolicy>
+class Protocol {
+    ChecksumPolicy checksum_;
+public:
+    uint32_t calculateChecksum(const uint8_t *data,
+                               size_t len)
+    {
+        return checksum_.calculate(data, len);
+    }
+};
+
+struct Crc32Policy {
+    uint32_t calculate(const uint8_t *data, size_t len);
+};
+
+struct XorPolicy {
+    uint32_t calculate(const uint8_t *data, size_t len);
+};
+
+/* 编译期选择策略 */
+Protocol<Crc32Policy> proto;
+```
+
+### C vs C++ 模式选择
+
+| 模式 | C 实现 | C++ 实现 |
+|------|--------|---------|
+| 状态机 | 函数指针表 | 虚函数 / CRTP |
+| 观察者 | `void*` + 回调 | 模板 + 接口 |
+| 策略 | 函数指针结构体 | 模板参数 / 虚函数 |
+| 工厂 | `switch` + 创建函数 | 虚函数 / 注册表 |
+| 单例 | 静态实例 + 访问函数 | Meyer's Singleton |
+| 适配器 | 包装函数 | 类继承 / 组合 |
+| RAII | 不可用（手动管理） | 构造/析构函数 |
+| 资源守卫 | goto 清理模式 | ScopeGuard / RAII |

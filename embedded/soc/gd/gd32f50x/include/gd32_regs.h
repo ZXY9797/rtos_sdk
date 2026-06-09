@@ -63,6 +63,52 @@ struct DmaRegs {
     DmaChannelRegs CH[7];       // 0x08 - channels 0..6
 };
 
+/* ─── TIMER ─────────────────────────────────────────────────────── */
+
+struct TimerRegs {
+    volatile uint32_t CTL0;     // 0x00
+    volatile uint32_t CTL1;     // 0x04
+    volatile uint32_t SMCFG;    // 0x08
+    volatile uint32_t DMAINTEN; // 0x0C
+    volatile uint32_t INTF;     // 0x10
+    volatile uint32_t SWEVG;    // 0x14
+    volatile uint32_t CHCTL0;   // 0x18
+    volatile uint32_t CHCTL1;   // 0x1C
+    volatile uint32_t CHCTL2;   // 0x20
+    volatile uint32_t CNT;      // 0x24
+    volatile uint32_t PSC;      // 0x28
+    volatile uint32_t CAR;      // 0x2C
+    volatile uint32_t CREP;     // 0x30
+    volatile uint32_t CH0CV;    // 0x34
+    volatile uint32_t CH1CV;    // 0x38
+    volatile uint32_t CH2CV;    // 0x3C
+    volatile uint32_t CH3CV;    // 0x40
+    volatile uint32_t CCHP;     // 0x44
+    volatile uint32_t DMACFG;   // 0x48
+    volatile uint32_t DMATB;    // 0x4C
+};
+
+/* ─── ADC ───────────────────────────────────────────────────────── */
+
+struct AdcRegs {
+    volatile uint32_t CTL0;     // 0x00
+    volatile uint32_t CTL1;     // 0x04
+    volatile uint32_t RSQ0;     // 0x08
+    volatile uint32_t RSQ1;     // 0x0C
+    volatile uint32_t RSQ2;     // 0x10
+    volatile uint32_t ISQ;      // 0x14
+    volatile uint32_t SAMPT0;   // 0x18
+    volatile uint32_t SAMPT1;   // 0x1C
+    volatile uint32_t IDATA0;   // 0x20
+    volatile uint32_t IDATA1;   // 0x24
+    volatile uint32_t IDATA2;   // 0x28
+    volatile uint32_t IDATA3;   // 0x2C
+    volatile uint32_t RDATA;    // 0x30
+    volatile uint32_t OVSAMPCTL;// 0x34
+    volatile uint32_t WDHIGH;   // 0x38
+    volatile uint32_t WDLOW;    // 0x3C
+};
+
 /* ─── RCU 寄存器访问 ────────────────────────────────────────────── */
 /* 使用 inline 函数避免宏污染全局命名空间 */
 
@@ -91,6 +137,10 @@ namespace clk {
     constexpr uint32_t UART4EN  = (1U << 20);
     constexpr uint32_t SPI1EN   = (1U << 14);
     constexpr uint32_t SPI2EN   = (1U << 15);
+
+    /* APB2 */
+    constexpr uint32_t TIMER0EN = (1U << 11);
+    constexpr uint32_t ADC0EN   = (1U << 9);
 
     /* AHB */
     constexpr uint32_t GPIOAEN  = (1U << 0);

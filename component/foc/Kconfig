@@ -1,0 +1,74 @@
+menuconfig FOC
+    bool "FOC Motor Control"
+    help
+      Enable FOC (Field-Oriented Control) motor control component.
+
+if FOC
+
+config FOC_PWM_FREQUENCY_HZ
+    int "PWM frequency (Hz)"
+    default 20000
+    help
+      PWM switching frequency for FOC control.
+
+config FOC_CURRENT_LOOP_BW_HZ
+    int "Current loop bandwidth (Hz)"
+    default 1000
+    help
+      Current control loop bandwidth.
+
+config FOC_SPEED_LOOP_HZ
+    int "Speed loop frequency (Hz)"
+    default 100
+    help
+      Speed control loop update rate.
+
+config FOC_POLE_PAIRS
+    int "Motor pole pairs"
+    default 7
+    help
+      Number of motor pole pairs.
+
+config FOC_RS_OHMS
+    int "Stator resistance (mOhm)"
+    default 50
+    help
+      Motor stator resistance in milliohms.
+
+config FOC_LD_HENRIES
+    int "D-axis inductance (uH)"
+    default 100
+    help
+      Motor D-axis inductance in microhenries.
+
+config FOC_LQ_HENRIES
+    int "Q-axis inductance (uH)"
+    default 100
+    help
+      Motor Q-axis inductance in microhenries.
+
+config FOC_FLUX_LINKAGE
+    int "Flux linkage (mWb)"
+    default 0
+    help
+      Motor flux linkage in milliwebers.
+
+config FOC_MAX_CURRENT_A
+    int "Maximum current (A)"
+    default 20
+    help
+      Maximum phase current.
+
+config FOC_MAX_VOLTAGE_V
+    int "Maximum voltage (V)"
+    default 48
+    help
+      Maximum bus voltage.
+
+config FOC_CLI_ENABLE
+    bool "Enable CLI commands"
+    default y
+    help
+      Enable UART CLI for motor control.
+
+endif # FOC

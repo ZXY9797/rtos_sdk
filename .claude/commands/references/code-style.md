@@ -238,6 +238,9 @@ static const uint16_t CRC_TABLE[CRC_TABLE_SIZE] = {
 #endif /* MODULE_NAME_H */
 ```
 
+C++ 文件也可使用 `#pragma once`（编译器普遍支持），
+但需与项目约定保持一致。
+
 ### 自包含头文件
 
 每个头文件必须能独立编译。包含它所引用的所有类型
@@ -286,7 +289,9 @@ static const uint16_t CRC_TABLE[CRC_TABLE_SIZE] = {
 
 ## 命名约定
 
-遵循项目现有的命名约定。常见的嵌入式C模式：
+遵循项目现有的命名约定。
+
+### C 语言命名
 
 | 元素 | 约定 | 示例 |
 |-----|------|------|
@@ -296,6 +301,21 @@ static const uint16_t CRC_TABLE[CRC_TABLE_SIZE] = {
 | 局部变量 | 小写蛇形 | `retry_count` |
 | 结构体成员 | 小写蛇形 | `buf_size` |
 | 枚举值 | 前缀_名称 | `UART_ERR_TIMEOUT` |
+
+### C++ 命名
+
+在 C 命名约定基础上，补充以下 C++ 特有约定：
+
+| 元素 | 约定 | 示例 |
+|-----|------|------|
+| 类名 | CamelCase | `UartDriver`、`SensorBase` |
+| 成员函数 | camelCase | `readData()`、`init()` |
+| 成员变量 | camelCase + 尾部下划线 | `tx_buf_`、`is_open_` |
+| 常量 | `k` 前缀 + CamelCase | `kMaxBaudRate`、`kBufSize` |
+| 模板参数 | CamelCase | `typename Derived` |
+| 命名空间 | 小写蛇形 | `drivers::uart` |
+| 枚举类成员 | CamelCase | `State::Idle`、`State::Running` |
+| 布尔成员 | `is_`/`has_` 前缀 | `is_initialized_` |
 
 始终先检查项目的实际约定并保持一致。
 

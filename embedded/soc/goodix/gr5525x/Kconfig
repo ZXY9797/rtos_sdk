@@ -1,0 +1,15 @@
+# Goodix GR5525x series SoC configuration
+
+config SOC_GR5525X
+    bool
+    select ARM
+    select CPU_CORTEX_M4
+    select CPU_HAS_FPU
+
+config SOC
+    string
+    default "gr5525x"
+
+config SOC_NAME
+    string
+    default "GR5525X"

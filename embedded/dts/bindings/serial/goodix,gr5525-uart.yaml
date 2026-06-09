@@ -1,0 +1,49 @@
+description: Goodix GR5525 UART
+
+compatible: "goodix,gr5525-uart"
+
+include: [uart-controller.yaml, base.yaml]
+
+cxx-driver:
+  template: Uart
+  header: drivers/uart.h
+  args:
+    - node-reg
+    - irq
+  isr-handler: isr_handler
+  init-level: pre-kernel-2
+  init-priority: 25
+  init-cfg:
+    type: UartConfig
+    rx-buffer-size:
+      default: 256
+    fields:
+      baudrate:
+        prop: current-speed
+        default: 115200
+      data_bits:
+        default: 8
+        cast: DataBits
+      stop_bits:
+        default: 0
+        cast: StopBits
+      parity:
+        default: 0
+        cast: Parity
+
+properties:
+  reg:
+    type: array
+    required: true
+
+  interrupts:
+    type: array
+    required: true
+
+  current-speed:
+    type: int
+    default: 115200
+
+  label:
+    type: string
+    required: true

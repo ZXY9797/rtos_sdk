@@ -1,0 +1,7 @@
+config ADC_GD32
+    bool "GD32 ADC driver"
+    select ADC
+    default y if SOC_SERIES_GD32F50X
+    depends on SOC_SERIES_GD32F50X
+    help
+      Enable GD32 SAR-ADC driver for GD32F50x series.

@@ -1,0 +1,58 @@
+menuconfig BLE_GR5525
+    bool "Goodix GR5525 BLE stack"
+    default n
+    depends on SOC_SERIES_GR5525X
+    help
+      Enable Goodix GR5525 BLE protocol stack.
+
+if BLE_GR5525
+
+config BLE_HID
+    bool "BLE HID Service (HIDS)"
+    default y
+    help
+      Enable HIDS for BLE HID devices (keyboard/mouse).
+
+config BLE_UART_SERVICE
+    bool "BLE UART Service (GUS)"
+    default y
+    help
+      Enable GUS for BLE UART transparent data.
+
+config BLE_HEART_RATE
+    bool "BLE Heart Rate Service (HRS)"
+    default n
+    help
+      Enable HRS for BLE heart rate monitoring.
+
+config BLE_BATTERY_SERVICE
+    bool "BLE Battery Service (BAS)"
+    default y
+    help
+      Enable BAS for battery level reporting.
+
+config BLE_DEVICE_INFO
+    bool "BLE Device Information Service (DIS)"
+    default y
+    help
+      Enable DIS for device information.
+
+config BLE_OTA_SERVICE
+    bool "BLE OTA Service (OTAS)"
+    default n
+    help
+      Enable OTAS for over-the-air firmware updates.
+
+config BLE_TASK_STACK_SIZE
+    int "BLE task stack size"
+    default 2048
+    help
+      Stack size for the BLE processing task.
+
+config BLE_HEAP_SIZE
+    int "BLE heap size (bytes)"
+    default 32768
+    help
+      Heap memory reserved for BLE stack operations.
+
+endif # BLE_GR5525

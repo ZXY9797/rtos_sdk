@@ -58,3 +58,8 @@ family:
       cpuclusters:
       - name: m7
       - name: m4
+- name: goodix
+  series:
+  - name: gr5525x
+    socs:
+    - name: gr5525

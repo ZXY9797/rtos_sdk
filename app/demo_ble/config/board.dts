@@ -1,0 +1,67 @@
+/dts-v1/;
+
+#include <arm/goodix/gr5525x.dtsi>
+#include <dt-bindings/gpio/gpio.h>
+
+/ {
+    compatible = "goodix,gr5525";
+    model = "GR5525 BLE Demo Board";
+
+    chosen {
+        zephyr,console = &uart0;
+        zephyr,shell-uart = &uart0;
+    };
+
+    aliases {
+        led0 = &green_led;
+        key0 = &user_key;
+        uart0 = &uart0;
+        ble_uart = &uart1;
+    };
+
+    leds {
+        compatible = "gpio-leds";
+        green_led: green_led {
+            gpios = <&gpio0 5 0>;
+            label = "Green LED";
+        };
+    };
+
+    keys {
+        compatible = "gpio-keys";
+        user_key: user_key {
+            gpios = <&gpio0 0 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+            label = "User Key";
+        };
+    };
+
+    soc {
+        uart0: uart@40013800 {
+            compatible = "goodix,gr5525-uart";
+            reg = <0x40013800 0x400>;
+            interrupts = <37 0>;
+            status = "okay";
+            current-speed = <115200>;
+            label = "UART0";
+        };
+
+        uart1: uart@40013C00 {
+            compatible = "goodix,gr5525-uart";
+            reg = <0x40013C00 0x400>;
+            interrupts = <38 0>;
+            status = "okay";
+            current-speed = <115200>;
+            label = "UART1";
+        };
+
+        gpio0: gpio@40010800 {
+            compatible = "goodix,gr5525-gpio";
+            reg = <0x40010800 0x400>;
+            interrupts = <0 0>;
+            label = "GPIO0";
+            gpio-controller;
+            #gpio-cells = <2>;
+            ngpios = <16>;
+        };
+    };
+};

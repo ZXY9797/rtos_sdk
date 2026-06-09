@@ -1,11 +1,11 @@
 
-# 架构设计与C语言面向对象设计模式
+# 架构设计与面向对象设计模式
 
 ## 指导原则
 
 所有模块设计必须遵循SOLID原则和OOP（面向对象）思维。
-关于SOLID原则的详细解释和GoF设计模式在C语言中的实现，
-请参阅 `02_设计模式.md`。
+关于SOLID原则的详细解释和GoF设计模式的实现，
+请参阅 `design-patterns.md`。
 
 核心原则一览：
 
@@ -58,6 +58,58 @@ void UartDriver_SetRxCb(UartDriver_t *self,
 
 3. **不透明指针模式** - 在头文件中使用前向声明
    （`typedef struct Foo Foo_t;`），仅在 `.c` 文件中定义结构体。
+
+### C++ 中的封装
+
+C++ 提供天然的封装机制（访问控制、RAII），可替代 C 风格的
+不透明指针模式：
+
+```cpp
+/* ---- uart_driver.h ---- */
+class UartDriver {
+public:
+    UartDriver(uint8_t port, uint32_t baudrate);
+    ~UartDriver();
+
+    /* 禁止拷贝（资源不可共享） */
+    UartDriver(const UartDriver &) = delete;
+    UartDriver &operator=(const UartDriver &) = delete;
+
+    int open();
+    int close();
+    int send(const uint8_t *data, uint16_t len);
+
+    using ErrorCb = void(*)(UartDriver &self, uint32_t err);
+    using RxCb    = void(*)(UartDriver &self,
+                            const uint8_t *data, uint16_t len);
+
+    void setErrorCb(ErrorCb cb);
+    void setRxCb(RxCb cb);
+
+private:
+    /* 实现细节隐藏在 .cpp 中 */
+    struct Impl;              /* Pimpl 惯用法 */
+    std::unique_ptr<Impl> pimpl_;
+};
+```
+
+**C++ 封装规则：**
+
+1. **成员变量全部 `private`** — 通过成员函数访问
+2. **管理资源的类** — 禁止拷贝（`= delete`），按需提供移动语义
+3. **Pimpl 惯用法** — 将实现细节隐藏到 `.cpp` 中的前向声明结构体
+4. **命名空间** — 替代 C 风格的模块名前缀：`drivers::UartDriver`
+
+```cpp
+/* 使用命名空间组织模块 */
+namespace drivers {
+namespace uart {
+
+class Driver { /* ... */ };
+
+} /* namespace uart */
+} /* namespace drivers */
+```
 
 ## 状态通知的回调模式
 
