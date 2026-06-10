@@ -1,0 +1,33 @@
+description: GD32 CAN controller
+
+compatible: "gd,gd32-can"
+
+include: [can-controller.yaml, base.yaml]
+
+cxx-driver:
+  template: CanDriver
+  header: drivers/can.h
+  args:
+    - node-reg
+  init-level: pre-kernel-2
+  init-priority: 25
+  init-cfg:
+    type: CanConfig
+    fields:
+      bitrate:
+        default: 500000
+      irq_priority:
+        default: 8
+
+properties:
+  reg:
+    type: array
+    required: true
+
+  interrupts:
+    type: array
+    required: true
+
+  label:
+    type: string
+    required: true

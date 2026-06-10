@@ -1,6 +1,7 @@
 #include <drivers/uart.h>
 #include <drivers/dma.h>
 #include <irq.h>
+#include <osal.h>
 
 #include "gd32_regs.h"
 #include "gd32f50x_dma.h"
@@ -18,6 +19,7 @@ constexpr uint32_t CTL0_UEN    = (1U << 13);
 constexpr uint32_t CTL0_TEN    = (1U << 3);
 constexpr uint32_t CTL0_REN    = (1U << 2);
 constexpr uint32_t CTL0_RBNEIE = (1U << 5);
+constexpr uint32_t CTL0_TCIE   = (1U << 6);
 constexpr uint32_t CTL0_PM_EVEN = 0x00000400U;
 constexpr uint32_t CTL0_PM_ODD  = 0x00000600U;
 constexpr uint32_t CTL0_PM_MASK = 0x00000600U;
@@ -46,10 +48,15 @@ void usart_clock_enable(uintptr_t base) {
 
 } // anonymous namespace
 
+/* UART TX DMA 完成信号量指针（用于 DMA ISR → send 线程通知） */
+static osal::Semaphore *s_uart_tx_sem = nullptr;
+
 Status UartBase::init(const UartConfig &config) {
     if (!config.rx_buffer || config.rx_buffer_size == 0) return Status::InvalidArgument;
 
-    m_rx_ring = RingBuf(config.rx_buffer, config.rx_buffer_size);
+    if (!m_rx_stream.create(config.rx_buffer, config.rx_buffer_size, 1)) {
+        return Status::NoMemory;
+    }
     auto *regs = reinterpret_cast<gd32::UsartRegs *>(m_base);
 
     usart_clock_enable(m_base);
@@ -82,23 +89,23 @@ Status UartBase::init(const UartConfig &config) {
 
     hal::Irq::enable(m_irq);
 
-    m_initialized = true;
+    set_state(DeviceState::Initialized);
     return Status::Ok;
 }
 
 Status UartBase::deinit() {
-    if (!m_initialized) return Status::Ok;
+    if (!is_initialized()) return Status::Ok;
     auto *regs = reinterpret_cast<gd32::UsartRegs *>(m_base);
     regs->CTL0 &= ~CTL0_UEN;
-    m_initialized = false;
+    m_rx_stream.destroy();
+    set_state(DeviceState::Created);
     return Status::Ok;
 }
 
 Status UartBase::send(const uint8_t *data, size_t len, size_t *bytes_sent, uint32_t timeout_ms) {
-    if (!m_initialized || !data || len == 0) return Status::InvalidArgument;
+    if (!is_initialized() || !data || len == 0) return Status::InvalidArgument;
 
-    uint32_t timeout_loops = timeout_ms * (SystemCoreClock / 1000U / 4U);
-    if (timeout_loops == 0) timeout_loops = 1;
+    s_uart_tx_sem = &m_tx_sem;
 
     DmaChannel tx_dma(DMA1_BASE, 4, 10);
     tx_dma.clear_flags();
@@ -117,57 +124,77 @@ Status UartBase::send(const uint8_t *data, size_t len, size_t *bytes_sent, uint3
         .circular     = false,
     };
 
-    tx_dma.config(dma_cfg);
-    tx_dma.start();
+    (void)tx_dma.config(dma_cfg);
+    (void)tx_dma.start();
 
-    uint32_t remaining = timeout_loops;
-    while (!tx_dma.is_transfer_complete()) {
-        if (--remaining == 0) return Status::Timeout;
+    /* 等待 DMA 完成（ISR 释放信号量，让出 CPU） */
+    if (m_tx_sem.take(timeout_ms) != 0) {
+        (void)tx_dma.stop();
+        tx_dma.clear_flags();
+        return Status::Timeout;
     }
 
+    /* 等待 TC（最后一位从移位寄存器发出，ISR 释放信号量） */
     auto *regs = reinterpret_cast<gd32::UsartRegs *>(m_base);
-    remaining = timeout_loops;
-    while (!(regs->STAT & STAT_TC)) {
-        if (--remaining == 0) return Status::Timeout;
+    regs->CTL0 |= CTL0_TCIE;
+    if (m_tx_sem.take(timeout_ms) != 0) {
+        regs->CTL0 &= ~CTL0_TCIE;
+        (void)tx_dma.stop();
+        tx_dma.clear_flags();
+        return Status::Timeout;
     }
 
-    tx_dma.stop();
+    (void)tx_dma.stop();
     tx_dma.clear_flags();
 
     if (bytes_sent) *bytes_sent = len;
+    m_stats.tx_bytes += len;
     return Status::Ok;
 }
 
 Status UartBase::recv(uint8_t *data, size_t len, size_t *bytes_read, uint32_t timeout_ms) {
-    if (!m_initialized || !data || len == 0) return Status::InvalidArgument;
+    if (!is_initialized() || !data || len == 0) return Status::InvalidArgument;
 
-    size_t rd = m_rx_ring.read(data, len);
-    if (rd > 0) {
-        if (bytes_read) *bytes_read = rd;
-        return Status::Ok;
-    }
-
-    if (m_rx_sem.take(timeout_ms) != 0) {
+    size_t rd = m_rx_stream.receive(data, len, timeout_ms);
+    if (rd == 0) {
         if (bytes_read) *bytes_read = 0;
         return Status::Timeout;
     }
-
-    rd = m_rx_ring.read(data, len);
     if (bytes_read) *bytes_read = rd;
+    m_stats.rx_bytes += rd;
     return Status::Ok;
 }
 
 size_t UartBase::rx_available() const {
-    return m_rx_ring.size();
+    return m_rx_stream.bytes_available();
 }
 
 void UartBase::isr_handler() {
     auto *regs = reinterpret_cast<gd32::UsartRegs *>(m_base);
-    if (regs->STAT & STAT_RBNE) {
+    uint32_t stat = regs->STAT;
+
+    if (stat & STAT_RBNE) {
         uint8_t ch = static_cast<uint8_t>(regs->DATA);
-        m_rx_ring.write(&ch, 1);
-        (void)m_rx_sem.release();
+        int woken = 0;
+        (void)m_rx_stream.send_from_isr(&ch, 1, &woken);
+        (void)woken;
+    }
+
+    /* TC 中断：传输完成，释放 send 信号量 */
+    if ((stat & STAT_TC) && (regs->CTL0 & CTL0_TCIE)) {
+        regs->CTL0 &= ~CTL0_TCIE;
+        (void)m_tx_sem.release();
     }
 }
 
 } // namespace hal
+
+/* DMA1 Channel 4 中断 — UART0 TX DMA 完成 */
+extern "C" void IRQ60_Handler(void) {
+    auto *dma = reinterpret_cast<gd32::DmaRegs *>(DMA1_BASE);
+    dma->INTC = (DMA_INTC_GIFC | DMA_INTC_FTFIFC
+                 | DMA_INTC_HTFIFC | DMA_INTC_ERRIFC) << (4U * 4U);
+    if (hal::s_uart_tx_sem) {
+        (void)hal::s_uart_tx_sem->release();
+    }
+}

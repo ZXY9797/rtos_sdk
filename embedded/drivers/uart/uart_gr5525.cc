@@ -34,6 +34,7 @@ constexpr uint32_t FCR_XFIFOR  = (1U << 2);   /* Transmitter FIFO reset */
 
 /* IER bits */
 constexpr uint32_t IER_ERBFI   = (1U << 0);   /* Enable Received Data Available Interrupt */
+constexpr uint32_t IER_ETBEI   = (1U << 1);   /* Enable Transmit Holding Register Empty Interrupt */
 
 /* LSR bits */
 constexpr uint32_t LSR_DR      = (1U << 0);   /* Data Ready */
@@ -45,7 +46,9 @@ constexpr uint32_t LSR_TEMT    = (1U << 6);   /* Transmitter Empty */
 Status UartBase::init(const UartConfig &config) {
     if (!config.rx_buffer || config.rx_buffer_size == 0) return Status::InvalidArgument;
 
-    m_rx_ring = RingBuf(config.rx_buffer, config.rx_buffer_size);
+    if (!m_rx_stream.create(config.rx_buffer, config.rx_buffer_size, 1)) {
+        return Status::NoMemory;
+    }
     auto *regs = reinterpret_cast<Gr5525UartRegs *>(m_base);
 
     /* Enable FIFOs and reset both FIFOs */
@@ -88,72 +91,71 @@ Status UartBase::init(const UartConfig &config) {
 
     hal::Irq::enable(m_irq);
 
-    m_initialized = true;
+    set_state(DeviceState::Initialized);
     return Status::Ok;
 }
 
 Status UartBase::deinit() {
-    if (!m_initialized) return Status::Ok;
+    if (!is_initialized()) return Status::Ok;
     auto *regs = reinterpret_cast<Gr5525UartRegs *>(m_base);
     regs->IER = 0;
-    m_initialized = false;
+    m_rx_stream.destroy();
+    set_state(DeviceState::Created);
     return Status::Ok;
 }
 
 Status UartBase::send(const uint8_t *data, size_t len, size_t *bytes_sent, uint32_t timeout_ms) {
-    if (!m_initialized || !data || len == 0) return Status::InvalidArgument;
+    if (!is_initialized() || !data || len == 0) return Status::InvalidArgument;
 
     auto *regs = reinterpret_cast<Gr5525UartRegs *>(m_base);
-    uint32_t timeout_loops = timeout_ms * (SystemCoreClock / 1000U / 4U);
-    if (timeout_loops == 0) timeout_loops = 1;
 
     for (size_t i = 0; i < len; i++) {
-        uint32_t remaining = timeout_loops;
-        while (!(regs->LSR & LSR_THRE)) {
-            if (--remaining == 0) return Status::Timeout;
-        }
+        while (!(regs->LSR & LSR_THRE)) {}
         regs->THR = data[i];
     }
 
-    /* Wait for transmitter to actually drain */
-    uint32_t remaining = timeout_loops;
-    while (!(regs->LSR & LSR_TEMT)) {
-        if (--remaining == 0) break;
+    /* 使能 ETBEI 中断，等待发送器完全排空（ISR 释放信号量） */
+    regs->IER |= IER_ETBEI;
+    if (m_tx_sem.take(timeout_ms) != 0) {
+        regs->IER &= ~IER_ETBEI;
+        return Status::Timeout;
     }
 
     if (bytes_sent) *bytes_sent = len;
+    m_stats.tx_bytes += len;
     return Status::Ok;
 }
 
 Status UartBase::recv(uint8_t *data, size_t len, size_t *bytes_read, uint32_t timeout_ms) {
-    if (!m_initialized || !data || len == 0) return Status::InvalidArgument;
+    if (!is_initialized() || !data || len == 0) return Status::InvalidArgument;
 
-    size_t rd = m_rx_ring.read(data, len);
-    if (rd > 0) {
-        if (bytes_read) *bytes_read = rd;
-        return Status::Ok;
-    }
-
-    if (m_rx_sem.take(timeout_ms) != 0) {
+    size_t rd = m_rx_stream.receive(data, len, timeout_ms);
+    if (rd == 0) {
         if (bytes_read) *bytes_read = 0;
         return Status::Timeout;
     }
-
-    rd = m_rx_ring.read(data, len);
     if (bytes_read) *bytes_read = rd;
     return Status::Ok;
 }
 
 size_t UartBase::rx_available() const {
-    return m_rx_ring.size();
+    return m_rx_stream.bytes_available();
 }
 
 void UartBase::isr_handler() {
     auto *regs = reinterpret_cast<Gr5525UartRegs *>(m_base);
+
     if (regs->LSR & LSR_DR) {
         uint8_t ch = static_cast<uint8_t>(regs->RBR);
-        m_rx_ring.write(&ch, 1);
-        (void)m_rx_sem.release();
+        int woken = 0;
+        (void)m_rx_stream.send_from_isr(&ch, 1, &woken);
+        (void)woken;
+    }
+
+    /* ETBEI 中断：发送器排空，释放 send 信号量 */
+    if ((regs->IER & IER_ETBEI) && (regs->LSR & LSR_TEMT)) {
+        regs->IER &= ~IER_ETBEI;
+        (void)m_tx_sem.release();
     }
 }
 

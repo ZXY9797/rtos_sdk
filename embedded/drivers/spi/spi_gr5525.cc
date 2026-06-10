@@ -1,5 +1,5 @@
 #include <drivers/spi.h>
-#include <arch/arch_interface.h>
+#include <osal.h>
 #include <system_gr55xx.h>
 
 namespace hal {
@@ -94,45 +94,47 @@ Status SpiBase::init(const SpiConfig &config) {
     /* Enable SSI */
     regs->SSI_EN = SSI_EN;
 
-    m_initialized = true;
+    set_state(DeviceState::Initialized);
     return Status::Ok;
 }
 
 Status SpiBase::deinit() {
-    if (!m_initialized) return Status::Ok;
+    if (!is_initialized()) return Status::Ok;
     auto *regs = reinterpret_cast<Gr5525SpiRegs *>(m_base);
     regs->SSI_EN = 0;
-    m_initialized = false;
+    set_state(DeviceState::Created);
     return Status::Ok;
 }
 
 Status SpiBase::sync_send(const uint8_t *tx, uint8_t *rx, size_t len, uint32_t timeout_ms) {
-    if (!m_initialized || len == 0) return Status::InvalidArgument;
+    if (!is_initialized() || len == 0) return Status::InvalidArgument;
 
+    osal::LockGuard lock(m_bus_mutex);
     auto *regs = reinterpret_cast<Gr5525SpiRegs *>(m_base);
-    uint32_t timeout_loops = timeout_ms * (SystemCoreClock / 1000U / 4U);
-    if (timeout_loops == 0) timeout_loops = 1;
 
+    uint32_t start_tick = osal::Kernel::tick_count();
     for (size_t i = 0; i < len; i++) {
         uint8_t tx_byte = tx ? tx[i] : 0xFF;
 
-        /* Wait for TX FIFO not full */
-        uint32_t remaining = timeout_loops;
         while (!(regs->STAT & STAT_TFNF)) {
-            if (--remaining == 0) return Status::Timeout;
+            if ((osal::Kernel::tick_count() - start_tick) >= timeout_ms) {
+                m_stats.timeout_count++; return Status::Timeout;
+            }
         }
         regs->DATA = tx_byte;
 
-        /* Wait for RX data available */
-        remaining = timeout_loops;
         while (!(regs->STAT & STAT_RFNE)) {
-            if (--remaining == 0) return Status::Timeout;
+            if ((osal::Kernel::tick_count() - start_tick) >= timeout_ms) {
+                m_stats.timeout_count++; return Status::Timeout;
+            }
         }
         uint8_t rx_byte = static_cast<uint8_t>(regs->DATA);
 
         if (rx) rx[i] = rx_byte;
     }
 
+    m_stats.xfer_count++;
+    m_stats.xfer_bytes += len;
     return Status::Ok;
 }
 

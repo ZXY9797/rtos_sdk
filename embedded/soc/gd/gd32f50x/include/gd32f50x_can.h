@@ -38,6 +38,9 @@ OF SUCH DAMAGE.
 #include "gd32f50x.h"
 
 /* CAN definitions */
+#ifndef CAN_BASE
+#define CAN_BASE                           CAN0_BASE
+#endif
 #define CAN0                               CAN_BASE                           /*!< CAN0 base address */
 #define CAN1                               (CAN0 + 0x00000400U)               /*!< CAN1 base address */
 

@@ -1,4 +1,7 @@
 #include <drivers/spi.h>
+#include <assert.h>
+#include <irq.h>
+#include <osal.h>
 #include <system_stm32h7xx.h>
 
 namespace hal {
@@ -30,6 +33,8 @@ constexpr uint32_t CFG2_LSBFRST = (1U << 23);
 constexpr uint32_t CFG2_CPHA  = (1U << 24);
 constexpr uint32_t CFG2_CPOL  = (1U << 25);
 constexpr uint32_t CFG2_SSM   = (1U << 26);
+// IER
+constexpr uint32_t IER_EOTIE  = (1U << 3);
 // SR
 constexpr uint32_t SR_RXP  = (1U << 0);
 constexpr uint32_t SR_TXP  = (1U << 1);
@@ -41,7 +46,25 @@ constexpr uint32_t IFCR_EOTC  = (1U << 3);
 constexpr uint32_t IFCR_TXTFC = (1U << 4);
 constexpr uint32_t IFCR_OVRC  = (1U << 6);
 
+namespace {
+
+int spi_irq_from_base(uintptr_t base) {
+    switch (base) {
+        case 0x40013000U: return SPI1_IRQn;   /* SPI1 */
+        case 0x40003800U: return SPI2_IRQn;   /* SPI2 */
+        case 0x40013400U: return SPI3_IRQn;   /* SPI3 */
+        default: return -1;
+    }
+}
+
+/* SPI 实例 → IRQ 映射（用于 ISR 分发） */
+constexpr int MAX_SPI_IRQ = 90;
+static SpiBase *s_spi_by_irq[MAX_SPI_IRQ] = {};
+
+} // anonymous namespace
+
 Status SpiBase::init(const SpiConfig &config) {
+    HAL_ASSERT(m_base != 0);
     auto *regs = reinterpret_cast<SpiRegs *>(m_base);
 
     regs->CR1 = 0;
@@ -56,42 +79,73 @@ Status SpiBase::init(const SpiConfig &config) {
 
     regs->CFG1 = ((config.data_bits - 1) & 0x1FU) << CFG1_DSIZE_Pos;
     regs->CR1 = CR1_SPE;
-    m_initialized = true;
+
+    /* 注册 ISR 映射并使能 SPI 中断 */
+    int irq = spi_irq_from_base(m_base);
+    if (irq >= 0 && irq < MAX_SPI_IRQ) {
+        s_spi_by_irq[irq] = this;
+        hal::Irq::enable(irq);
+    }
+
+    set_state(DeviceState::Initialized);
     return Status::Ok;
 }
 
 Status SpiBase::deinit() {
-    if (!m_initialized) return Status::Ok;
+    if (!is_initialized()) return Status::Ok;
     auto *regs = reinterpret_cast<SpiRegs *>(m_base);
     regs->CR1 = 0;
-    m_initialized = false;
+    set_state(DeviceState::Created);
     return Status::Ok;
 }
 
-Status SpiBase::sync_send(const uint8_t *tx, uint8_t *rx, size_t len, uint32_t timeout_ms) {
-    if (!m_initialized) return Status::InvalidArgument;
-    auto *regs = reinterpret_cast<SpiRegs *>(m_base);
+static void spi_stm32_isr(int irq_num) {
+    auto *spi = s_spi_by_irq[irq_num];
+    if (!spi) return;
+    auto *regs = reinterpret_cast<SpiRegs *>(spi->base());
+    uint32_t sr = regs->SR;
+    if (sr & SR_EOT) {
+        regs->IFCR = IFCR_EOTC;
+        regs->IER &= ~IER_EOTIE;
+        (void)spi->xfer_sem().release();
+    }
+}
 
-    uint32_t timeout_loops = timeout_ms * (SystemCoreClock / 1000U / 4U);
-    if (timeout_loops == 0) timeout_loops = 1;
+Status SpiBase::sync_send(const uint8_t *tx, uint8_t *rx, size_t len, uint32_t timeout_ms) {
+    HAL_ASSERT_MSG(is_initialized(), "SPI not initialized");
+    if (!is_initialized() || len == 0) return Status::InvalidArgument;
+
+    osal::LockGuard lock(m_bus_mutex);
+
+    auto *regs = reinterpret_cast<SpiRegs *>(m_base);
 
     regs->IFCR = IFCR_EOTC | IFCR_TXTFC | IFCR_OVRC;
     regs->CR1 |= CR1_CSTART;
 
+    /* 数据传输阶段：逐字节轮询（SPI 时钟 MHz 级，单字节延迟 <1μs） */
     for (size_t i = 0; i < len; i++) {
-        uint32_t remaining = timeout_loops;
-        while (!(regs->SR & SR_TXP)) { if (--remaining == 0) return Status::Timeout; }
+        while (!(regs->SR & SR_TXP)) {}
         regs->TXDR = tx ? tx[i] : 0xFF;
-        remaining = timeout_loops;
-        while (!(regs->SR & SR_RXP)) { if (--remaining == 0) return Status::Timeout; }
+        while (!(regs->SR & SR_RXP)) {}
         uint8_t data = static_cast<uint8_t>(regs->RXDR);
         if (rx) rx[i] = data;
     }
 
-    uint32_t remaining = timeout_loops;
-    while (!(regs->SR & SR_EOT)) { if (--remaining == 0) return Status::Timeout; }
-    regs->IFCR = IFCR_EOTC;
+    /* 最终等待：EOT 中断 + 信号量让出 CPU */
+    regs->IER |= IER_EOTIE;
+    if (m_xfer_sem.take(timeout_ms) != 0) {
+        regs->IER &= ~IER_EOTIE;
+        m_stats.timeout_count++;
+        return Status::Timeout;
+    }
+
+    m_stats.xfer_count++;
+    m_stats.xfer_bytes += len;
     return Status::Ok;
 }
 
 } // namespace hal
+
+/* SPI 中断服务函数 — 直接覆盖向量表弱别名 */
+extern "C" void IRQ35_Handler(void) { hal::spi_stm32_isr(35); }  /* SPI1 */
+extern "C" void IRQ36_Handler(void) { hal::spi_stm32_isr(36); }  /* SPI2 */

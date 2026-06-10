@@ -19,6 +19,7 @@ target_link_libraries(${MODULE_NAME}
     PUBLIC
     PRIVATE
         soc
+        osal
 )
 
 if(CONFIG_DMA)

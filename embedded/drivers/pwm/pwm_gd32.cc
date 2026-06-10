@@ -68,9 +68,10 @@ constexpr uint32_t SMCFG_MMC_Pos = 4; // 主模式选择
 constexpr uint32_t SMCFG_MMC_Msk = (7U << 4);
 constexpr uint32_t SMCFG_MMC_TRGO = (2U << 4); // 更新事件 → TRGO
 
-// TIMER0 更新中断号 — 使用 SoC 头文件定义
+// 更新中断号 — 使用 SoC 头文件定义
 #include <irq.h>
 static constexpr int TIMER0_UP_IRQn = 25; // TIMER0_UP_TIMER9_IRQn (from CMSIS)
+static constexpr int TIMER5_IRQn    = 54; // TIMER5_IRQn
 
 // TIMER0 ISR 回调存储
 static PwmBase::IrqCallback s_timer0_update_cb = nullptr;
@@ -82,6 +83,20 @@ extern "C" void TIMER0_UP_TIMER9_IRQHandler() {
         regs->INTF = INTF_UPIF; // 写 1 清除 (GD32 rc_w1)
         if (s_timer0_update_cb) {
             s_timer0_update_cb(s_timer0_update_arg);
+        }
+    }
+}
+
+// TIMER5 ISR 回调存储
+static PwmBase::IrqCallback s_timer5_update_cb = nullptr;
+static void *s_timer5_update_arg = nullptr;
+
+extern "C" void TIMER5_IRQHandler() {
+    auto *regs = reinterpret_cast<TimerRegs *>(TIMER5_BASE);
+    if (regs->INTF & INTF_UPIF) {
+        regs->INTF = INTF_UPIF;
+        if (s_timer5_update_cb) {
+            s_timer5_update_cb(s_timer5_update_arg);
         }
     }
 }
@@ -229,20 +244,30 @@ Status PwmBase::set_update_callback(IrqCallback cb, void *arg) {
     m_update_cb = cb;
     m_update_arg = arg;
 
-    // 目前仅支持 TIMER0
-    if (m_base != TIMER0_BASE) {
+    PwmBase::IrqCallback *dst_cb = nullptr;
+    void **dst_arg = nullptr;
+    int irqn = -1;
+
+    if (m_base == TIMER0_BASE) {
+        dst_cb = &s_timer0_update_cb;
+        dst_arg = &s_timer0_update_arg;
+        irqn = TIMER0_UP_IRQn;
+    } else if (m_base == TIMER5_BASE) {
+        dst_cb = &s_timer5_update_cb;
+        dst_arg = &s_timer5_update_arg;
+        irqn = TIMER5_IRQn;
+    } else {
         return Status::NotSupported;
     }
 
-    s_timer0_update_cb = cb;
-    s_timer0_update_arg = arg;
+    *dst_cb = cb;
+    *dst_arg = arg;
 
     auto *regs = reinterpret_cast<TimerRegs *>(m_base);
-    // 清除挂起标志 (写 1 清除)
     regs->INTF = INTF_UPIF;
     if (cb) {
         regs->DMAINTEN |= DMAINTEN_UPIE;
-        // 启用 NVIC — 由应用层调用 irq_enable()
+        hal::Irq::enable(irqn);
     } else {
         regs->DMAINTEN &= ~DMAINTEN_UPIE;
     }

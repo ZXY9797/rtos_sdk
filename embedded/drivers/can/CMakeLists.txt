@@ -2,6 +2,7 @@ set(MODULE_NAME can)
 add_library(${MODULE_NAME} STATIC)
 
 target_sources_ifdef(CONFIG_CAN_STM32 ${MODULE_NAME} PRIVATE can_stm32.cc)
+target_sources_ifdef(CONFIG_CAN_GD32 ${MODULE_NAME} PRIVATE can_gd32.cc)
 
 target_include_directories(${MODULE_NAME}
     PUBLIC
