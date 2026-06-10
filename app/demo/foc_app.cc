@@ -11,6 +11,8 @@
 #include <algo/pid_controller.h>
 #include <algo/sweep_signal.h>
 
+#include <imu/icm40609d.h>
+
 #include <device.h>
 #include <device_base.h>
 #include <assert.h>
@@ -18,6 +20,7 @@
 #include <drivers_generated.h>
 #include <log.h>
 #include <osal.h>
+#include <sensor_core.h>
 #include <irq.h>
 
 #include <nvs/nvs.h>
@@ -50,6 +53,10 @@ constexpr int32_t POS_LOOP_PRIO = 5;
 constexpr uint32_t LED_HZ = 2;
 constexpr size_t LED_STACK = 512;
 constexpr int32_t LED_PRIO = 10;
+
+constexpr uint32_t CTRL_LOOP_HZ = 2000;
+constexpr size_t CTRL_LOOP_STACK = 2048;
+constexpr int32_t CTRL_LOOP_PRIO = 3;
 
 constexpr size_t CLI_BUF_SIZE = 128;
 
@@ -87,6 +94,14 @@ static uint8_t g_motor_count = 0;
 static uint8_t g_active_motor = 0;  // CLI 当前选中的电机
 
 static osal::PeriodicThread *g_led_thread = nullptr;
+
+// IMU 实例 (SPI0, PB6)
+static imu::Icm40609d<0x40013000, 0x40010C00, 6> g_imu;
+static imu::ImuData g_imu_data;
+
+static bool imu_read_in_isr(void *) {
+    return g_imu.read(g_imu_data);
+}
 
 static char cli_buf[CLI_BUF_SIZE];
 static size_t cli_pos = 0;
@@ -425,6 +440,15 @@ static void slow_loop_entry(void *arg, const osal::PeriodicStats &stats) {
                        MOTOR_GEAR_RATIO, &ctx.pos_sensor, &ctx.output_sensor);
         ctx.calib.start();
     }
+}
+
+// ─── 闭环任务 (2kHz, SensorCore 驱动) ──────────────────────────
+
+static void ctrl_loop_entry(void *arg, const osal::PeriodicStats &stats) {
+    // TODO: 姿态估计、力控等
+    // g_imu_data 在每次唤醒时已由 SensorCore ISR 更新
+    (void)arg;
+    (void)stats;
 }
 
 // ─── LED 心跳 ───────────────────────────────────────────────────
@@ -898,6 +922,34 @@ static int init_motor(MotorContext &ctx, uint8_t motor_idx) {
     if (!ctx.slow_loop || ctx.slow_loop->startup() != 0) {
         LOGE("foc", "failed to start slow loop for motor %d", motor_idx);
         return -1;
+    }
+
+    // 闭环任务 — SensorCore 驱动（TIMER6 16kHz → IMU read → ÷8 → 2kHz）
+    {
+        imu::ImuConfig imu_cfg;
+        imu_cfg.accel_fs = 0;
+        imu_cfg.gyro_fs = 0;
+        imu_cfg.sample_rate = 16000;
+        if (g_imu.init(imu_cfg) != 0) {
+            LOGW("foc", "ICM40609D init failed (WHO_AM_I mismatch)");
+        }
+
+        auto &imu_tim = device_get(tim6);
+        SensorCore::Config sc_cfg;
+        sc_cfg.name = "ctrl";
+        sc_cfg.entry = ctrl_loop_entry;
+        sc_cfg.param = &ctx;
+        sc_cfg.stack_size = CTRL_LOOP_STACK;
+        sc_cfg.priority = CTRL_LOOP_PRIO;
+        sc_cfg.frequency_hz = CTRL_LOOP_HZ;
+        sc_cfg.timer = &imu_tim;
+        sc_cfg.read_fn = imu_read_in_isr;
+        sc_cfg.divider = 8;
+        ctx.imu_core = new SensorCore(sc_cfg);
+        if (ctx.imu_core->start() != 0) {
+            LOGE("foc", "failed to start imu core for motor %d", motor_idx);
+            return -1;
+        }
     }
 
     // 首次上电自动校准

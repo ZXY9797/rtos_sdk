@@ -19,8 +19,10 @@
         spi0 = &spi0;
         pwm0 = &timer0;
         tim5 = &timer5;
+        tim6 = &timer6;
         adc0 = &adc0;
         motor0 = &motor0;
+        icm0 = &icm0;
     };
 
     leds {
@@ -54,10 +56,21 @@
             reg = <0x40013000 0x400>;
             interrupts = <35 0>;
             status = "okay";
-            spi-max-frequency = <1000000>;
+            spi-max-frequency = <10000000>;
             label = "SPI0";
             #address-cells = <1>;
             #size-cells = <0>;
+
+            icm0: icm40609d@0 {
+                compatible = "invensense,icm40609d";
+                reg = <0>;
+                spi-max-frequency = <10000000>;
+                accel-fs = <0>;
+                gyro-fs = <0>;
+                sample-rate = <16000>;
+                int-gpios = <&gpiob 6 0>;
+                label = "ICM0";
+            };
         };
 
         dma0: dma@40020000 {
@@ -119,6 +132,18 @@
             channel = <0>;
             prescaler = <119>;   /* 120MHz / 120 = 1MHz */
             period = <249>;      /* 1MHz / 250 = 4kHz */
+            #pwm-cells = <3>;
+        };
+
+        timer6: timer@40001400 {
+            compatible = "gd,gd32-timer";
+            reg = <0x40001400 0x400>;
+            interrupts = <55 0>;
+            status = "okay";
+            label = "TIMER6";
+            channel = <0>;
+            prescaler = <119>;   /* 120MHz / 120 = 1MHz */
+            period = <62>;       /* 1MHz / 63 ≈ 15.87kHz ≈ 16kHz */
             #pwm-cells = <3>;
         };
 

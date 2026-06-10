@@ -7,6 +7,7 @@ target_sources(${MODULE_NAME}
         init.cc
         fault.cc
         assert.cc
+        sensor_core.cc
 )
 
 target_include_directories(${MODULE_NAME}

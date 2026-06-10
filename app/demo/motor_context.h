@@ -137,6 +137,7 @@ struct MotorContext {
     osal::PeriodicThread *speed_loop {nullptr};
     osal::PeriodicThread *slow_loop {nullptr};
     osal::PeriodicThread *pos_loop {nullptr};
+    SensorCore *imu_core {nullptr};
 
     // NVS ID 偏移基址 (motor0=0x0001, motor1=0x0101)
     uint16_t nvs_id_base {0x0001};

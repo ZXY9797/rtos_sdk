@@ -72,6 +72,7 @@ constexpr uint32_t SMCFG_MMC_TRGO = (2U << 4); // 更新事件 → TRGO
 #include <irq.h>
 static constexpr int TIMER0_UP_IRQn = 25; // TIMER0_UP_TIMER9_IRQn (from CMSIS)
 static constexpr int TIMER5_IRQn    = 54; // TIMER5_IRQn
+static constexpr int TIMER6_IRQn    = 55; // TIMER6_IRQn
 
 // TIMER0 ISR 回调存储
 static PwmBase::IrqCallback s_timer0_update_cb = nullptr;
@@ -97,6 +98,20 @@ extern "C" void TIMER5_IRQHandler() {
         regs->INTF = INTF_UPIF;
         if (s_timer5_update_cb) {
             s_timer5_update_cb(s_timer5_update_arg);
+        }
+    }
+}
+
+// TIMER6 ISR 回调存储
+static PwmBase::IrqCallback s_timer6_update_cb = nullptr;
+static void *s_timer6_update_arg = nullptr;
+
+extern "C" void TIMER6_IRQHandler() {
+    auto *regs = reinterpret_cast<TimerRegs *>(TIMER6_BASE);
+    if (regs->INTF & INTF_UPIF) {
+        regs->INTF = INTF_UPIF;
+        if (s_timer6_update_cb) {
+            s_timer6_update_cb(s_timer6_update_arg);
         }
     }
 }
@@ -256,6 +271,10 @@ Status PwmBase::set_update_callback(IrqCallback cb, void *arg) {
         dst_cb = &s_timer5_update_cb;
         dst_arg = &s_timer5_update_arg;
         irqn = TIMER5_IRQn;
+    } else if (m_base == TIMER6_BASE) {
+        dst_cb = &s_timer6_update_cb;
+        dst_arg = &s_timer6_update_arg;
+        irqn = TIMER6_IRQn;
     } else {
         return Status::NotSupported;
     }
