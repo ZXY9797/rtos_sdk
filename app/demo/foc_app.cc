@@ -11,8 +11,6 @@
 #include <algo/pid_controller.h>
 #include <algo/sweep_signal.h>
 
-#include <imu/icm40609d.h>
-
 #include <device.h>
 #include <device_base.h>
 #include <assert.h>
@@ -95,12 +93,11 @@ static uint8_t g_active_motor = 0;  // CLI 当前选中的电机
 
 static osal::PeriodicThread *g_led_thread = nullptr;
 
-// IMU 实例 (SPI0, PB6)
-static imu::Icm40609d<0x40013000, 0x40010C00, 6> g_imu;
+// IMU 数据（由 SensorCore ISR 更新）
 static imu::ImuData g_imu_data;
 
 static bool imu_read_in_isr(void *) {
-    return g_imu.read(g_imu_data);
+    return device_get(imu0).read(g_imu_data);
 }
 
 static char cli_buf[CLI_BUF_SIZE];
@@ -925,15 +922,8 @@ static int init_motor(MotorContext &ctx, uint8_t motor_idx) {
     }
 
     // 闭环任务 — SensorCore 驱动（TIMER6 16kHz → IMU read → ÷8 → 2kHz）
+    // IMU 由设备树 initcall 自动初始化
     {
-        imu::ImuConfig imu_cfg;
-        imu_cfg.accel_fs = 0;
-        imu_cfg.gyro_fs = 0;
-        imu_cfg.sample_rate = 16000;
-        if (g_imu.init(imu_cfg) != 0) {
-            LOGW("foc", "ICM40609D init failed (WHO_AM_I mismatch)");
-        }
-
         auto &imu_tim = device_get(tim6);
         SensorCore::Config sc_cfg;
         sc_cfg.name = "ctrl";

@@ -1,0 +1,47 @@
+# SPDX-License-Identifier: Apache-2.0
+
+description: InvenSense ICM40609D 6-axis IMU (SPI interface)
+
+compatible: "invensense,icm40609d"
+
+on-bus: spi
+
+include: [spi-device.yaml]
+
+properties:
+  accel-fs:
+    type: int
+    default: 0
+    description: Accelerometer full-scale range (0=±2g, 1=±4g, 2=±8g, 3=±16g)
+  gyro-fs:
+    type: int
+    default: 0
+    description: Gyroscope full-scale range (0=±2000, 1=±1000, 2=±500, 3=±250 dps)
+  sample-rate:
+    type: int
+    default: 16000
+    description: Output data rate in Hz
+  int-gpios:
+    type: phandle-array
+    required: true
+    description: Data ready interrupt GPIO
+
+cxx-driver:
+  template: imu::Icm40609d
+  header: imu/icm40609d.h
+  args:
+    - parent-reg
+    - phandle-reg: int-gpios
+    - field: int-gpios/pin
+  init-cfg:
+    type: imu::ImuConfig
+    fields:
+      accel_fs:
+        prop: accel-fs
+        default: 0
+      gyro_fs:
+        prop: gyro-fs
+        default: 0
+      sample_rate:
+        prop: sample-rate
+        default: 16000

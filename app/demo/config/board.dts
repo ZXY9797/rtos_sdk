@@ -22,7 +22,7 @@
         tim6 = &timer6;
         adc0 = &adc0;
         motor0 = &motor0;
-        icm0 = &icm0;
+        imu0 = &imu0;
     };
 
     leds {
@@ -61,7 +61,7 @@
             #address-cells = <1>;
             #size-cells = <0>;
 
-            icm0: icm40609d@0 {
+            imu0: icm40609d@0 {
                 compatible = "invensense,icm40609d";
                 reg = <0>;
                 spi-max-frequency = <10000000>;
@@ -69,7 +69,7 @@
                 gyro-fs = <0>;
                 sample-rate = <16000>;
                 int-gpios = <&gpiob 6 0>;
-                label = "ICM0";
+                label = "IMU0";
             };
         };
 

@@ -1,0 +1,4 @@
+menuconfig IMU_ICM40609D
+	bool "ICM40609D 6-axis IMU driver"
+	help
+	  Enable InvenSense ICM40609D 6-axis IMU (SPI interface).

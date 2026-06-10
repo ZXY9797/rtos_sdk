@@ -32,6 +32,8 @@ target_link_libraries_ifdef(CONFIG_ADC ${MODULE_NAME} PUBLIC adc)
 add_subdirectory_ifdef(CONFIG_DMA dma)
 target_link_libraries_ifdef(CONFIG_DMA ${MODULE_NAME} PUBLIC dma)
 
+add_subdirectory_ifdef(CONFIG_IMU_ICM40609D imu)
+
 add_subdirectory(log)
 
 add_subdirectory(interrupt_controller)

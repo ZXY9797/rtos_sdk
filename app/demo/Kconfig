@@ -100,10 +100,4 @@ menu "Sweep Signal"
         default 10
 endmenu
 
-menu "IMU"
-    config IMU_ICM40609D
-        bool "Enable ICM40609D IMU driver"
-        default y
-endmenu
-
 endmenu
