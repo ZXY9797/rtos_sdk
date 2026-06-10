@@ -1,8 +1,8 @@
 #pragma once
 
 #include "types.h"
-#include "pid.h"
 #include "svpwm.h"
+#include <algo/pid_controller.h>
 #include <cstdint>
 
 namespace foc {
@@ -13,6 +13,18 @@ struct FOCConfig {
     ObserverType observer {ObserverType::MxLemming};
     bool use_mtpa {false};               // 最大转矩/电流比
     uint8_t field_weakening {0};         // 弱磁等级 0=关
+};
+
+struct DeadTimeCompConfig {
+    float dead_time_ns {500.0f};         // 死区时间 ns
+    bool enabled {true};
+};
+
+struct HarmonicCompConfig {
+    bool enabled {false};
+    uint8_t harmonic_order {6};          // 谐波次数 (6, 12, ...)
+    float amplitude {0.0f};              // 注入幅度 (V)
+    float phase_offset {0.0f};           // 相位偏移 (rad)
 };
 
 class FOCController {
@@ -47,15 +59,21 @@ public:
     float id_ref() const { return id_ref_; }
     float iq_ref() const { return iq_ref_; }
 
+    // 死区补偿
+    void set_dead_time_comp(const DeadTimeCompConfig &cfg) { dt_comp_ = cfg; }
+
+    // 谐波抑制
+    void set_harmonic_comp(const HarmonicCompConfig &cfg) { harm_comp_ = cfg; }
+
     // PLL 角度追踪
     void pll_update(uint16_t angle, float dt);
     uint16_t pll_angle() const { return pll_angle_; }
 
 private:
     FOCConfig cfg_;
-    Pid id_pid_;
-    Pid iq_pid_;
-    Pid speed_pid_;
+    PidController id_pid_;
+    PidController iq_pid_;
+    PidController speed_pid_;
     Svpwm svpwm_;
 
     // 电流/电压状态
@@ -93,6 +111,13 @@ private:
     float pll_error_ {0.0f};
     float pll_integrator_ {0.0f};
     uint32_t pll_angle_ {0};
+
+    // 死区补偿
+    DeadTimeCompConfig dt_comp_;
+
+    // 谐波抑制
+    HarmonicCompConfig harm_comp_;
+    float harm_sin_cache_ {0.0f};
 
     void update_pll(int32_t angle_error, float dt);
 };

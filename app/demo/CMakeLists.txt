@@ -18,6 +18,12 @@ target_sources(${MODULE_NAME}
     PRIVATE
         main.cc
         foc_app.cc
+        controller/speed_controller.cc
+        controller/protection.cc
+        controller/position_sensor.cc
+        controller/pos_controller.cc
+        controller/calibration.cc
+        comm/can_handler.cc
         ${DRIVERS_GENERATED_CC}
 )
 
@@ -26,10 +32,10 @@ target_link_libraries(${MODULE_NAME}
         drivers
         osal
         foc
+        algo
 )
 
 # NVS
 if(TARGET nvs)
     target_link_libraries(${MODULE_NAME} PRIVATE nvs)
 endif()
-

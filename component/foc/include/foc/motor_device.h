@@ -25,6 +25,8 @@ public:
     Motor &motor() { return *motor_; }
     const Motor &motor() const { return *motor_; }
 
+    bool is_initialized() const { return motor_ != nullptr; }
+
 private:
     alignas(Motor) uint8_t storage_[sizeof(Motor)];
     Motor *motor_ = nullptr;

@@ -64,9 +64,19 @@ void Motor::fast_loop_isr() {
     angle_estimator_.update(sensor_angle, speed_ehz, dt);
     SinCos sc = angle_estimator_.sin_cos();
 
-    // 3. Clarke + Park + PI 电流环
+    // 3. Clarke + Park + PI 电流环（带电角度校正）
+    uint16_t raw_angle = angle_estimator_.angle();
+
+    // 应用 LUT 校正（如果已配置），否则使用固定偏移
+    float angle_rad = static_cast<float>(raw_angle) * (2.0f * 3.14159265f / 65536.0f);
+    float correction = angle_correction_;
+    if (angle_lut_.table && angle_lut_.point_count >= 3) {
+        correction += angle_lut_lookup(angle_rad);
+    }
+    uint16_t corrected_angle = raw_angle +
+        static_cast<uint16_t>(correction * 65536.0f / (2.0f * 3.14159265f));
     uint32_t duty_u, duty_v, duty_w;
-    foc_.update_current(conv_i_, vbus_, angle_estimator_.angle(), sc,
+    foc_.update_current(conv_i_, vbus_, corrected_angle, sc,
                         duty_u, duty_v, duty_w);
 
     // 4. 写 PWM
@@ -153,7 +163,10 @@ void Motor::read_adc() {
     raw_i_.w = (static_cast<float>(iw_raw) - 2048.0f) * scale_i;
     vbus_ = static_cast<float>(vbus_raw) * scale_v;
 
-    conv_i_ = raw_i_;
+    // 应用电流零偏校准: calib = raw * gain - offset
+    conv_i_.u = raw_i_.u * current_calib_.gain_u - current_calib_.offset_u;
+    conv_i_.w = raw_i_.w * current_calib_.gain_w - current_calib_.offset_w;
+    conv_i_.v = -conv_i_.u - conv_i_.w;
 }
 
 void Motor::state_machine() {
@@ -207,6 +220,38 @@ void Motor::apply_duty(uint32_t du, uint32_t dv, uint32_t dw) {
     (void)pwm_.set_pulse(ch_u_, du);
     (void)pwm_.set_pulse(ch_v_, dv);
     (void)pwm_.set_pulse(ch_w_, dw);
+}
+
+float Motor::angle_lut_lookup(float angle_rad) const {
+    // 2 阶 Lagrange 插值，ISR 安全（无分配）
+    if (!angle_lut_.table || angle_lut_.point_count < 3 || angle_lut_.x_max <= 0.0f)
+        return 0.0f;
+
+    // 归一化到 [0, x_max)
+    float x = angle_rad;
+    while (x < 0.0f) x += angle_lut_.x_max;
+    while (x >= angle_lut_.x_max) x -= angle_lut_.x_max;
+
+    float dx = angle_lut_.x_max / static_cast<float>(angle_lut_.point_count);
+    float idx_f = x / dx;
+    auto idx = static_cast<uint32_t>(idx_f);
+    if (idx >= angle_lut_.point_count) idx = angle_lut_.point_count - 1;
+
+    // 取 3 个点：idx, idx+1, idx+2（环形）
+    uint32_t n = angle_lut_.point_count;
+    float x0 = dx * static_cast<float>(idx);
+    float x1 = x0 + dx;
+    float x2 = x0 + 2.0f * dx;
+    float y0 = angle_lut_.table[idx % n];
+    float y1 = angle_lut_.table[(idx + 1) % n];
+    float y2 = angle_lut_.table[(idx + 2) % n];
+
+    // Lagrange basis
+    float l0 = (x - x1) * (x - x2) / ((x0 - x1) * (x0 - x2));
+    float l1 = (x - x0) * (x - x2) / ((x1 - x0) * (x1 - x2));
+    float l2 = (x - x0) * (x - x1) / ((x2 - x0) * (x2 - x1));
+
+    return y0 * l0 + y1 * l1 + y2 * l2;
 }
 
 } // namespace foc

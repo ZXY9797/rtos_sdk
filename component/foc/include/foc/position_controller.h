@@ -1,7 +1,5 @@
 #pragma once
 
-#include "pid.h"
-
 namespace foc {
 
 class PositionController {

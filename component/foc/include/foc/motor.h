@@ -79,6 +79,38 @@ public:
     // 电机参数自动检测
     void start_measurement();
 
+    // ── 校准注入接口 ──
+
+    // 电流零偏校准: calib = raw * gain - offset
+    struct CurrentCalib {
+        float offset_u {0.0f};
+        float offset_v {0.0f};
+        float offset_w {0.0f};
+        float gain_u {1.0f};
+        float gain_v {1.0f};
+        float gain_w {1.0f};
+    };
+    void set_current_calibration(const CurrentCalib &cal) { current_calib_ = cal; }
+
+    // 电角度校正偏移量 (rad)，在 fast_loop_isr 中叠加到估算角度上
+    void set_angle_correction(float offset_rad) { angle_correction_ = offset_rad; }
+
+    // 电角度 Lagrange 插值校正器（每 ISR 周期根据当前角度查表校正）
+    // table: 校准偏移表, point_count: 点数, x_max: 角度范围上限 (rad)
+    struct AngleLutConfig {
+        const float *table {nullptr};
+        uint32_t point_count {0};
+        float x_max {0.0f};
+    };
+    void set_angle_lut(const AngleLutConfig &lut) { angle_lut_ = lut; }
+
+    // 外部温度注入 (°C)，用于独立 NTC 传感器
+    void set_temperature(float board_temp, float motor_temp) {
+        temp_celsius_ = motor_temp;
+        board_temp_celsius_ = board_temp;
+    }
+    float board_temperature() const { return board_temp_celsius_; }
+
 private:
     // 硬件引用
     hal::PwmBase &pwm_;
@@ -111,6 +143,15 @@ private:
     Vec3 conv_i_ {};
     float vbus_ {0.0f};
     float temp_celsius_ {25.0f};
+    float board_temp_celsius_ {25.0f};
+
+    // 校准数据
+    CurrentCalib current_calib_ {};
+    float angle_correction_ {0.0f};
+    AngleLutConfig angle_lut_ {};
+
+    // Lagrange 查表（内联，避免 ISR 中分配）
+    float angle_lut_lookup(float angle_rad) const;
 
     // PWM 参数
     uint32_t pwm_period_ {0};

@@ -4,4 +4,100 @@ config APP_NAME
     string "Application name"
     default "demo"
 
+menu "Motor Parameters (DM-4340)"
+    config MOTOR_TORQUE_CONSTANT
+        int "Torque constant (mNm/A)"
+        default 4074
+    config MOTOR_GEAR_RATIO
+        int "Gear ratio"
+        default 40
+    config MOTOR_POLE_PAIRS_APP
+        int "Pole pairs"
+        default 14
+endmenu
+
+menu "LESO Speed Controller"
+    config LESO_OMEGA
+        int "LESO bandwidth (rad/s)"
+        default 3000
+    config LESO_B0
+        int "LESO control gain b0"
+        default 6000
+    config LESO_KP
+        int "LESO proportional gain (milli)"
+        default 6
+endmenu
+
+menu "Position Controller"
+    config POS_KP
+        int "Position PID Kp (milli)"
+        default 6000
+    config POS_KI
+        int "Position PID Ki (milli)"
+        default 0
+    config POS_KD
+        int "Position PID Kd (milli)"
+        default 0
+    config POS_OUTPUT_LIMIT
+        int "Position PID output limit (milli rad/s)"
+        default 3500
+    config POS_BACKLASH_DEADZONE
+        int "Backlash deadzone (millirad)"
+        default 6
+    config POS_BACKLASH_HYSTERESIS
+        int "Backlash hysteresis (millirad)"
+        default 10
+    config POS_BACKLASH_CMD_THRESHOLD
+        int "Backlash command threshold (milli rad/s)"
+        default 1000
+    config POS_BACKLASH_DWELL_TIME
+        int "Backlash dwell time (ms)"
+        default 1000
+    config POS_CTRL_AUTO_CALIB
+        bool "Auto-calibrate on first boot"
+        default y
+endmenu
+
+menu "Protection Thresholds"
+    config PROTECT_BUS_OV
+        int "Bus overvoltage (mV)"
+        default 45000
+    config PROTECT_BUS_UV
+        int "Bus undervoltage (mV)"
+        default 12000
+    config PROTECT_BOARD_OT
+        int "Board overtemperature (dC)"
+        default 1000
+    config PROTECT_MOTOR_OT
+        int "Motor overtemperature (dC)"
+        default 1200
+endmenu
+
+menu "Temperature Sensors"
+    config NTC_DIVIDER_RESISTANCE
+        int "NTC voltage divider resistance (ohm)"
+        default 10000
+    config BOARD_TEMP_ADC_CHANNEL
+        int "Board temperature ADC channel"
+        default 16
+    config MOTOR_TEMP_ADC_CHANNEL
+        int "Motor temperature ADC channel"
+        default 17
+endmenu
+
+menu "Sweep Signal"
+    config SWEEP_FSTART
+        int "Sweep start frequency (dHz)"
+        default 1
+    config SWEEP_FEND
+        int "Sweep end frequency (dHz)"
+        default 200
+    config SWEEP_FGAP
+        int "Sweep frequency step (dHz)"
+        default 1
+    config SWEEP_REPEAT
+        int "Sweep repeat count per frequency"
+        default 10
+endmenu
+
 endmenu

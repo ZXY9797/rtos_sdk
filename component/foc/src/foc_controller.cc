@@ -4,33 +4,30 @@
 #include <algorithm>
 #include <cmath>
 
+static constexpr float TWO_PI = 2.0f * 3.14159265f;
+
 namespace foc {
 
 FOCController::FOCController(const FOCConfig &cfg)
-    : cfg_(cfg)
-    , id_pid_(PidConfig{0.0f, 0.0f, 0.0f, cfg_.current_bandwidth * 10.0f, -cfg_.current_bandwidth * 10.0f})
-    , iq_pid_(PidConfig{0.0f, 0.0f, 0.0f, cfg_.current_bandwidth * 10.0f, -cfg_.current_bandwidth * 10.0f})
-    , speed_pid_(PidConfig{0.5f, 0.01f, 0.0f, 100.0f, -100.0f}) {
+    : cfg_(cfg) {
+    float v_lim = cfg_.current_bandwidth * 10.0f;
+    id_pid_.set_output_range(-v_lim, v_lim);
+    iq_pid_.set_output_range(-v_lim, v_lim);
+    speed_pid_.set_gains(0.5f, 0.01f, 0.0f);
+    speed_pid_.set_output_range(-100.0f, 100.0f);
 }
 
 void FOCController::calculate_gains(float rs, float ld, float lq, float flux, uint8_t pp) {
     float bw = cfg_.current_bandwidth * 2.0f * 3.14159265f;
+    float v_lim = cfg_.current_bandwidth * 10.0f;
 
     // D轴 PI: Kp = Ld * bw, Ki = Rs * bw
-    PidConfig d_cfg;
-    d_cfg.kp = ld * bw;
-    d_cfg.ki = rs * bw;
-    d_cfg.output_max = cfg_.current_bandwidth * 10.0f;
-    d_cfg.output_min = -d_cfg.output_max;
-    id_pid_.set_config(d_cfg);
+    id_pid_.set_gains(ld * bw, rs * bw, 0.0f);
+    id_pid_.set_output_range(-v_lim, v_lim);
 
     // Q轴 PI: Kp = Lq * bw, Ki = Rs * bw
-    PidConfig q_cfg;
-    q_cfg.kp = lq * bw;
-    q_cfg.ki = rs * bw;
-    q_cfg.output_max = cfg_.current_bandwidth * 10.0f;
-    q_cfg.output_min = -q_cfg.output_max;
-    iq_pid_.set_config(q_cfg);
+    iq_pid_.set_gains(lq * bw, rs * bw, 0.0f);
+    iq_pid_.set_output_range(-v_lim, v_lim);
 
     // 保存电感参数用于前馈解耦
     ld_ = ld;
@@ -56,15 +53,36 @@ void FOCController::update_current(const Vec3 &i_abc, float vbus, uint16_t angle
     // Park 变换
     idq_ = park_transform(iab_, sc);
 
+    // 死区补偿: 根据电流方向叠加补偿电压
+    float dt_comp_d = 0.0f, dt_comp_q = 0.0f;
+    if (dt_comp_.enabled && vbus_ > 0.0f) {
+        float t_pwm_ns = 1.0f / cfg_.pwm_frequency * 1e9f;
+        float v_dead = vbus_ * dt_comp_.dead_time_ns / t_pwm_ns;
+        dt_comp_d = (idq_.d > 0.0f) ? v_dead : ((idq_.d < 0.0f) ? -v_dead : 0.0f);
+        dt_comp_q = (idq_.q > 0.0f) ? v_dead : ((idq_.q < 0.0f) ? -v_dead : 0.0f);
+    }
+
     // 电流环 PI
     float dt = 1.0f / cfg_.pwm_frequency;
     float vd = id_pid_.update(id_ref_, idq_.d, dt);
     float vq = iq_pid_.update(iq_ref_, idq_.q, dt);
 
+    // 应用死区补偿
+    vd += dt_comp_d;
+    vq += dt_comp_q;
+
     // 前馈解耦: vd -= ωLqIq, vq += ωLdId
-    float we = e_hz_ * 2.0f * 3.14159265f;
+    float we = e_hz_ * TWO_PI;
     vd -= we * lq_ * idq_.q;
     vq += we * ld_ * idq_.d;
+
+    // 谐波抑制: 在 q 轴注入反相谐波电压
+    if (harm_comp_.enabled && harm_comp_.amplitude != 0.0f) {
+        float theta_e = static_cast<float>(angle) * TWO_PI / 65536.0f;
+        float harm_v = harm_comp_.amplitude *
+            sinf(static_cast<float>(harm_comp_.harmonic_order) * theta_e + harm_comp_.phase_offset);
+        vq += harm_v;
+    }
 
     vdq_.d = vd;
     vdq_.q = vq;
