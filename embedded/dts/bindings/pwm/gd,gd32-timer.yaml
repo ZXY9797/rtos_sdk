@@ -38,6 +38,16 @@ properties:
     required: true
     description: PWM channel index (0=Ch1, 1=Ch2, 2=Ch3, 3=Ch4)
 
+  prescaler:
+    type: int
+    default: 0
+    description: PWM timer prescaler value
+
+  period:
+    type: int
+    default: 0
+    description: PWM timer period value
+
   "#pwm-cells":
     const: 3
 

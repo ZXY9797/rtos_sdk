@@ -9,6 +9,7 @@ cxx-driver:
   header: drivers/spi.h
   args:
     - node-reg
+  device-base: true
   # GD32 SPI is a low-level bus/HAL driver. Devices on this bus can use
   # init-level: pre-kernel-3 to run after SPI and before OS services are available.
   init-level: pre-kernel-2

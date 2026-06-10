@@ -126,6 +126,8 @@ def parse_yaml_comments(filepath):
                 args.append(('phandle_reg', val))
             elif key == 'phandle-ord':
                 args.append(('phandle_ord', val))
+            elif key == 'phandle-parent-reg':
+                args.append(('phandle_parent_reg', val))
             elif key == 'node-reg':
                 args.append(('node_reg', None))
             elif key == 'node-prop':
@@ -152,6 +154,9 @@ def parse_yaml_comments(filepath):
     isr_handler = cxx_raw.get('isr-handler')
     if isr_handler:
         cxx['isr_handler'] = isr_handler
+
+    device_base = cxx_raw.get('device-base', False)
+    cxx['device_base'] = bool(device_base)
 
     # 解析 init-cfg（init() 参数映射）
     init_cfg_raw = cxx_raw.get('init-cfg')
@@ -347,6 +352,17 @@ def resolve_arg(arg, node_id, dt_data):
             return str(dt_data['ordinals'][target])
         return None
 
+    elif arg_type == 'phandle_parent_reg':
+        prop = arg[1].replace('-', '_')
+        target = dt_data['phandles'].get((node_id, prop))
+        if target:
+            last_sep = target.rfind('_S_')
+            if last_sep > 0:
+                parent_id = target[:last_sep]
+                if parent_id in dt_data['reg_addrs']:
+                    return f'DT_REG_ADDR({parent_id})'
+        return None
+
     elif arg_type == 'node_reg':
         if node_id in dt_data['reg_addrs']:
             return f'DT_REG_ADDR({node_id})'
@@ -463,11 +479,58 @@ def generate_specializations(dt_data, compat_map):
                 spec['isr_handler'] = isr_handler
                 spec['irq_arg_index'] = irq_index
 
+        if driver.get('device_base', False):
+            spec['device_base'] = True
+
         specs.append(spec)
         used_headers.add(driver['header'])
 
     specs.sort(key=lambda s: s['ord'])
     return specs, used_headers
+
+
+def check_init_dependencies(specs):
+    """检查 phandle 依赖的设备是否先初始化。
+
+    如果设备 A 通过 phandle 引用设备 B，且两者在同一 init level 内，
+    则 A 的 init-priority 必须大于 B（数值越大越晚初始化）。
+    """
+    spec_by_ord = {s['ord']: s for s in specs}
+    warnings = []
+
+    level_order = {v: i for i, v in enumerate(INIT_LEVELS.values())}
+
+    for spec in specs:
+        if not spec['enabled']:
+            continue
+        for arg in spec.get('args', []):
+            if arg[0] in ('phandle_ord', 'phandle_parent_reg'):
+                target_ord = int(arg[1]) if arg[0] == 'phandle_ord' else None
+                if target_ord is not None:
+                    target = spec_by_ord.get(target_ord)
+                    if target and target['enabled']:
+                        src = spec['alias'] or f"ord={spec['ord']}"
+                        dst = target['alias'] or f"ord={target['ord']}"
+                        # 同级检查：priority 必须更大
+                        if (spec['init_level'] == target['init_level'] and
+                                spec['init_priority'] < target['init_priority']):
+                            warnings.append(
+                                f"WARNING: {src} (prio={spec['init_priority']}) "
+                                f"depends on {dst} (prio={target['init_priority']}) "
+                                f"but initializes earlier!")
+                        # 跨级检查：A 的 level 不能早于 B 的 level
+                        src_lvl = level_order.get(spec['init_level'], 99)
+                        dst_lvl = level_order.get(target['init_level'], 99)
+                        if src_lvl < dst_lvl:
+                            warnings.append(
+                                f"ERROR: {src} (level={spec['init_level']}) "
+                                f"depends on {dst} (level={target['init_level']}) "
+                                f"but initializes at an earlier level!")
+
+    for w in warnings:
+        print(w)
+
+    return len(warnings) == 0
 
 
 def write_output(specs, used_headers, output_path):
@@ -538,6 +601,39 @@ def write_output(specs, used_headers, output_path):
     if hal_instantiations:
         lines.append('// 模板显式实例化（仅 DTS 中 status = "okay" 的节点）')
         lines.extend(hal_instantiations)
+        lines.append('')
+
+    # 设备注册表 — 用于运行时枚举
+    enabled_specs = [s for s in specs if s['enabled']]
+    if enabled_specs:
+        # 为 DeviceBase 派生类型生成 is_ready 检查函数
+        for spec in enabled_specs:
+            if spec.get('device_base', False):
+                ord_val = spec['ord']
+                alias = spec['alias'] or f'ord{ord_val}'
+                lines.append(
+                    f'inline bool _check_{alias}(void *inst) {{')
+                lines.append(
+                    f'    return static_cast<DeviceBase *>(inst)->is_ready();')
+                lines.append('}')
+
+        lines.append('// 设备注册表 — 用于运行时枚举和调试')
+        lines.append('inline const DeviceInfo s_device_registry[] = {')
+        for spec in enabled_specs:
+            ord_val = spec['ord']
+            alias = spec['alias'] or f'ord{ord_val}'
+            type_name = spec['type'].split('::')[-1]
+            check_fn = f'_check_{alias}' if spec.get('device_base') else 'nullptr'
+            lines.append(f'    {{ .ord = {ord_val}, .alias = "{alias}", '
+                        f'.type_name = "{type_name}", '
+                        f'.instance = &DeviceTrait<{ord_val}>::instance, '
+                        f'.is_ready = {check_fn} }},')
+        lines.append('};')
+        lines.append('')
+        lines.append('inline const DeviceInfo *get_device_registry(size_t *count) {')
+        lines.append(f'    *count = {len(enabled_specs)};')
+        lines.append('    return s_device_registry;')
+        lines.append('}')
         lines.append('')
 
     lines.extend([
@@ -788,6 +884,12 @@ def main():
 
     # 3. 生成特化
     specs, used_headers = generate_specializations(dt_data, compat_map)
+
+    # 3.5 检查 init 依赖
+    if specs:
+        if not check_init_dependencies(specs):
+            print("WARNING: Init dependency issues detected! "
+                  "Devices may access uninitialized dependencies.")
 
     # 4. 写入 .h
     write_output(specs, used_headers, output_path)

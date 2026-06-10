@@ -11,3 +11,22 @@ cxx-driver:
     - node-reg
     - irq
   isr-handler: isr_handler
+  device-base: true
+  init-level: pre-kernel-2
+  init-priority: 25
+  init-cfg:
+    type: UartConfig
+    rx-buffer-size:
+      default: 256
+    fields:
+      baudrate:
+        default: 115200
+      data_bits:
+        default: 8
+        cast: DataBits
+      stop_bits:
+        default: 0
+        cast: StopBits
+      parity:
+        default: 0
+        cast: Parity

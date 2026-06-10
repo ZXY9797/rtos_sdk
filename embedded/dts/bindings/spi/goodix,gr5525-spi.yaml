@@ -9,6 +9,7 @@ cxx-driver:
   header: drivers/spi.h
   args:
     - node-reg
+  device-base: true
   init-level: pre-kernel-2
   init-priority: 25
   init-cfg:

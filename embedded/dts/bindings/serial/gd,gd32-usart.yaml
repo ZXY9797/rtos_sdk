@@ -11,6 +11,7 @@ cxx-driver:
     - node-reg
     - irq
   isr-handler: isr_handler
+  device-base: true
   # GD32 USART is a low-level bus/HAL driver. It initializes before
   # PRE_KERNEL_3 dependent devices and before OS services are available.
   init-level: pre-kernel-2

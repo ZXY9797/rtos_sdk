@@ -19,6 +19,19 @@ cxx-driver:
   header: drivers/spi.h
   args:
     - node-reg
+  device-base: true
+  init-level: pre-kernel-2
+  init-priority: 25
+  init-cfg:
+    type: SpiConfig
+    fields:
+      mode:
+        default: 0
+        cast: SpiMode
+      clock_hz:
+        default: 1000000
+      data_bits:
+        default: 8
 
 properties:
   midi-clock:

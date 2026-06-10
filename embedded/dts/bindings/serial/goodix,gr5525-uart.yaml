@@ -11,6 +11,7 @@ cxx-driver:
     - node-reg
     - irq
   isr-handler: isr_handler
+  device-base: true
   init-level: pre-kernel-2
   init-priority: 25
   init-cfg:
