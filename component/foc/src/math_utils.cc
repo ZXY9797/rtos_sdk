@@ -22,7 +22,7 @@ static constexpr float sin_0_2pi(float angle_rad) {
     if (a < 0.0f) a += 2.0f * pi;
     int quadrant = static_cast<int>(a / half_pi);
     float remainder = a - static_cast<float>(quadrant) * half_pi;
-    float s;
+    float s = 0.0f;
     switch (quadrant % 4) {
     case 0: s = sin_approx(remainder); break;
     case 1: s = sin_approx(half_pi - remainder); break;

@@ -7,7 +7,7 @@ endif()
 if(DEFINED t)
     set(TOOLCHAIN ${t})
 else()
-    set(TOOLCHAIN "armgcc")
+    set(TOOLCHAIN "armgcc9")
     message(STATUS "Toolchain not specified, using default: ${TOOLCHAIN}")
 endif()
 
