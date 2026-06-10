@@ -1,7 +1,5 @@
 mainmenu "RTOS-SDK Configuration"
 
-source "Kconfig.constants"
-
 source "embedded/Kconfig"
 source "component/Kconfig"
 source "app/Kconfig"
