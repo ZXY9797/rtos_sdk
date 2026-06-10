@@ -92,6 +92,9 @@ struct TxPending {
 
 class Router {
 public:
+    using TimeoutCallback = void (*)(uint16_t seq, uint8_t receiver,
+                                     uint8_t cmd_set, uint8_t cmd_id, void *arg);
+
     static Router &instance();
 
     // 设置路由表（业务层调用）
@@ -99,6 +102,9 @@ public:
 
     // 设置本机地址
     void set_self_addr(uint8_t addr) { self_addr_ = addr; }
+
+    // 设置超时回调（可选）
+    void set_on_timeout(TimeoutCallback cb, void *arg = nullptr) { on_timeout_ = cb; on_timeout_arg_ = arg; }
 
     // 周期处理：接收 + 解包 + 路由 + ACK + 超时检查
     void process();
@@ -138,6 +144,10 @@ private:
     // 回调表（.link_handler section）
     const Handler *handlers_ {nullptr};
     size_t handler_cnt_ {0};
+
+    // 超时回调
+    TimeoutCallback on_timeout_ {nullptr};
+    void *on_timeout_arg_ {nullptr};
 
     // 待确认队列
     TxPending pending_[CONFIG_LINK_MAX_PENDING] {};

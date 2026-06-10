@@ -177,7 +177,23 @@ int Router::send(uint8_t receiver, uint8_t cmd_set, uint8_t cmd_id,
 // ── ACK 处理 ──
 
 void Router::handle_ack(const Frame &frame) {
-    remove_pending(frame.seq);
+    // ACK data[0]: status — 0x00=成功, 0x01=执行中(进度)
+    uint8_t status = (frame.data_len > 0) ? frame.data[0] : 0x00;
+
+    // 查找对应的 pending 条目
+    for (int i = 0; i < CONFIG_LINK_MAX_PENDING; i++) {
+        if (pending_[i].used && pending_[i].seq == frame.seq) {
+            if (status == 0x01 && pending_[i].ack_mode == static_cast<uint8_t>(AckMode::Progress)) {
+                // 进度 ACK：重置定时器，保持 pending
+                pending_[i].send_tick = get_tick_ms();
+                pending_[i].retry_cnt = 0;
+            } else {
+                // 最终 ACK：移除
+                pending_[i].used = false;
+            }
+            return;
+        }
+    }
 }
 
 void Router::send_ack(Link *out, const Frame &req, uint8_t status,
@@ -257,7 +273,13 @@ void Router::check_timeout() {
         if (now - pending_[i].send_tick < timeout_ms) continue;
 
         if (pending_[i].retry_cnt >= max_retry) {
-            // 超时，移除待确认条目
+            // 超时，通知上层
+            if (on_timeout_ && pending_[i].raw_len >= HEADER_SIZE) {
+                uint8_t receiver = pending_[i].raw_frame[6];
+                uint8_t cmd_set  = pending_[i].raw_frame[9];
+                uint8_t cmd_id   = pending_[i].raw_frame[10];
+                on_timeout_(pending_[i].seq, receiver, cmd_set, cmd_id, on_timeout_arg_);
+            }
             pending_[i].used = false;
             continue;
         }
