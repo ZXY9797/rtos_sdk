@@ -51,6 +51,7 @@ set(SOC_SOURCES
     src/hal/app_comp.c
     src/hal/app_pwr_mgmt.c
     src/hal/app_soft_encoder.c
+    src/hal/gr55xx_delay.c
     src/hal/app_rtos_cfg.c
     src/hal/app_graphics_qspi.c
 )

@@ -1,0 +1,92 @@
+description: Goodix GR5525 BLE controller
+
+compatible: "goodix,gr5525-ble"
+
+include: base.yaml
+
+properties:
+  device-name:
+    type: string
+    default: "BLE"
+    description: BLE device name advertised
+
+  adv-interval-min:
+    type: int
+    default: 48
+    description: Minimum advertising interval in 0.625ms units (48 = 30ms)
+
+  adv-interval-max:
+    type: int
+    default: 80
+    description: Maximum advertising interval in 0.625ms units (80 = 50ms)
+
+  conn-interval-min:
+    type: int
+    default: 320
+    description: Minimum connection interval in 1.25ms units (320 = 400ms)
+
+  conn-interval-max:
+    type: int
+    default: 520
+    description: Maximum connection interval in 1.25ms units (520 = 650ms)
+
+  slave-latency:
+    type: int
+    default: 0
+    description: Peripheral slave latency (number of connection events)
+
+  sup-timeout:
+    type: int
+    default: 400
+    description: Supervision timeout in 10ms units (400 = 4s)
+
+  security-level:
+    type: int
+    default: 2
+    description: >
+      Security level: 0=None, 1=Open, 2=Mitm, 3=SecureConn
+
+  bonding:
+    type: int
+    default: 1
+    description: Enable bonding (0=disabled, 1=enabled)
+
+cxx-driver:
+  template: ble::BleDevice
+  header: ble/ble_device.h
+  args: []
+  init-level: application
+  init-priority: 80
+  init-cfg:
+    type: ble::StackConfig
+    fields:
+      device_name:
+        type: string
+        prop: device-name
+        default: "BLE"
+      "conn_param.interval_min":
+        prop: conn-interval-min
+        default: 320
+      "conn_param.interval_max":
+        prop: conn-interval-max
+        default: 520
+      "conn_param.slave_latency":
+        prop: slave-latency
+        default: 0
+      "conn_param.sup_timeout":
+        prop: sup-timeout
+        default: 400
+      "sec_param.level":
+        prop: security-level
+        default: 2
+        cast: "ble::SecParam::Level"
+      "sec_param.bonding":
+        prop: bonding
+        default: 1
+        cast: bool
+      adv_interval_min:
+        prop: adv-interval-min
+        default: 48
+      adv_interval_max:
+        prop: adv-interval-max
+        default: 80

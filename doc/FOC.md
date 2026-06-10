@@ -7,12 +7,20 @@ SDK 提供开箱即用的 FOC（磁场定向控制）电机控制组件，基于
 ## 快速开始
 
 ```cpp
-#include "foc_app.h"
+#include <device.h>
+#include <drivers_generated.h>
+#include "foc/motor_device.h"
 
-int main(void) {
-    foc_app::start();  // 启动 FOC 系统（PWM 20kHz + ADC 采样 + CLI 调试）
+void foc_app_init() {
+    auto &motor = device_get(motor0);  // 从设备树获取已初始化的电机设备
+    motor.start();                      // 启动 FOC 控制
 }
 ```
+
+`device_get(motor0)` 返回的 MotorDevice 已在 initcall 阶段自动完成：
+- PWM/ADC 设备绑定（phandle 引用）
+- 电机参数配置（从 DTS 属性解析）
+- PI 控制器初始化
 
 ## 特性
 
@@ -25,12 +33,61 @@ int main(void) {
 
 ```dts
 aliases {
-    pwm_u = &timer0_ch0;
-    pwm_v = &timer0_ch1;
-    pwm_w = &timer0_ch2;
-    adc0  = &adc0;
+    motor0 = &motor0;
+    pwm0   = &pwm0;
+    adc0   = &adc0;
+};
+
+/* PWM 定时器 */
+pwm0: pwm@40012C00 {
+    compatible = "goodix,gr5525-pwm";
+    reg = <0x40012C00 0x400>;
+    status = "okay";
+};
+
+/* ADC */
+adc0: adc@40022800 {
+    compatible = "goodix,gr5525-adc";
+    reg = <0x40022800 0x400>;
+    status = "okay";
+};
+
+/* FOC 电机控制器（复合设备） */
+motor0: motor {
+    compatible = "foc,motor";
+    status = "okay";
+
+    /* 引用 PWM 和 ADC 设备 */
+    pwm-dev = <&pwm0>;
+    adc-dev = <&adc0>;
+
+    /* PWM 通道映射 */
+    pwm-ch-u = <0>;               /* U 相 PWM 通道 */
+    pwm-ch-v = <1>;               /* V 相 PWM 通道 */
+    pwm-ch-w = <2>;               /* W 相 PWM 通道 */
+
+    /* 电机物理参数（工程单位，整数） */
+    rs-milliohm = <50>;           /* 定子电阻 (mΩ) */
+    ld-microhenry = <100>;        /* D 轴电感 (μH) */
+    lq-microhenry = <100>;        /* Q 轴电感 (μH) */
+    flux-milliweber = <0>;        /* 磁链 (mWb) */
+    pole-pairs = <7>;             /* 极对数 */
+
+    /* FOC 限制参数 */
+    max-current-ma = <20000>;     /* 最大相电流 (mA) */
+    max-voltage-mv = <48000>;     /* 最大母线电压 (mV) */
+
+    /* FOC 控制参数 */
+    pwm-frequency = <20000>;      /* PWM 开关频率 (Hz) */
+    current-bandwidth = <1000>;   /* 电流环带宽 (Hz) */
+
+    /* 模式选择 */
+    sensor-mode = <0>;            /* 0=无感, 1=Hall, 2=开环, 3=编码器 */
+    control-mode = <1>;           /* 0=力矩, 1=速度, 2=占空比, 3=位置 */
 };
 ```
+
+> **改电机参数？只改 DTS，业务代码零修改。**
 
 ## Kconfig 配置
 

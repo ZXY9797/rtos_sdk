@@ -1,12 +1,8 @@
 #include "foc_app.h"
 
 #include <device.h>
-#include <drivers/gpio.h>
-#include <drivers/pwm.h>
-#include <drivers/adc.h>
 #include <drivers/flash.h>
 #include <drivers_generated.h>
-#include <init.h>
 #include <log.h>
 #include <osal.h>
 #include <irq.h>
@@ -55,9 +51,6 @@ static_assert(sizeof(CalibData) == 20);
 static foc::MotorConfig motor_cfg;
 static foc::Motor *g_motor = nullptr;
 
-static hal::Flash g_flash(hal::flash_create_gd32());
-static nvs::Nvs<hal::Flash> g_nvs(g_flash, NVS_OFFSET);
-
 static osal::PeriodicThread *g_slow_loop = nullptr;
 static osal::PeriodicThread *g_led_thread = nullptr;
 
@@ -66,9 +59,19 @@ static size_t cli_pos = 0;
 
 // ─── NVS 辅助 ───
 
-void nvs_load_config() {
+static hal::Flash &nvs_flash() {
+    static hal::Flash flash(hal::flash_create_gd32());
+    return flash;
+}
+
+static nvs::Nvs<hal::Flash> &nvs_store() {
+    static nvs::Nvs<hal::Flash> instance(nvs_flash(), NVS_OFFSET);
+    return instance;
+}
+
+bool nvs_load_config() {
     CalibData cal{};
-    int32_t r = g_nvs.read(NVS_ID_CALIB, cal);
+    int32_t r = nvs_store().read(NVS_ID_CALIB, cal);
     if (r > 0) {
         motor_cfg.rs = cal.rs;
         motor_cfg.ld = cal.ld;
@@ -77,9 +80,10 @@ void nvs_load_config() {
         motor_cfg.pole_pairs = cal.pole_pairs;
         LOGI("nvs", "loaded calib: Rs=%.4f Ld=%.6f Lq=%.6f Flux=%.5f pp=%d",
              cal.rs, cal.ld, cal.lq, cal.flux_linkage, cal.pole_pairs);
-    } else {
-        LOGI("nvs", "no saved calibration, using Kconfig defaults");
+        return true;
     }
+    LOGI("nvs", "no saved calibration, using DTS defaults");
+    return false;
 }
 
 void nvs_save_config() {
@@ -89,7 +93,7 @@ void nvs_save_config() {
     cal.lq = motor_cfg.lq;
     cal.flux_linkage = motor_cfg.flux_linkage;
     cal.pole_pairs = motor_cfg.pole_pairs;
-    int32_t r = g_nvs.write(NVS_ID_CALIB, cal);
+    int32_t r = nvs_store().write(NVS_ID_CALIB, cal);
     if (r > 0) {
         LOGI("nvs", "calibration saved: Rs=%.4f Ld=%.6f Lq=%.6f",
              cal.rs, cal.ld, cal.lq);
@@ -99,20 +103,8 @@ void nvs_save_config() {
 }
 
 void nvs_reset_config() {
-    (void)g_nvs.remove(NVS_ID_CALIB);
-    motor_cfg.rs = CONFIG_FOC_RS_OHMS * 0.001f;
-    motor_cfg.ld = CONFIG_FOC_LD_HENRIES * 1e-6f;
-    motor_cfg.lq = CONFIG_FOC_LQ_HENRIES * 1e-6f;
-    motor_cfg.flux_linkage = CONFIG_FOC_FLUX_LINKAGE * 1e-3f;
-    motor_cfg.pole_pairs = static_cast<uint8_t>(CONFIG_FOC_POLE_PAIRS);
-    LOGI("nvs", "calibration reset to Kconfig defaults");
-}
-
-// ─── PWM ISR 回调 (快速循环) ───
-
-void pwm_isr_callback(void *arg) {
-    auto *motor = static_cast<foc::Motor *>(arg);
-    motor->fast_loop_isr();
+    (void)nvs_store().remove(NVS_ID_CALIB);
+    LOGI("nvs", "calibration cleared — reboot to apply DTS defaults");
 }
 
 // ─── 慢循环 ───
@@ -240,65 +232,13 @@ void cli_process(const char *cmd) {
         LOGI("cli", "  status / st       - Show status");
         LOGI("cli", "  measure / meas    - Auto-measure motor params");
         LOGI("cli", "  save              - Save calibration to NVS");
-        LOGI("cli", "  reset             - Reset to Kconfig defaults");
+        LOGI("cli", "  reset             - Reset to DTS defaults");
         LOGI("cli", "  estop             - Emergency stop");
         LOGI("cli", "  help              - Show this help");
     } else {
         LOGW("cli", "unknown command: '%s', type 'help'", cmd);
     }
 }
-
-// ─── initcall ───
-
-int foc_gpio_init() {
-    auto &led = device_get(led0);
-    (void)led.configure(GPIO_OUTPUT_LOW);
-    led.off();
-    return 0;
-}
-
-int foc_motor_init() {
-    auto &pwm = device_get(pwm0);
-    auto &adc = device_get(adc0);
-
-    // Kconfig 用工程单位 (mOhm/uH/mWb)，C++ 用基本单位 (Ohm/H/Wb)
-    motor_cfg.rs = CONFIG_FOC_RS_OHMS * 0.001f;
-    motor_cfg.ld = CONFIG_FOC_LD_HENRIES * 1e-6f;
-    motor_cfg.lq = CONFIG_FOC_LQ_HENRIES * 1e-6f;
-    motor_cfg.flux_linkage = CONFIG_FOC_FLUX_LINKAGE * 1e-3f;
-    static_assert(CONFIG_FOC_POLE_PAIRS > 0
-                  && CONFIG_FOC_POLE_PAIRS <= 255,
-                  "pole_pairs out of uint8_t range");
-    motor_cfg.pole_pairs = static_cast<uint8_t>(
-        CONFIG_FOC_POLE_PAIRS);
-    motor_cfg.imax = CONFIG_FOC_MAX_CURRENT_A;
-    motor_cfg.vmax = CONFIG_FOC_MAX_VOLTAGE_V;
-    motor_cfg.sensor = foc::SensorMode::Sensorless;
-    motor_cfg.control = foc::ControlMode::Speed;
-    motor_cfg.foc.pwm_frequency = CONFIG_FOC_PWM_FREQUENCY_HZ;
-    motor_cfg.foc.current_bandwidth = CONFIG_FOC_CURRENT_LOOP_BW_HZ;
-
-    // NVS：加载标定参数（覆盖 Kconfig 默认值）
-    (void)g_flash.init();
-    if (g_nvs.mount() == nvs::Status::Ok) {
-        nvs_load_config();
-    } else {
-        LOGW("nvs", "mount failed, using Kconfig defaults");
-    }
-
-    static foc::Motor motor(motor_cfg, pwm,
-                            hal::PwmChannel::Ch1, hal::PwmChannel::Ch2, hal::PwmChannel::Ch3,
-                            adc);
-    motor.init();
-    g_motor = &motor;
-
-    (void)pwm.set_update_callback(pwm_isr_callback, g_motor);
-
-    return 0;
-}
-
-SYS_INIT(foc_gpio_init, INITCALL_LEVEL_PRE_KERNEL_3, 80);
-SYS_INIT(foc_motor_init, INITCALL_LEVEL_APPLICATION, 80);
 
 } // namespace
 
@@ -307,6 +247,30 @@ SYS_INIT(foc_motor_init, INITCALL_LEVEL_APPLICATION, 80);
 namespace foc_app {
 
 int start() {
+    // motor 已由设备树 initcall 自动初始化
+    auto &motor_dev = device_get(motor0);
+    g_motor = &motor_dev.motor();
+
+    // 以 DTS 默认值初始化 motor_cfg（供 NVS/CLI 使用）
+    motor_cfg.rs = CONFIG_FOC_RS_OHMS * 0.001f;
+    motor_cfg.ld = CONFIG_FOC_LD_HENRIES * 1e-6f;
+    motor_cfg.lq = CONFIG_FOC_LQ_HENRIES * 1e-6f;
+    motor_cfg.flux_linkage = CONFIG_FOC_FLUX_LINKAGE * 1e-3f;
+    motor_cfg.pole_pairs = static_cast<uint8_t>(CONFIG_FOC_POLE_PAIRS);
+
+    // NVS：加载标定参数（覆盖 DTS 默认值）
+    (void)nvs_flash().init();
+    if (nvs_store().mount() == nvs::Status::Ok) {
+        if (nvs_load_config()) {
+            // 应用 NVS 标定到 FOC 控制器
+            g_motor->foc_controller().calculate_gains(
+                motor_cfg.rs, motor_cfg.ld, motor_cfg.lq,
+                motor_cfg.flux_linkage, motor_cfg.pole_pairs);
+        }
+    } else {
+        LOGW("nvs", "mount failed, using DTS defaults");
+    }
+
     g_slow_loop = osal::PeriodicThread::create("foc_slow",
                                                 slow_loop_entry,
                                                 nullptr,

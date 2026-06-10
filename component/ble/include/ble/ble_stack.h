@@ -20,6 +20,9 @@ class BleStack {
 public:
     Status init(const StackConfig &cfg, EventCallback cb, void *user_data);
 
+    void set_adv_data(const uint8_t *data, size_t len);
+    void set_scan_rsp_data(const uint8_t *data, size_t len);
+
     Status adv_start();
     Status adv_stop();
 

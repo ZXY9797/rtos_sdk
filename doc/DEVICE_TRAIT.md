@@ -48,20 +48,51 @@ RTOS SDK 使用编译期模板特化实现设备分发，相比 Zephyr 的运行
 ### Binding YAML 示例
 
 ```yaml
-# binding YAML (gd,gd32-usart.yaml)
+# binding YAML (gd,gd32-usart.yaml) — 值参数模板
 cxx-driver:
   template: Uart
   header: drivers/uart.h
   args: [node-reg, irq]
   init-cfg:                           # ← init() 参数映射
     type: UartConfig
-    rx-buffer-size:
-      default: 256
     fields:
       baudrate:  { prop: current-speed, default: 115200 }
       data_bits: { default: 8, cast: DataBits }
       stop_bits: { default: 0, cast: StopBits }
       parity:    { default: 0, cast: Parity }
+```
+
+```yaml
+# binding YAML (foc,motor.yaml) — phandle 参数 + 命名空间类型
+cxx-driver:
+  template: foc::MotorDevice           # 命名空间限定
+  header: foc/motor_device.h
+  args:
+    - phandle-ord: pwm-dev             # 引用其他设备的 ordinal
+    - phandle-ord: adc-dev
+    - prop: pwm-ch-u                   # 从 DTS 属性取值
+    - prop: pwm-ch-v
+    - prop: pwm-ch-w
+  init-cfg:
+    type: foc::MotorConfig
+    fields:
+      rs:    { prop: rs-milliohm, default: 50, scale: 0.001 }
+      imax:  { prop: max-current-ma, default: 20000, scale: 0.001 }
+      sensor: { prop: sensor-mode, default: 0, cast: foc::SensorMode }
+```
+
+```yaml
+# binding YAML (goodix,gr5525-ble.yaml) — 非模板类 + string 属性
+cxx-driver:
+  template: ble::BleDevice             # 非模板类，args 为空
+  header: ble/ble_device.h
+  args: []
+  init-cfg:
+    type: ble::StackConfig
+    fields:
+      device_name: { type: string, prop: device-name, default: "BLE" }
+      "conn_param.interval_min": { prop: conn-interval-min, default: 320 }
+      "sec_param.level": { prop: security-level, default: 2, cast: "ble::SecParam::Level" }
 ```
 
 ### 生成的代码

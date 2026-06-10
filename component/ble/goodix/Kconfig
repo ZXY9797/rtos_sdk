@@ -55,4 +55,53 @@ config BLE_HEAP_SIZE
     help
       Heap memory reserved for BLE stack operations.
 
+# ── BLE 协议栈编译时参数 ──
+
+config BLE_MAX_CONNECTIONS
+    int "Max BLE connections"
+    default 1
+    range 1 10
+    help
+      Maximum number of simultaneous BLE connections (CFG_MAX_CONNECTIONS).
+
+config BLE_MAX_ADVS
+    int "Max BLE advertisers"
+    default 1
+    range 1 5
+    help
+      Maximum number of BLE advertising sets (CFG_MAX_ADVS).
+
+config BLE_MAX_SCAN
+    int "Max BLE scan instances"
+    default 0
+    range 0 1
+    help
+      Maximum number of BLE scan instances. 0 = scanning disabled.
+
+config BLE_CONNLESS_AOA_AOD
+    bool "Connectionless AoA/AoD support"
+    default n
+    help
+      Enable connectionless Angle of Arrival/Departure support.
+
+config BLE_MAX_BOND_DEVS
+    int "Max bonded devices"
+    default 1
+    range 1 16
+    help
+      Maximum number of bonded BLE devices (CFG_MAX_BOND_DEVS).
+
+config BLE_MAX_PRFS
+    int "Max BLE profiles"
+    default 8
+    range 1 64
+    help
+      Maximum number of BLE profiles (CFG_MAX_PRFS).
+
+config BLE_CONTROLLER_ONLY
+    bool "BLE controller only (no host)"
+    default n
+    help
+      Build BLE controller only, without the host stack.
+
 endif # BLE_GR5525

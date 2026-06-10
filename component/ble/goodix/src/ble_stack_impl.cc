@@ -152,6 +152,16 @@ Status BleStack::init(const StackConfig &cfg, EventCallback cb, void *user_data)
     return Status::Ok;
 }
 
+void BleStack::set_adv_data(const uint8_t *data, size_t len) {
+    s_cfg.adv_data = data;
+    s_cfg.adv_data_len = len;
+}
+
+void BleStack::set_scan_rsp_data(const uint8_t *data, size_t len) {
+    s_cfg.scan_rsp_data = data;
+    s_cfg.scan_rsp_data_len = len;
+}
+
 Status BleStack::adv_start() {
     ble_gap_adv_param_t adv_param{};
     adv_param.chnl_map = BLE_GAP_ADV_CHANNEL_37_38_39;

@@ -7,9 +7,11 @@
 
 #include "ble_app.h"
 
+#include <device.h>
+#include <drivers_generated.h>
 #include <log.h>
 
-#include "ble/ble_stack.h"
+#include "ble/ble_device.h"
 #include "ble/ble_hid.h"
 #include "ble/ble_uart.h"
 #include "ble/ble_batt.h"
@@ -20,7 +22,7 @@ extern "C" {
 }
 
 /* ---- BLE objects ---- */
-static ble::BleStack s_ble;
+static ble::BleStack *s_ble = nullptr;
 static ble::BleHidService s_hid;
 static ble::BleUartService s_uart;
 static ble::BleBattService s_batt;
@@ -106,7 +108,7 @@ static void on_ble_event(const ble::Event &evt, void *) {
         s_batt.init(100);
         s_hid.init_keyboard({s_hid_report_map, sizeof(s_hid_report_map)});
         s_uart.init(nullptr, nullptr);
-        s_ble.adv_start();
+        s_ble->adv_start();
         break;
 
     case ble::EventId::AdvStarted:
@@ -122,7 +124,7 @@ static void on_ble_event(const ble::Event &evt, void *) {
 
     case ble::EventId::Disconnected:
         LOGI("ble", "Disconnected (0x%02X)", evt.disconnect_reason);
-        s_ble.adv_start();
+        s_ble->adv_start();
         break;
 
     case ble::EventId::PairSuccess:
@@ -141,27 +143,24 @@ static void on_ble_event(const ble::Event &evt, void *) {
 /* ---- Public API ---- */
 
 void ble_app_init() {
-    ble::StackConfig cfg{};
-    cfg.device_name = "GR5525_BLE";
-    cfg.conn_param = {320, 520, 0, 400};
-    cfg.sec_param = {ble::SecParam::Level::Mitm, true};
-    cfg.adv_interval_min = 48;
-    cfg.adv_interval_max = 80;
-    cfg.adv_data = s_adv_data;
-    cfg.adv_data_len = sizeof(s_adv_data);
+    // BLE 配置由设备树 initcall 自动存储，应用层只需提供事件回调
+    auto &ble_dev = device_get(ble0);
+    ble_dev.init(on_ble_event, nullptr);
+    s_ble = &ble_dev.stack();
 
-    s_ble.init(cfg, on_ble_event, nullptr);
+    // 应用层特定：设置广播数据
+    s_ble->set_adv_data(s_adv_data, sizeof(s_adv_data));
 }
 
-bool ble_app_is_connected() { return s_ble.is_connected(); }
-uint8_t ble_app_conn_idx() { return s_ble.conn_index(); }
+bool ble_app_is_connected() { return s_ble->is_connected(); }
+uint8_t ble_app_conn_idx() { return s_ble->conn_index(); }
 
 void ble_app_send_keyboard(const uint8_t *report, size_t len) {
-    s_hid.send_keyboard_report(s_ble.conn_index(), 1, report, len);
+    s_hid.send_keyboard_report(s_ble->conn_index(), 1, report, len);
 }
 
 void ble_app_send_uart(const uint8_t *data, size_t len) {
-    s_uart.send(s_ble.conn_index(), data, len);
+    s_uart.send(s_ble->conn_index(), data, len);
 }
 
 bool ble_app_uart_tx_ready() { return s_uart.is_tx_ready(); }

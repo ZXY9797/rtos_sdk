@@ -19,6 +19,7 @@
         spi0 = &spi0;
         pwm0 = &timer0;
         adc0 = &adc0;
+        motor0 = &motor0;
     };
 
     leds {
@@ -105,6 +106,27 @@
             status = "okay";
             label = "ADC0";
             #io-channel-cells = <1>;
+        };
+
+        motor0: motor {
+            compatible = "foc,motor";
+            status = "okay";
+            pwm-dev = <&timer0>;
+            adc-dev = <&adc0>;
+            pwm-ch-u = <0>;
+            pwm-ch-v = <1>;
+            pwm-ch-w = <2>;
+            rs-milliohm = <50>;
+            ld-microhenry = <100>;
+            lq-microhenry = <100>;
+            flux-milliweber = <0>;
+            pole-pairs = <7>;
+            max-current-ma = <20000>;
+            max-voltage-mv = <48000>;
+            pwm-frequency = <20000>;
+            current-bandwidth = <1000>;
+            sensor-mode = <0>;
+            control-mode = <1>;
         };
     };
 };

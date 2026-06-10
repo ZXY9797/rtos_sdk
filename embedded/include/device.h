@@ -27,6 +27,10 @@ struct DeviceTrait;
 template <int Ord>
 using Device = typename DeviceTrait<Ord>::type;
 
+/// 编译期设备获取 — 前向声明（定义在 drivers_generated.h 中）
+template <int Ord>
+inline auto &device_get();
+
 } // namespace hal
 #endif
 

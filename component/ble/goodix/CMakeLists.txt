@@ -53,6 +53,7 @@ target_compile_options(${MODULE_NAME}
         -Wno-strict-aliasing
         $<$<COMPILE_LANGUAGE:CXX>:-Wno-sign-compare>
         $<$<COMPILE_LANGUAGE:CXX>:-Wno-register>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wno-volatile>
 )
 
 target_include_directories(${MODULE_NAME}

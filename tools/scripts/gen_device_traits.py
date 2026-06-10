@@ -124,8 +124,12 @@ def parse_yaml_comments(filepath):
             key, val = next(iter(item.items()))
             if key == 'phandle-reg':
                 args.append(('phandle_reg', val))
+            elif key == 'phandle-ord':
+                args.append(('phandle_ord', val))
             elif key == 'node-reg':
                 args.append(('node_reg', None))
+            elif key == 'node-prop':
+                args.append(('prop_val', val))
             elif key == 'parent-reg':
                 args.append(('parent_reg', None))
             elif key == 'field':
@@ -165,9 +169,11 @@ def parse_yaml_comments(filepath):
             for fname, fdef in fields_raw.items():
                 if isinstance(fdef, dict):
                     cfg['fields'][fname] = {
+                        'type': fdef.get('type', 'int'),
                         'prop': fdef.get('prop'),
                         'default': fdef.get('default'),
                         'cast': fdef.get('cast'),
+                        'scale': fdef.get('scale'),
                     }
         cxx['init_cfg'] = cfg
 
@@ -328,10 +334,17 @@ def resolve_arg(arg, node_id, dt_data):
     arg_type = arg[0]
 
     if arg_type == 'phandle_reg':
-        prop = arg[1]
+        prop = arg[1].replace('-', '_')
         target = dt_data['phandles'].get((node_id, prop))
         if target and target in dt_data['reg_addrs']:
             return f'DT_REG_ADDR({target})'
+        return None
+
+    elif arg_type == 'phandle_ord':
+        prop = arg[1].replace('-', '_')
+        target = dt_data['phandles'].get((node_id, prop))
+        if target and target in dt_data['ordinals']:
+            return str(dt_data['ordinals'][target])
         return None
 
     elif arg_type == 'node_reg':
@@ -356,10 +369,11 @@ def resolve_arg(arg, node_id, dt_data):
 
     elif arg_type == 'prop_val':
         prop = arg[1]
-        if (node_id, prop) in dt_data['direct_props']:
-            return f'{node_id}_P_{prop}'
-        if (node_id, prop, prop) in dt_data['prop_fields']:
-            return f'{node_id}_P_{prop}_VAL_{prop}'
+        prop_norm = prop.replace('-', '_')
+        if (node_id, prop_norm) in dt_data['direct_props']:
+            return f'{node_id}_P_{prop_norm}'
+        if (node_id, prop_norm, prop_norm) in dt_data['prop_fields']:
+            return f'{node_id}_P_{prop_norm}_VAL_{prop_norm}'
         return None
 
     elif arg_type == 'literal':
@@ -482,13 +496,17 @@ def write_output(specs, used_headers, output_path):
         ord_val = spec['ord']
         alias = spec['alias']
         template_type = spec['type']
-        args = ',\n        '.join(spec['args'])
+        args = spec['args']
 
         comment = f'// {alias}' if alias else f'// ord={ord_val}'
         lines.append(f'{comment}')
         lines.append(f'template <> struct DeviceTrait<{ord_val}> {{')
-        lines.append(f'    using type = {template_type}<')
-        lines.append(f'        {args}>;')
+        if args:
+            args_str = ',\n        '.join(args)
+            lines.append(f'    using type = {template_type}<')
+            lines.append(f'        {args_str}>;')
+        else:
+            lines.append(f'    using type = {template_type};')
         lines.append(f'    static type instance;')
         lines.append(f'}};')
         lines.append('')
@@ -501,23 +519,39 @@ def write_output(specs, used_headers, output_path):
         '',
     ])
 
-    # 模板显式实例化（仅启用的节点）
-    instantiations = []
+    # 模板显式实例化 — hal 命名空间内的类型
+    hal_instantiations = []
+    ext_instantiations = []
     for spec in specs:
         if not spec['enabled']:
             continue
         template_type = spec['type']
         args = ', '.join(spec['args'])
-        instantiations.append(f'template class {template_type}<{args}>;')
+        if not args:
+            continue  # 非模板类不需要显式实例化
+        line = f'template class {template_type}<{args}>;'
+        if '::' in template_type:
+            ext_instantiations.append(line)
+        else:
+            hal_instantiations.append(line)
 
-    if instantiations:
+    if hal_instantiations:
         lines.append('// 模板显式实例化（仅 DTS 中 status = "okay" 的节点）')
-        lines.extend(instantiations)
+        lines.extend(hal_instantiations)
         lines.append('')
 
     lines.extend([
         '} // namespace hal',
         '',
+    ])
+
+    # 非 hal 命名空间的模板实例化（在全局命名空间中）
+    if ext_instantiations:
+        lines.append('// 跨命名空间模板显式实例化')
+        lines.extend(ext_instantiations)
+        lines.append('')
+
+    lines.extend([
         '/// device_get(alias) — 通过 DTS 别名获取已初始化的设备引用',
         '#define device_get(alias) hal::device_get<DT_ORD(DT_ALIAS(alias))>()',
         '',
@@ -532,7 +566,9 @@ def write_output(specs, used_headers, output_path):
         # 从 node_id 末尾提取基地址（如 DT_N_S_soc_S_serial_40011000 → 40011000）
         node_id = spec['node_id']
         addr_hex = node_id.split('_')[-1].upper()
-        lines.append(f'#define DT_INST_{spec["type"]}_{addr_hex}')
+        # 宏名中不允许 ::，替换为 _
+        safe_type = spec['type'].replace('::', '_')
+        lines.append(f'#define DT_INST_{safe_type}_{addr_hex}')
     lines.append('')
 
     with open(output_path, 'w', encoding='utf-8') as f:
@@ -543,27 +579,43 @@ def write_output(specs, used_headers, output_path):
 
 def _resolve_init_cfg_field(spec, field_name, field_def, dt_data):
     """将 init-cfg 字段解析为 C++ 值表达式。返回 (value_str, cast_type_or_None)。"""
+    field_type = field_def.get('type', 'int')
     prop_name = field_def.get('prop')
     default_val = field_def.get('default')
     cast_type = field_def.get('cast')
+    scale = field_def.get('scale')
 
-    # 尝试从 DTS 属性获取
+    # string 类型：从 DTS 字符串属性读取
+    if field_type == 'string':
+        if prop_name:
+            prop_normalized = prop_name.replace('-', '_')
+            node_id = spec['node_id']
+            if (node_id, prop_normalized) in dt_data.get('string_props', {}):
+                val = dt_data['string_props'][(node_id, prop_normalized)]
+                return f'"{val}"', None
+        if default_val is not None:
+            return f'"{default_val}"', None
+        return None, None
+
+    # 获取原始整数值
+    raw_val = None
     if prop_name:
         # YAML 中用连字符，DTS 宏中用下划线
         prop_normalized = prop_name.replace('-', '_')
         node_id = spec['node_id']
         if (node_id, prop_normalized) in dt_data.get('direct_props', {}):
-            val = dt_data['direct_props'][(node_id, prop_normalized)]
-            return str(val), cast_type
-        # 属性不存在，使用默认值
-        if default_val is not None:
-            return str(default_val), cast_type
+            raw_val = dt_data['direct_props'][(node_id, prop_normalized)]
+    if raw_val is None:
+        raw_val = default_val
+    if raw_val is None:
         return None, None
 
-    # 无 prop，直接使用默认值
-    if default_val is not None:
-        return str(default_val), cast_type
-    return None, None
+    # scale: 整数 × 缩放因子 → 浮点字面量
+    if scale is not None:
+        float_val = float(raw_val) * float(scale)
+        return f'{float_val}f', None
+
+    return str(raw_val), cast_type
 
 
 def resolve_init_priority(spec, dt_data):

@@ -1,0 +1,149 @@
+description: FOC Motor controller (composite device)
+
+compatible: "foc,motor"
+
+include: base.yaml
+
+properties:
+  pwm-dev:
+    type: phandle
+    required: true
+    description: PWM timer device reference
+
+  adc-dev:
+    type: phandle
+    required: true
+    description: ADC device reference for current sensing
+
+  pwm-ch-u:
+    type: int
+    default: 0
+    description: U-phase PWM channel index (0=Ch1, 1=Ch2, 2=Ch3, 3=Ch4)
+
+  pwm-ch-v:
+    type: int
+    default: 1
+    description: V-phase PWM channel index
+
+  pwm-ch-w:
+    type: int
+    default: 2
+    description: W-phase PWM channel index
+
+  # 电机物理参数 (工程单位, 整数)
+  rs-milliohm:
+    type: int
+    default: 50
+    description: Stator resistance in milliohms
+
+  ld-microhenry:
+    type: int
+    default: 100
+    description: D-axis inductance in microhenries
+
+  lq-microhenry:
+    type: int
+    default: 100
+    description: Q-axis inductance in microhenries
+
+  flux-milliweber:
+    type: int
+    default: 0
+    description: Flux linkage in milliwebers
+
+  pole-pairs:
+    type: int
+    default: 7
+    description: Motor pole pairs
+
+  # FOC 限制参数
+  max-current-ma:
+    type: int
+    default: 20000
+    description: Maximum phase current in milliamps
+
+  max-voltage-mv:
+    type: int
+    default: 48000
+    description: Maximum bus voltage in millivolts
+
+  # FOC 控制参数
+  pwm-frequency:
+    type: int
+    default: 20000
+    description: PWM switching frequency in Hz
+
+  current-bandwidth:
+    type: int
+    default: 1000
+    description: Current loop bandwidth in Hz
+
+  # 模式选择
+  sensor-mode:
+    type: int
+    default: 0
+    description: >
+      Sensor mode: 0=Sensorless, 1=Hall, 2=OpenLoop, 3=Encoder
+
+  control-mode:
+    type: int
+    default: 1
+    description: >
+      Control mode: 0=Torque, 1=Speed, 2=Duty, 3=Position
+
+cxx-driver:
+  template: foc::MotorDevice
+  header: foc/motor_device.h
+  args:
+    - phandle-ord: pwm-dev
+    - phandle-ord: adc-dev
+    - prop: pwm-ch-u
+    - prop: pwm-ch-v
+    - prop: pwm-ch-w
+  init-level: application
+  init-priority: 80
+  init-cfg:
+    type: foc::MotorConfig
+    fields:
+      rs:
+        prop: rs-milliohm
+        default: 50
+        scale: 0.001
+      ld:
+        prop: ld-microhenry
+        default: 100
+        scale: 0.000001
+      lq:
+        prop: lq-microhenry
+        default: 100
+        scale: 0.000001
+      flux_linkage:
+        prop: flux-milliweber
+        default: 0
+        scale: 0.001
+      pole_pairs:
+        prop: pole-pairs
+        default: 7
+        cast: uint8_t
+      imax:
+        prop: max-current-ma
+        default: 20000
+        scale: 0.001
+      vmax:
+        prop: max-voltage-mv
+        default: 48000
+        scale: 0.001
+      "foc.pwm_frequency":
+        prop: pwm-frequency
+        default: 20000
+      "foc.current_bandwidth":
+        prop: current-bandwidth
+        default: 1000
+      sensor:
+        prop: sensor-mode
+        default: 0
+        cast: foc::SensorMode
+      control:
+        prop: control-mode
+        default: 1
+        cast: foc::ControlMode

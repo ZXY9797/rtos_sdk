@@ -17,6 +17,7 @@
         key0 = &user_key;
         uart0 = &uart0;
         ble-uart = &uart1;
+        ble0 = &ble0;
     };
 
     leds {
@@ -62,6 +63,20 @@
             gpio-controller;
             #gpio-cells = <2>;
             ngpios = <16>;
+        };
+
+        ble0: ble {
+            compatible = "goodix,gr5525-ble";
+            status = "okay";
+            device-name = "GR5525_BLE";
+            adv-interval-min = <48>;
+            adv-interval-max = <80>;
+            conn-interval-min = <320>;
+            conn-interval-max = <520>;
+            slave-latency = <0>;
+            sup-timeout = <400>;
+            security-level = <2>;
+            bonding = <1>;
         };
     };
 };
