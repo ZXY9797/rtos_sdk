@@ -11,6 +11,7 @@ enum class Status : uint8_t {
     NotSupported,
     HardwareError,
     Timeout,
+    NoMemory,
 };
 
 } // namespace hal

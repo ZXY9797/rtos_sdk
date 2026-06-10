@@ -168,9 +168,39 @@ struct PeriodicStats {
 
 using PeriodicEntry = void (*)(void* param, const PeriodicStats& stats);
 
+class IrqTimer {
+public:
+    virtual ~IrqTimer() = default;
+    using IrqCallback = void (*)(void *arg);
+    virtual bool enable_update_irq(IrqCallback cb, void *arg) = 0;
+};
+
 enum class PeriodicTrigger {
     Tick,
     External,
+};
+
+/// ISR 静态触发表 — 通过 ID 在 ISR 中触发回调，无需持有任务 handle。
+/// 适用于 app 层创建任务、core 层 ISR 触发的跨层场景。
+class IsrTrigger {
+public:
+    using Callback = void (*)(void *arg);
+
+    /// 注册一个触发槽位（线程上下文调用）
+    /// @return 分配的 slot ID，失败返回 -1
+    [[nodiscard]] static int register_slot(Callback cb, void *arg);
+
+    /// 通过 ID 触发回调（ISR-safe）
+    static void fire(int id);
+
+private:
+    static constexpr int kMaxSlots = 8;
+    struct Slot {
+        Callback cb {nullptr};
+        void *arg {nullptr};
+    };
+    static Slot s_slots[kMaxSlots];
+    static int s_count;
 };
 
 class PeriodicThread {
@@ -186,12 +216,17 @@ public:
                                                 size_t stack_size,
                                                 int32_t priority,
                                                 uint32_t frequency_hz,
-                                                PeriodicTrigger trigger);
+                                                PeriodicTrigger trigger,
+                                                IrqTimer *timer = nullptr);
 
     [[nodiscard]] int startup();
     [[nodiscard]] int stop();
     [[nodiscard]] int notify_from_isr(uint32_t events = 1U);
     [[nodiscard]] uint32_t missed() const { return missed_; }
+
+    /// External 模式下分配的 IsrTrigger slot ID，供 core 层 ISR 通过 fire(id) 触发。
+    /// Tick 模式返回 -1。
+    [[nodiscard]] int trigger_id() const { return trigger_id_; }
 
 private:
     struct PrivateTag {};
@@ -200,12 +235,15 @@ private:
     static uint32_t nextDelayTicks(uint32_t tick_rate, uint32_t frequency_hz,
                                    uint32_t& phase);
     void callEntry();
+    static void timer_isr_callback(void *arg);
 
     osal_thread_t thread_ {};
     osal_sem_t sem_ {nullptr};
     PeriodicEntry entry_ {nullptr};
     void* param_ {nullptr};
+    IrqTimer *timer_ {nullptr};
     uint32_t frequency_hz_ {0};
+    int trigger_id_ {-1};
     PeriodicTrigger trigger_ {PeriodicTrigger::Tick};
     volatile uint32_t sequence_ {0};
     volatile uint32_t missed_ {0};
@@ -272,6 +310,46 @@ private:
     void* control_block_buffer_ {};
     size_t item_size_ {};
     bool owns_control_block_buffer_ {};
+};
+
+class StreamBuffer {
+public:
+    StreamBuffer() = default;
+    ~StreamBuffer();
+
+    /// 动态分配
+    [[nodiscard]] bool create(size_t buf_size, size_t trigger_level = 1);
+    /// 静态分配（外部提供存储，StreamBuffer 不负责释放）
+    [[nodiscard]] bool create(uint8_t *storage, size_t storage_size,
+                              size_t trigger_level = 1);
+    void destroy();
+
+    StreamBuffer(const StreamBuffer&) = delete;
+    StreamBuffer& operator=(const StreamBuffer&) = delete;
+
+    /// 发送数据（阻塞直到写入或超时）
+    [[nodiscard]] size_t send(const uint8_t *data, size_t len,
+                              Milliseconds timeout_ms = kWaitForever);
+    /// ISR 安全发送
+    [[nodiscard]] size_t send_from_isr(const uint8_t *data, size_t len,
+                                       int *higher_prio_woken);
+
+    /// 接收数据（阻塞直到 trigger_level 字节可用或超时）
+    [[nodiscard]] size_t receive(uint8_t *data, size_t len,
+                                 Milliseconds timeout_ms = kWaitForever);
+    /// ISR 安全接收
+    [[nodiscard]] size_t receive_from_isr(uint8_t *data, size_t len,
+                                          int *higher_prio_woken);
+
+    [[nodiscard]] size_t bytes_available() const;
+    [[nodiscard]] size_t space_available() const;
+    void reset();
+    [[nodiscard]] bool is_valid() const { return handle_ != nullptr; }
+
+private:
+    void *handle_ {};
+    void *control_block_ {};
+    bool owns_storage_ {};
 };
 
 class SoftTimer {

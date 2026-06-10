@@ -3,6 +3,7 @@
 
 #include <event_groups.h>
 #include <queue.h>
+#include <stream_buffer.h>
 #include <timers.h>
 
 #include <cstddef>
@@ -389,6 +390,30 @@ bool Thread::abort_delay()
     return handle_.handle != nullptr && xTaskAbortDelay(handle_.handle) == pdPASS;
 }
 
+// ─── IsrTrigger ──────────────────────────────────────────────────
+
+IsrTrigger::Slot IsrTrigger::s_slots[kMaxSlots];
+int IsrTrigger::s_count = 0;
+
+int IsrTrigger::register_slot(Callback cb, void *arg)
+{
+    if (cb == nullptr || s_count >= kMaxSlots) {
+        return -1;
+    }
+    const int id = s_count++;
+    s_slots[id] = {cb, arg};
+    return id;
+}
+
+void IsrTrigger::fire(int id)
+{
+    if (id >= 0 && id < s_count && s_slots[id].cb) {
+        s_slots[id].cb(s_slots[id].arg);
+    }
+}
+
+// ─── PeriodicThread ──────────────────────────────────────────────
+
 uint32_t PeriodicThread::nextDelayTicks(uint32_t tick_rate, uint32_t frequency_hz,
                                         uint32_t& phase)
 {
@@ -407,6 +432,11 @@ void PeriodicThread::callEntry()
         missed_,
     };
     entry_(param_, stats);
+}
+
+void PeriodicThread::timer_isr_callback(void *arg)
+{
+    (void)static_cast<PeriodicThread *>(arg)->notify_from_isr();
 }
 
 void PeriodicThread::threadEntry(void* parameter)
@@ -461,6 +491,9 @@ PeriodicThread::PeriodicThread(PrivateTag)
 PeriodicThread::~PeriodicThread()
 {
     (void)stop();
+    if (timer_) {
+        timer_->enable_update_irq(nullptr, nullptr);
+    }
     if (thread_.handle != nullptr) {
         vTaskDelete(thread_.handle);
         thread_.handle = nullptr;
@@ -477,7 +510,8 @@ PeriodicThread* PeriodicThread::create(const char* name,
                                        size_t stack_size,
                                        int32_t prio,
                                        uint32_t frequency_hz,
-                                       PeriodicTrigger trigger)
+                                       PeriodicTrigger trigger,
+                                       IrqTimer *timer)
 {
     if (entry == nullptr || frequency_hz == 0U || stack_size < sizeof(StackType_t)) {
         return nullptr;
@@ -495,6 +529,18 @@ PeriodicThread* PeriodicThread::create(const char* name,
     thread->param_ = param;
     thread->frequency_hz_ = frequency_hz;
     thread->trigger_ = trigger;
+
+    // External 模式：注册到 IsrTrigger 静态触发表
+    if (trigger == PeriodicTrigger::External) {
+        thread->trigger_id_ = IsrTrigger::register_slot(
+            timer_isr_callback, thread);
+    }
+
+    // 如果传入了硬件定时器，自动连接 ISR 回调
+    if (timer != nullptr) {
+        thread->timer_ = timer;
+        timer->enable_update_irq(timer_isr_callback, thread);
+    }
 
     if (trigger == PeriodicTrigger::External) {
         thread->sem_ = xSemaphoreCreateCounting(1U, 0U);
@@ -738,6 +784,151 @@ uint32_t MessageQueue::free_slots() const
 {
     auto queue = static_cast<QueueHandle_t>(native_handle_);
     return queue != nullptr ? static_cast<uint32_t>(uxQueueSpacesAvailable(queue)) : 0U;
+}
+
+// ---- StreamBuffer ----
+
+StreamBuffer::~StreamBuffer()
+{
+    destroy();
+}
+
+bool StreamBuffer::create(size_t buf_size, size_t trigger_level)
+{
+    destroy();
+    if (buf_size == 0U || trigger_level == 0U) {
+        return false;
+    }
+    auto *ctrl = static_cast<StaticStreamBuffer_t*>(
+        rtos_malloc(sizeof(StaticStreamBuffer_t)));
+    if (ctrl == nullptr) {
+        return false;
+    }
+    auto *buf = static_cast<uint8_t*>(rtos_malloc(buf_size));
+    if (buf == nullptr) {
+        rtos_free(ctrl);
+        return false;
+    }
+    auto h = xStreamBufferCreateStatic(buf_size, trigger_level, buf, ctrl);
+    if (h == nullptr) {
+        rtos_free(buf);
+        rtos_free(ctrl);
+        return false;
+    }
+    handle_ = h;
+    control_block_ = ctrl;
+    owns_storage_ = true;
+    return true;
+}
+
+bool StreamBuffer::create(uint8_t *storage, size_t storage_size,
+                          size_t trigger_level)
+{
+    destroy();
+    if (storage == nullptr || storage_size == 0U || trigger_level == 0U) {
+        return false;
+    }
+    auto *ctrl = static_cast<StaticStreamBuffer_t*>(
+        rtos_malloc(sizeof(StaticStreamBuffer_t)));
+    if (ctrl == nullptr) {
+        return false;
+    }
+    auto h = xStreamBufferCreateStatic(storage_size, trigger_level,
+                                       storage, ctrl);
+    if (h == nullptr) {
+        rtos_free(ctrl);
+        return false;
+    }
+    handle_ = h;
+    control_block_ = ctrl;
+    owns_storage_ = false;
+    return true;
+}
+
+void StreamBuffer::destroy()
+{
+    auto h = static_cast<StreamBufferHandle_t>(handle_);
+    if (h != nullptr) {
+        vStreamBufferDelete(h);
+    }
+    if (control_block_ != nullptr) {
+        rtos_free(control_block_);
+    }
+    handle_ = nullptr;
+    control_block_ = nullptr;
+    owns_storage_ = false;
+}
+
+size_t StreamBuffer::send(const uint8_t *data, size_t len,
+                          Milliseconds timeout_ms)
+{
+    auto h = static_cast<StreamBufferHandle_t>(handle_);
+    if (h == nullptr || data == nullptr || len == 0U) {
+        return 0U;
+    }
+    return xStreamBufferSend(h, data, len,
+                             timeout_ms_to_ticks(timeout_ms));
+}
+
+size_t StreamBuffer::send_from_isr(const uint8_t *data, size_t len,
+                                   int *higher_prio_woken)
+{
+    auto h = static_cast<StreamBufferHandle_t>(handle_);
+    if (h == nullptr || data == nullptr || len == 0U) {
+        return 0U;
+    }
+    BaseType_t woken = pdFALSE;
+    size_t written = xStreamBufferSendFromISR(h, data, len, &woken);
+    if (higher_prio_woken != nullptr) {
+        *higher_prio_woken = static_cast<int>(woken);
+    }
+    return written;
+}
+
+size_t StreamBuffer::receive(uint8_t *data, size_t len,
+                             Milliseconds timeout_ms)
+{
+    auto h = static_cast<StreamBufferHandle_t>(handle_);
+    if (h == nullptr || data == nullptr || len == 0U) {
+        return 0U;
+    }
+    return xStreamBufferReceive(h, data, len,
+                                timeout_ms_to_ticks(timeout_ms));
+}
+
+size_t StreamBuffer::receive_from_isr(uint8_t *data, size_t len,
+                                      int *higher_prio_woken)
+{
+    auto h = static_cast<StreamBufferHandle_t>(handle_);
+    if (h == nullptr || data == nullptr || len == 0U) {
+        return 0U;
+    }
+    BaseType_t woken = pdFALSE;
+    size_t read = xStreamBufferReceiveFromISR(h, data, len, &woken);
+    if (higher_prio_woken != nullptr) {
+        *higher_prio_woken = static_cast<int>(woken);
+    }
+    return read;
+}
+
+size_t StreamBuffer::bytes_available() const
+{
+    auto h = static_cast<StreamBufferHandle_t>(handle_);
+    return h != nullptr ? xStreamBufferBytesAvailable(h) : 0U;
+}
+
+size_t StreamBuffer::space_available() const
+{
+    auto h = static_cast<StreamBufferHandle_t>(handle_);
+    return h != nullptr ? xStreamBufferSpacesAvailable(h) : 0U;
+}
+
+void StreamBuffer::reset()
+{
+    auto h = static_cast<StreamBufferHandle_t>(handle_);
+    if (h != nullptr) {
+        xStreamBufferReset(h);
+    }
 }
 
 void SoftTimer::dispatch(void* timer)

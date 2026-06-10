@@ -6,6 +6,7 @@ target_sources(${MODULE_NAME}
     PRIVATE
         init.cc
         fault.cc
+        assert.cc
 )
 
 target_include_directories(${MODULE_NAME}

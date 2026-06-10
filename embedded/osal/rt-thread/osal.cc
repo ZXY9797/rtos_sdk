@@ -427,6 +427,30 @@ bool Thread::abort_delay()
     return rt_thread_resume(handle_.handle) == RT_EOK;
 }
 
+// ─── IsrTrigger ──────────────────────────────────────────────────
+
+IsrTrigger::Slot IsrTrigger::s_slots[kMaxSlots];
+int IsrTrigger::s_count = 0;
+
+int IsrTrigger::register_slot(Callback cb, void *arg)
+{
+    if (cb == nullptr || s_count >= kMaxSlots) {
+        return -1;
+    }
+    const int id = s_count++;
+    s_slots[id] = {cb, arg};
+    return id;
+}
+
+void IsrTrigger::fire(int id)
+{
+    if (id >= 0 && id < s_count && s_slots[id].cb) {
+        s_slots[id].cb(s_slots[id].arg);
+    }
+}
+
+// ─── PeriodicThread ──────────────────────────────────────────────
+
 uint32_t PeriodicThread::nextDelayTicks(uint32_t tick_rate, uint32_t frequency_hz,
                                         uint32_t& phase)
 {
@@ -445,6 +469,11 @@ void PeriodicThread::callEntry()
         missed_,
     };
     entry_(param_, stats);
+}
+
+void PeriodicThread::timer_isr_callback(void *arg)
+{
+    (void)static_cast<PeriodicThread *>(arg)->notify_from_isr();
 }
 
 static void periodic_wait_stopped()
@@ -508,6 +537,9 @@ PeriodicThread::PeriodicThread(PrivateTag)
 PeriodicThread::~PeriodicThread()
 {
     (void)stop();
+    if (timer_) {
+        timer_->enable_update_irq(nullptr, nullptr);
+    }
     if (thread_.handle != nullptr) {
         rt_thread_delete(thread_.handle);
         thread_.handle = nullptr;
@@ -524,7 +556,8 @@ PeriodicThread* PeriodicThread::create(const char* name,
                                        size_t stack_size,
                                        int32_t prio,
                                        uint32_t frequency_hz,
-                                       PeriodicTrigger trigger)
+                                       PeriodicTrigger trigger,
+                                       IrqTimer *timer)
 {
     if (entry == nullptr || frequency_hz == 0U) {
         return nullptr;
@@ -542,6 +575,18 @@ PeriodicThread* PeriodicThread::create(const char* name,
     thread->param_ = param;
     thread->frequency_hz_ = frequency_hz;
     thread->trigger_ = trigger;
+
+    // External 模式：注册到 IsrTrigger 静态触发表
+    if (trigger == PeriodicTrigger::External) {
+        thread->trigger_id_ = IsrTrigger::register_slot(
+            timer_isr_callback, thread);
+    }
+
+    // 如果传入了硬件定时器，自动连接 ISR 回调
+    if (timer != nullptr) {
+        thread->timer_ = timer;
+        timer->enable_update_irq(timer_isr_callback, thread);
+    }
 
     if (trigger == PeriodicTrigger::External) {
         thread->sem_ = rt_sem_create("per", 0U, RT_IPC_FLAG_FIFO);
@@ -800,6 +845,221 @@ uint32_t MessageQueue::free_slots() const
 {
     auto mq = static_cast<rt_mq_t>(native_handle_);
     return mq != nullptr ? static_cast<uint32_t>(mq->max_msgs - mq->entry) : 0U;
+}
+
+// ---- StreamBuffer (ring buffer + semaphore 实现) ----
+
+struct StreamBufferInternal {
+    uint8_t *buf;
+    size_t cap;          // 缓冲区总容量
+    size_t trigger;      // 触发阈值
+    volatile size_t head; // 写指针 (send 端)
+    volatile size_t tail; // 读指针 (receive 端)
+    rt_sem_t sem;         // 可用字节数信号量
+    bool owns_buf;
+};
+
+static inline size_t sb_used(const StreamBufferInternal *sb) {
+    return (sb->head - sb->tail) % sb->cap;
+}
+
+static inline size_t sb_free(const StreamBufferInternal *sb) {
+    return sb->cap - 1U - sb_used(sb);
+}
+
+static size_t sb_write(StreamBufferInternal *sb,
+                       const uint8_t *data, size_t len) {
+    size_t avail = sb_free(sb);
+    if (len > avail) len = avail;
+    for (size_t i = 0; i < len; i++) {
+        sb->buf[(sb->head + i) % sb->cap] = data[i];
+    }
+    sb->head = (sb->head + len) % sb->cap;
+    return len;
+}
+
+static size_t sb_read(StreamBufferInternal *sb,
+                      uint8_t *data, size_t len) {
+    size_t avail = sb_used(sb);
+    if (len > avail) len = avail;
+    for (size_t i = 0; i < len; i++) {
+        data[i] = sb->buf[(sb->tail + i) % sb->cap];
+    }
+    sb->tail = (sb->tail + len) % sb->cap;
+    return len;
+}
+
+StreamBuffer::~StreamBuffer()
+{
+    destroy();
+}
+
+bool StreamBuffer::create(size_t buf_size, size_t trigger_level)
+{
+    destroy();
+    if (buf_size == 0U || trigger_level == 0U) {
+        return false;
+    }
+    auto *sb = static_cast<StreamBufferInternal*>(
+        rtos_malloc(sizeof(StreamBufferInternal)));
+    if (sb == nullptr) return false;
+
+    sb->buf = static_cast<uint8_t*>(rtos_malloc(buf_size));
+    if (sb->buf == nullptr) { rtos_free(sb); return false; }
+
+    sb->sem = rt_sem_create("sb", 0, RT_IPC_FLAG_FIFO);
+    if (sb->sem == nullptr) {
+        rtos_free(sb->buf); rtos_free(sb); return false;
+    }
+
+    sb->cap = buf_size;
+    sb->trigger = trigger_level;
+    sb->head = 0;
+    sb->tail = 0;
+    sb->owns_buf = true;
+    handle_ = sb;
+    return true;
+}
+
+bool StreamBuffer::create(uint8_t *storage, size_t storage_size,
+                          size_t trigger_level)
+{
+    destroy();
+    if (storage == nullptr || storage_size == 0U || trigger_level == 0U) {
+        return false;
+    }
+    auto *sb = static_cast<StreamBufferInternal*>(
+        rtos_malloc(sizeof(StreamBufferInternal)));
+    if (sb == nullptr) return false;
+
+    sb->sem = rt_sem_create("sb", 0, RT_IPC_FLAG_FIFO);
+    if (sb->sem == nullptr) { rtos_free(sb); return false; }
+
+    sb->buf = storage;
+    sb->cap = storage_size;
+    sb->trigger = trigger_level;
+    sb->head = 0;
+    sb->tail = 0;
+    sb->owns_buf = false;
+    handle_ = sb;
+    return true;
+}
+
+void StreamBuffer::destroy()
+{
+    auto *sb = static_cast<StreamBufferInternal*>(handle_);
+    if (sb == nullptr) return;
+    if (sb->sem != nullptr) rt_sem_delete(sb->sem);
+    if (sb->owns_buf && sb->buf != nullptr) rtos_free(sb->buf);
+    rtos_free(sb);
+    handle_ = nullptr;
+}
+
+size_t StreamBuffer::send(const uint8_t *data, size_t len,
+                          Milliseconds timeout_ms)
+{
+    (void)timeout_ms; // 写入不阻塞（有空间就写）
+    auto *sb = static_cast<StreamBufferInternal*>(handle_);
+    if (sb == nullptr || data == nullptr || len == 0U) return 0U;
+
+    size_t written = sb_write(sb, data, len);
+    // 释放信号量唤醒等待的 receive
+    for (size_t i = 0; i < written; i++) {
+        rt_sem_release(sb->sem);
+    }
+    return written;
+}
+
+size_t StreamBuffer::send_from_isr(const uint8_t *data, size_t len,
+                                   int *higher_prio_woken)
+{
+    auto *sb = static_cast<StreamBufferInternal*>(handle_);
+    if (sb == nullptr || data == nullptr || len == 0U) return 0U;
+
+    size_t written = sb_write(sb, data, len);
+    rt_err_t woken = RT_EOK;
+    for (size_t i = 0; i < written; i++) {
+        rt_err_t r = rt_sem_release(sb->sem);
+        if (r == RT_EOK) woken = RT_EOK; // 简化处理
+    }
+    if (higher_prio_woken != nullptr) {
+        *higher_prio_woken = (woken == RT_EOK) ? 1 : 0;
+    }
+    return written;
+}
+
+size_t StreamBuffer::receive(uint8_t *data, size_t len,
+                             Milliseconds timeout_ms)
+{
+    auto *sb = static_cast<StreamBufferInternal*>(handle_);
+    if (sb == nullptr || data == nullptr || len == 0U) return 0U;
+
+    // 等待至少一个字节可用
+    rt_tick_t ticks = (timeout_ms == kWaitForever)
+        ? RT_WAITING_FOREVER
+        : static_cast<rt_tick_t>(timeout_ms);
+    if (rt_sem_take(sb->sem, ticks) != RT_EOK) {
+        return 0U;
+    }
+
+    // 读取可用数据（至少 1 字节）
+    size_t read = sb_read(sb, data, len);
+
+    // 如果还有更多数据，消耗多余的信号量计数
+    size_t extra = sb_used(sb);
+    for (size_t i = 0; i < extra; i++) {
+        if (rt_sem_take(sb->sem, 0) != RT_EOK) break;
+    }
+
+    return read;
+}
+
+size_t StreamBuffer::receive_from_isr(uint8_t *data, size_t len,
+                                      int *higher_prio_woken)
+{
+    auto *sb = static_cast<StreamBufferInternal*>(handle_);
+    if (sb == nullptr || data == nullptr || len == 0U) return 0U;
+
+    // 非阻塞尝试获取信号量
+    if (rt_sem_take(sb->sem, 0) != RT_EOK) {
+        if (higher_prio_woken != nullptr) *higher_prio_woken = 0;
+        return 0U;
+    }
+
+    size_t read = sb_read(sb, data, len);
+
+    // 消耗多余的信号量计数
+    size_t extra = sb_used(sb);
+    for (size_t i = 0; i < extra; i++) {
+        if (rt_sem_take(sb->sem, 0) != RT_EOK) break;
+    }
+
+    if (higher_prio_woken != nullptr) *higher_prio_woken = 0;
+    return read;
+}
+
+size_t StreamBuffer::bytes_available() const
+{
+    auto *sb = static_cast<StreamBufferInternal*>(handle_);
+    return sb != nullptr ? sb_used(sb) : 0U;
+}
+
+size_t StreamBuffer::space_available() const
+{
+    auto *sb = static_cast<StreamBufferInternal*>(handle_);
+    return sb != nullptr ? sb_free(sb) : 0U;
+}
+
+void StreamBuffer::reset()
+{
+    auto *sb = static_cast<StreamBufferInternal*>(handle_);
+    if (sb == nullptr) return;
+    rt_enter_critical();
+    sb->head = 0;
+    sb->tail = 0;
+    // 重置信号量
+    while (rt_sem_take(sb->sem, 0) == RT_EOK) {}
+    rt_exit_critical();
 }
 
 void SoftTimer::dispatch(void* timer)
