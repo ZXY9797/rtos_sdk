@@ -378,7 +378,7 @@ def resolve_arg(arg, node_id, dt_data):
         return None
 
     elif arg_type == 'prop_field_val':
-        prop, field = arg[1], arg[2]
+        prop, field = arg[1].replace('-', '_'), arg[2]
         if (node_id, prop, field) in dt_data['prop_fields']:
             return f'{node_id}_P_{prop}_IDX_0_VAL_{field}'
         return None

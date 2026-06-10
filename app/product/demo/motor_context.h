@@ -11,6 +11,7 @@
 #include <algo/sweep_signal.h>
 #include <foc/motor.h>
 #include <osal.h>
+#include <sensor_core.h>
 
 #include <cstdint>
 #include <cstring>

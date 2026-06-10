@@ -39,3 +39,8 @@ target_link_libraries(${MODULE_NAME}
 if(TARGET nvs)
     target_link_libraries(${MODULE_NAME} PRIVATE nvs)
 endif()
+
+# Link
+if(TARGET link)
+    target_link_libraries(${MODULE_NAME} PRIVATE link)
+endif()

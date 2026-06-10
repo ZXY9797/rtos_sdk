@@ -23,3 +23,7 @@ bool ble_app_uart_tx_ready();
 
 // Run BLE scheduler (pwr_mgmt_schedule)
 void ble_app_scheduler_run();
+
+// Link 层接入：注册 BLE UART RX 回调
+using BleRxCallback = void (*)(const uint8_t *data, size_t len);
+void ble_app_set_rx_callback(BleRxCallback cb);

@@ -36,10 +36,12 @@ void SensorCore::timer_callback(void *arg)
 
 void SensorCore::on_sensor_done()
 {
-    if (++fire_count_ >= cfg_.divider) {
-        fire_count_ = 0;
+    uint32_t cnt = fire_count_ + 1;
+    if (cnt >= cfg_.divider) {
+        cnt = 0;
         if (thread_) {
-            thread_->notify_from_isr();
+            (void)thread_->notify_from_isr();
         }
     }
+    fire_count_ = cnt;
 }

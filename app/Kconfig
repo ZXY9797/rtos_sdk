@@ -1,3 +1,1 @@
-menu "Application Configure"
-osource "$(PROJECT_DIR)/Kconfig"
-endmenu
+source "app/product/Kconfig"

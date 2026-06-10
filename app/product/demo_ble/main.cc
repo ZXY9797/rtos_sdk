@@ -13,7 +13,46 @@
 #include <log.h>
 #include <osal.h>
 
+#ifdef CONFIG_LINK
+#include <link/router.h>
+#include <link/ble_link.h>
+#endif
+
 #include "ble_app.h"
+
+/* ==================================================================
+ * Link 层接入
+ * ================================================================== */
+
+#ifdef CONFIG_LINK
+static link::BleLink g_ble_link(20);  // BLE 4.x: frag_payload=20
+
+static void ble_link_tx(const uint8_t *data, size_t len, void *) {
+    ble_app_send_uart(data, len);
+}
+
+static void ble_link_rx(const uint8_t *data, size_t len) {
+    g_ble_link.on_receive(data, len);
+}
+
+static void comm_init() {
+    g_ble_link.set_id(1);
+    g_ble_link.set_tx_func(ble_link_tx, nullptr);
+    g_ble_link.set_connected(ble_app_is_connected());
+    ble_app_set_rx_callback(ble_link_rx);
+
+    auto &router = link::Router::instance();
+    router.set_self_addr(link::make_addr(0x20, 0));  // BLE 设备 host_id=0x20
+
+    static const link::RouteEntry routes[] = {
+        link::make_route(link::route_by_host(0x10, 0xF0).to(1)),
+        link::make_route(link::route_direct(0).to(1)),
+    };
+    router.set_routes(routes, 2);
+
+    LOGI("link", "BLE comm initialized: self=0x%02x", link::make_addr(0x20, 0));
+}
+#endif
 
 /* ==================================================================
  * HID Keyboard Task
@@ -89,6 +128,10 @@ int main(void) {
 
     /* Initialize BLE stack + all services */
     ble_app_init();
+
+#ifdef CONFIG_LINK
+    comm_init();
+#endif
 
     /* BLE scheduler task */
     auto *sched_task = osal::Thread::create(

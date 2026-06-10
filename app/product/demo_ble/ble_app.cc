@@ -28,6 +28,13 @@ static ble::BleUartService s_uart;
 static ble::BleBattService s_batt;
 static ble::BleDisService s_dis;
 
+/* ---- Link layer RX bridge ---- */
+static BleRxCallback s_link_rx_cb = nullptr;
+
+static void ble_uart_rx_bridge(const uint8_t *data, size_t len, void *) {
+    if (s_link_rx_cb) s_link_rx_cb(data, len);
+}
+
 /* ---- HID Report Map (Keyboard + Consumer Control) ---- */
 static const uint8_t s_hid_report_map[] = {
     /* Keyboard */
@@ -107,7 +114,7 @@ static void on_ble_event(const ble::Event &evt, void *) {
         s_dis.init(s_pnp_id);
         s_batt.init(100);
         s_hid.init_keyboard({s_hid_report_map, sizeof(s_hid_report_map)});
-        s_uart.init(nullptr, nullptr);
+        s_uart.init(ble_uart_rx_bridge, nullptr);
         s_ble->adv_start();
         break;
 
@@ -166,3 +173,5 @@ void ble_app_send_uart(const uint8_t *data, size_t len) {
 bool ble_app_uart_tx_ready() { return s_uart.is_tx_ready(); }
 
 void ble_app_scheduler_run() { pwr_mgmt_schedule(); }
+
+void ble_app_set_rx_callback(BleRxCallback cb) { s_link_rx_cb = cb; }

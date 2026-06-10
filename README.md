@@ -34,10 +34,16 @@
 ┌─────────────────────────────────────────────────────────────┐
 │                        Application                          │
 │  auto &uart = device_get(uart0);  // 已自动初始化，直接用     │
-│  uart.send(data, len);                                       │
+│  router.set_routes(...);  // 只配路由表                       │
+├─────────────────────────────────────────────────────────────┤
+│                    Link 通信协议栈                            │
+│  Router · FrameCodec · Fragmenter · ACK · 重传               │
+│  ┌──────────┬──────────┬──────────┐                         │
+│  │ UartLink │ CanLink  │ BleLink  │  ← SYS_INIT 自动注册    │
+│  └──────────┴──────────┴──────────┘                         │
 ├─────────────────────────────────────────────────────────────┤
 │                      OSAL (OS 抽象层)                        │
-│  Thread · Mutex · Semaphore                                 │
+│  Thread · Mutex · Semaphore · StreamBuffer                  │
 │  ┌──────────┬──────────┐                                    │
 │  │ FreeRTOS │ RT-Thread│                                    │
 │  └──────────┴──────────┘                                    │
@@ -114,7 +120,13 @@ SDK 提供厂商无关的 BLE API（`ble::` 命名空间），当前实现基于
 
 详见 [doc/IRQ_ISR.md](doc/IRQ_ISR.md)
 
-### 8. 异常处理框架 — 可插拔后端 + noinit 故障记录
+### 8. Link 通信协议栈 — 多链路路由 + 自动初始化
+
+支持 UART、CAN、BLE 等物理链路，提供帧封装、路由转发、ACK 应答、超时重传、分片重组。业务层只配路由表，链路注册和协议处理通过 `SYS_INIT` 自动完成。
+
+详见 [doc/LINK.md](doc/LINK.md)
+
+### 9. 异常处理框架 — 可插拔后端 + noinit 故障记录
 
 统一处理 HardFault/MemManage/BusFault/UsageFault，支持帧指针回溯、栈快照、noinit 故障记录持久化。
 
@@ -150,7 +162,8 @@ rtos_sdk/
 │
 ├── component/                    # 应用级组件
 │   ├── foc/                      # FOC 电机控制库
-│   └── ble/                      # BLE 蓝牙组件
+│   ├── ble/                      # BLE 蓝牙组件
+│   └── link/                     # Link 通信协议栈
 │
 ├── embedded/                     # SDK 核心
 │   ├── include/                  # 公共头文件
@@ -167,6 +180,7 @@ rtos_sdk/
 │   ├── DRIVER_DESIGN.md          # 驱动设计与扩展指南
 │   ├── FOC.md                    # FOC 电机控制组件
 │   ├── BLE.md                    # BLE 蓝牙组件
+│   ├── LINK.md                   # Link 通信协议栈
 │   ├── OSAL.md                   # OSAL 抽象层
 │   ├── IRQ_ISR.md                # IRQ/ISR 中断处理框架
 │   └── EXCEPTION_DESIGN.md       # 异常处理框架

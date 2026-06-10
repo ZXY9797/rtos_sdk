@@ -126,6 +126,15 @@ SECTIONS
         . = ALIGN(4);
     } > FLASH
 
+    link_handler :
+    {
+        . = ALIGN(4);
+        __link_handler_start = .;
+        KEEP(*(.link_handler))
+        __link_handler_end = .;
+        . = ALIGN(4);
+    } > FLASH
+
     rodata :
     {
         . = ALIGN(4);

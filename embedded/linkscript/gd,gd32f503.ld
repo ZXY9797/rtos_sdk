@@ -119,6 +119,13 @@ SECTIONS
     }
     ASSERT(SIZEOF(initlevel_error) == 0, "Undefined initialization levels used.")
 
+    link_handler :
+    {
+        __link_handler_start = .;
+        KEEP(*(.link_handler))
+        __link_handler_end = .;
+    } > FLASH
+
     rodata :
     {
         *(.rodata)

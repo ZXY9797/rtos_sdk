@@ -26,6 +26,12 @@
 #include <foc/config.h>
 #include <algo/leso.h>
 
+#ifdef CONFIG_LINK
+#include <link/router.h>
+#include <link/uart_link.h>
+#include <link/can_link.h>
+#endif
+
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -94,11 +100,40 @@ static uint8_t g_active_motor = 0;  // CLI 当前选中的电机
 static osal::PeriodicThread *g_led_thread = nullptr;
 
 // IMU 数据（由 SensorCore ISR 更新）
+#ifdef CONFIG_IMU_ICM40609D
+#include <imu/icm40609d.h>
 static imu::ImuData g_imu_data;
 
 static bool imu_read_in_isr(void *) {
     return device_get(imu0).read(g_imu_data);
 }
+#endif
+
+// ─── Link 通信 ─────────────────────────────────────────────────
+
+#ifdef CONFIG_LINK
+static link::UartLink g_uart_link(device_get(uart0));
+static link::CanLink  g_can_link(0, 0x100);
+
+static void comm_init() {
+    auto &router = link::Router::instance();
+
+    g_uart_link.set_id(1);
+    g_can_link.set_id(2);
+    router.set_self_addr(link::make_addr(0x10, 0));
+
+    // 路由表：PC(host_id=0x10) ↔ UART, 主控(host_id=0x40) ↔ CAN
+    static const link::RouteEntry routes[] = {
+        link::make_route(link::route_by_host(0x10, 0xF0).to(1)),
+        link::make_route(link::route_by_host(0x40, 0xF0).to(2)),
+        link::make_route(link::route_direct(0).to(1)),
+    };
+    router.set_routes(routes, 3);
+
+    LOGI("link", "comm initialized: self=0x%02x uart=%d can=%d",
+         link::make_addr(0x10, 0), g_uart_link.id(), g_can_link.id());
+}
+#endif
 
 static char cli_buf[CLI_BUF_SIZE];
 static size_t cli_pos = 0;
@@ -933,8 +968,10 @@ static int init_motor(MotorContext &ctx, uint8_t motor_idx) {
         sc_cfg.priority = CTRL_LOOP_PRIO;
         sc_cfg.frequency_hz = CTRL_LOOP_HZ;
         sc_cfg.timer = &imu_tim;
+#ifdef CONFIG_IMU_ICM40609D
         sc_cfg.read_fn = imu_read_in_isr;
         sc_cfg.divider = 8;
+#endif
         ctx.imu_core = new SensorCore(sc_cfg);
         if (ctx.imu_core->start() != 0) {
             LOGE("foc", "failed to start imu core for motor %d", motor_idx);
@@ -972,6 +1009,10 @@ int start() {
     g_motor_count = 1;
 
     if (init_motor(ctx0, 0) != 0) return -1;
+
+#ifdef CONFIG_LINK
+    comm_init();
+#endif
 
     // TODO: 如需第二电机，在此处初始化 motor 1
     // auto &motor_dev1 = device_get(motor1);

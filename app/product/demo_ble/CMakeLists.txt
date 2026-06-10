@@ -27,3 +27,8 @@ target_link_libraries(${MODULE_NAME}
         ble_gr5525
         -Wl,--no-whole-archive
 )
+
+# Link
+if(TARGET link)
+    target_link_libraries(${MODULE_NAME} PRIVATE link)
+endif()

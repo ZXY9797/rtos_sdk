@@ -82,7 +82,7 @@ uint8_t Icm40609d<SpiBusBase, CsPortBase, CsPin>::read_reg(uint8_t reg)
     uint8_t tx[2] = {static_cast<uint8_t>(reg | READ_BIT), 0};
     uint8_t rx[2] = {};
     cs_low();
-    spi_.bus().sync_send(tx, rx, 2, 10);
+    (void)spi_.bus().sync_send(tx, rx, 2, 10);
     cs_high();
     return rx[1];
 }
@@ -93,7 +93,7 @@ void Icm40609d<SpiBusBase, CsPortBase, CsPin>::write_reg(uint8_t reg, uint8_t va
     uint8_t tx[2] = {reg, val};
     uint8_t rx[2] = {};
     cs_low();
-    spi_.bus().sync_send(tx, rx, 2, 10);
+    (void)spi_.bus().sync_send(tx, rx, 2, 10);
     cs_high();
 }
 
@@ -117,11 +117,11 @@ int Icm40609d<SpiBusBase, CsPortBase, CsPin>::init(const ImuConfig &cfg)
     hal::SpiConfig spi_cfg;
     spi_cfg.mode = hal::SpiMode::Mode0;
     spi_cfg.clock_hz = 8000000;
-    spi_.init(spi_cfg);
+    (void)spi_.init(spi_cfg);
 
     // CS 引脚配置为推挽输出，默认高电平
     hal::GpioPortBase cs_port(CsPortBase);
-    cs_port.configure(CsPin, GPIO_OUTPUT_HIGH);
+    (void)cs_port.configure(CsPin, GPIO_OUTPUT_HIGH);
 
     // 验证 WHO_AM_I
     uint8_t who = read_reg(REG_WHO_AM_I);

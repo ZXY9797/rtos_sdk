@@ -1,0 +1,39 @@
+menuconfig LINK
+	bool "Link 通信协议栈"
+	default y
+
+if LINK
+
+config LINK_MAX_FRAME_SIZE
+	int "最大帧长度 (字节)"
+	default 512
+
+config LINK_MAX_LINKS
+	int "最大链路数"
+	default 8
+
+config LINK_MAX_ROUTES
+	int "最大路由规则数"
+	default 16
+
+config LINK_MAX_PENDING
+	int "最大待确认帧数"
+	default 8
+
+config LINK_HANDLER_SECTION
+	bool "使用 section 注册回调"
+	default y
+
+config LINK_PROCESS_HZ
+	int "Link 处理任务频率 (Hz)"
+	default 1000
+
+config LINK_PROCESS_STACK
+	int "Link 处理任务栈大小 (字节)"
+	default 1024
+
+config LINK_PROCESS_PRIO
+	int "Link 处理任务优先级"
+	default 5
+
+endif
