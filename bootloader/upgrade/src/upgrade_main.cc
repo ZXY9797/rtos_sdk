@@ -1,22 +1,38 @@
-#include <boot/image.h>
+#include <boot/boot_ctrl.h>
 #include <boot/flash_map.h>
+#include <boot/flash_ops.h>
+#include <boot/image.h>
 #include <upgrade/upgrade_pkg.h>
-#include <cstring>
+
+#include <algorithm>
+#include <cstdint>
 
 namespace upgrade {
 
+int flash_erase_sector(uint32_t addr, uint32_t size);
+int flash_write(uint32_t addr, const uint8_t *data, uint32_t len);
+
 static bool verify_new_loader(const uint8_t *data, uint32_t size) {
-    if (size < sizeof(boot::ImageHeader)) return false;
+    if (!data || size < sizeof(boot::ImageHeader)) return false;
 
     auto *hdr = reinterpret_cast<const boot::ImageHeader *>(data);
     if (hdr->magic != boot::IMAGE_MAGIC) return false;
-    if (hdr->hdr_size != 128) return false;
-    if (hdr->img_size == 0 || hdr->img_size > size - sizeof(boot::ImageHeader)) return false;
+    if (hdr->hdr_size != sizeof(boot::ImageHeader)) return false;
+    if (hdr->img_size == 0 ||
+        hdr->img_size > size - sizeof(boot::ImageHeader)) {
+        return false;
+    }
 
     return true;
 }
 
-static void halt_with_led() {
+[[noreturn]] static void halt_with_led() {
+    while (1) {}
+}
+
+[[noreturn]] static void system_reset() {
+    auto *aircr = reinterpret_cast<volatile uint32_t *>(0xE000ED0CU);
+    *aircr = 0x05FA0004U;
     while (1) {}
 }
 
@@ -29,22 +45,32 @@ extern "C" int main() {
         upgrade::halt_with_led();
     }
 
-    uint32_t boot_addr = boot::flash_area_addr(boot::FLASH_AREA_BOOTLOADER);
-    uint32_t boot_size = boot::flash_area_get(boot::FLASH_AREA_BOOTLOADER).size;
-    (void)boot_addr;
+    const uint32_t boot_addr =
+        boot::flash_area_addr(boot::FLASH_AREA_BOOTLOADER);
+    const uint32_t boot_size =
+        boot::flash_area_get(boot::FLASH_AREA_BOOTLOADER).size;
+    const uint32_t sector_size = boot::flash_erase_sector_size();
 
-    if (payload.size > boot_size) {
+    if (sector_size == 0 || payload.size > boot_size) {
         upgrade::halt_with_led();
     }
 
-    // TODO: 擦除 boot 区，逐扇区写入新 loader
-    uint32_t sector_size = 2048;
     for (uint32_t offset = 0; offset < boot_size; offset += sector_size) {
-        // flash_erase + flash_write
+        if (upgrade::flash_erase_sector(boot_addr + offset, sector_size) != 0) {
+            upgrade::halt_with_led();
+        }
     }
 
-    // TODO: 清除 NVS loader_upgrade 标志
-    // NVIC_SystemReset();
-    while (1) {}
-    return 0;
+    for (uint32_t offset = 0; offset < payload.size;) {
+        const uint32_t chunk =
+            std::min<uint32_t>(sector_size, payload.size - offset);
+        if (upgrade::flash_write(boot_addr + offset,
+                                 payload.data + offset, chunk) != 0) {
+            upgrade::halt_with_led();
+        }
+        offset += chunk;
+    }
+
+    (void)boot::loader_upgrade_clear();
+    upgrade::system_reset();
 }

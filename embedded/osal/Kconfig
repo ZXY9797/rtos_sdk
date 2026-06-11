@@ -4,6 +4,9 @@ choice RTOS_TYPE
     prompt "Select RTOS"
     default RTOS_RT_THREAD
 
+config RTOS_BAREMETAL
+    bool "Baremetal OSAL"
+
 config RTOS_RT_THREAD
     bool "RT-Thread Nano"
 

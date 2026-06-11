@@ -80,7 +80,7 @@ static void stm32_lock(void *ctx) {
     regs->CR1 |= CR1_LOCK;
 }
 
-Flash flash_create_stm32h7() {
+Flash flash_create_default() {
     static FlashRegs regs{};
     return Flash(STM32_FLASH_BASE, STM32_WRITE_BLOCK,
                     STM32_SECTOR_SIZE, &regs,

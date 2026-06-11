@@ -185,6 +185,26 @@ flash 起始地址：`0x00200000`
 | upgrade | `0x00034000` | `0x00234000` | 784KB |
 | storage | `0x000F8000` | `0x002F8000` | 32KB |
 
+## Flash 驱动对接
+
+bootloader 通过 `boot_common` 的 flash 分区接口访问 flash，产品侧只提供分区布局；具体芯片读写由 `embedded/drivers/flash` 适配。
+
+- GD32 使用 `flash_gd32.cc` 对接 GD32 FMC 擦写接口。
+- STM32 使用 `flash_stm32.cc` 对接 STM32 HAL flash 接口。
+- Goodix GR5525 使用 `flash_goodix.cc` 直接调用 ROM/SDK 提供的 `hal_exflash_init/read/write/erase` 符号，不在仓库内重复实现 `gr55xx_hal_exflash.*`。
+
+GR5525 的 exflash 符号由 CMake 通过 linker `--defsym` 绑定到 ROM 地址；这些符号只覆盖外部 flash 基础读写擦除。完整 BLE app 链接还依赖 Goodix BLE SDK 里的 ROM symbol 处理和工具链兼容性。
+
+## DFU 通信协议
+
+loader 的升级通信使用实际 Link 帧格式，不发送裸 ACK。应答帧遵循：
+
+```text
+CMD_SET, cmd_id, len_lo, len_hi, payload..., crc_hi, crc_lo
+```
+
+ACK payload 当前为 1 字节 `status`，CRC 使用 `boot_proto::crc16_ccitt()` 覆盖 `CMD_SET` 到 payload 的全部字节，最后按高字节在前写入。
+
 ## demo_ble bin 空洞修复
 
 GR5525 app 链接脚本里把 `FPB` 和 `KE_MSG_TABLE` 等 RAM 区域放在 `NOLOAD` section，避免 `objcopy -Obinary` 把 FLASH 到 RAM 的地址空洞展开成几百 MB 的 `.bin`。

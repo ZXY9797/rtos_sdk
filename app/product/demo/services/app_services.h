@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace demo_app {
+namespace app {
 
 void confirm_boot_image();
 void init_logging();
@@ -11,4 +11,4 @@ void assert_required_devices();
 void start_cli_poll();
 void print_periodic_diagnostics(uint32_t loop_count);
 
-} // 命名空间 demo_app
+} // namespace app

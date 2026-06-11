@@ -1,3 +1,4 @@
+#include <boot/flash_ops.h>
 #include <boot/image.h>
 
 #include <cstdint>
@@ -7,14 +8,15 @@ extern "C" uint32_t __rom_region_start;
 namespace boot {
 
 void confirm_image() {
-    auto *hdr = reinterpret_cast<ImageHeader *>(&__rom_region_start);
-    if (hdr->magic != IMAGE_MAGIC) return;
-    if (hdr->flags & IMAGE_F_CONFIRMED) return;
+    const uint32_t image_addr = reinterpret_cast<uint32_t>(&__rom_region_start);
 
-    // 待办：应用自写闪存能力接通后，通过闪存驱动完成确认写回。
-    // 1. 将镜像头读到 RAM。
-    // 2. 设置 IMAGE_F_CONFIRMED 标志。
-    // 3. 擦除并重写镜像头所在扇区。
+    ImageHeader copy{};
+    if (!flash_read(image_addr, &copy, sizeof(copy))) return;
+    if (copy.magic != IMAGE_MAGIC) return;
+    if (copy.flags & IMAGE_F_CONFIRMED) return;
+
+    copy.flags = static_cast<uint16_t>(copy.flags | IMAGE_F_CONFIRMED);
+    (void)flash_update(image_addr, &copy, sizeof(copy));
 }
 
-} // 命名空间 boot
+} // namespace boot

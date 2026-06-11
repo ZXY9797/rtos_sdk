@@ -24,6 +24,7 @@ target_include_directories(${MODULE_NAME}
 
 target_sources(${MODULE_NAME}
     PRIVATE
+        src/upgrade_init.cc
         src/upgrade_main.cc
         src/loader_flash.cc
         ${PINCTRL_GENERATED_CC}

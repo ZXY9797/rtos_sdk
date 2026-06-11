@@ -1,5 +1,5 @@
 #include "position_sensor.h"
-#include "board_devices.h"
+#include "board/board_devices.h"
 #include <device.h>
 #include <drivers_generated.h>
 #include <algorithm>
@@ -57,7 +57,7 @@ void PositionSensor::set_calib_params(float off_v1, float off_v2, float amp_v1, 
 }
 
 bool PositionSensor::read_adc(uint16_t &v1_raw, uint16_t &v2_raw) {
-    auto &adc = demo::board::main_adc();
+    auto &adc = app::board::main_adc();
 
     if (adc.read(static_cast<hal::AdcChannel>(cfg_.ch_v1), v1_raw) != hal::Status::Ok) {
         return false;

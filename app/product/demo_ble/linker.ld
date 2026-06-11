@@ -31,6 +31,14 @@ SECTIONS
         . = ALIGN(4);
     } > FLASH
 
+    .product_info 0x0020C400 :
+    {
+        . = ALIGN(4);
+        KEEP(*(.product_info))
+        KEEP(*(".product_info.*"))
+        . = ALIGN(4);
+    } > FLASH
+
     prepc :
     {
         . = ALIGN(4);

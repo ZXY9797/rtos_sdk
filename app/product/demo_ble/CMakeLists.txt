@@ -4,6 +4,10 @@ add_library(${MODULE_NAME} ${NULL_C})
 target_include_directories(${MODULE_NAME}
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/board
+        ${CMAKE_CURRENT_SOURCE_DIR}/services
+        ${CMAKE_CURRENT_SOURCE_DIR}/comm
+        ${CMAKE_CURRENT_SOURCE_DIR}/tasks
     PRIVATE
         ${BSP_DIR}/include
         ${BSP_DIR}/modules/cmsis/CMSIS/Core/Include
@@ -14,7 +18,10 @@ target_include_directories(${MODULE_NAME}
 target_sources(${MODULE_NAME}
     PRIVATE
         main.cc
-        ble_app.cc
+        board/board_devices.cc
+        services/ble_app.cc
+        comm/link_bridge.cc
+        tasks/app_tasks.cc
         ${DRIVERS_GENERATED_CC}
         ${PINCTRL_GENERATED_CC}
 )
@@ -22,6 +29,7 @@ target_sources(${MODULE_NAME}
 target_link_libraries(${MODULE_NAME}
     PUBLIC
     PRIVATE
+        boot_common
         drivers
         osal
         -Wl,--whole-archive

@@ -1,10 +1,10 @@
-#pragma once
+﻿#pragma once
 
-#include "controller/speed_controller.h"
-#include "controller/protection.h"
-#include "controller/position_sensor.h"
-#include "controller/pos_controller.h"
-#include "controller/calibration.h"
+#include "control/controller/speed_controller.h"
+#include "control/controller/protection.h"
+#include "control/controller/position_sensor.h"
+#include "control/controller/pos_controller.h"
+#include "control/controller/calibration.h"
 #include "comm/can_handler.h"
 
 #include <algo/ntc_sensor.h>
@@ -16,7 +16,7 @@
 #include <cstdint>
 #include <cstring>
 
-// ─── 控制模式 ─────────────────────────────────────────────────
+// 鈹€鈹€鈹€ 鎺у埗妯″紡 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 enum class ControlMode : uint8_t {
     Idle = 0,
@@ -26,7 +26,7 @@ enum class ControlMode : uint8_t {
     Sweep,
 };
 
-// ─── NVS 数据结构 ─────────────────────────────────────────────
+// 鈹€鈹€鈹€ NVS 鏁版嵁缁撴瀯 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 struct CalibData {
     float rs;
@@ -90,14 +90,14 @@ struct MaxPosNvsData {
 };
 static_assert(sizeof(MaxPosNvsData) == 8);
 
-// ─── 电机上下文 ───────────────────────────────────────────────
+// 鈹€鈹€鈹€ 鐢垫満涓婁笅鏂?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 struct MotorContext {
-    // 硬件
+    // 纭欢
     foc::Motor *motor {nullptr};
     foc::MotorConfig motor_cfg;
 
-    // 控制器
+    // Controllers
     SpeedController speed_ctrl;
     Protection protection;
     PositionSensor pos_sensor;
@@ -113,7 +113,7 @@ struct MotorContext {
     CanHandler can;
     uint32_t can_base_id {0x100};
 
-    // 状态
+    // Runtime state
     ControlMode ctrl_mode {ControlMode::Idle};
     float speed_setpoint {0.0f};
     float torque_setpoint {0.0f};
@@ -123,7 +123,7 @@ struct MotorContext {
     uint32_t pos_iter_cnt {0};
     float pos_step {0.0f};
 
-    // 校准数据
+    // 鏍″噯鏁版嵁
     CurrentCalibNvsData current_calib {};
     float elec_angle_table[36] {};
     bool elec_angle_calib_done {false};
@@ -134,16 +134,16 @@ struct MotorContext {
     bool max_pos_calib_done {false};
     bool auto_calib_pending {false};
 
-    // 线程句柄
+    // 绾跨▼鍙ユ焺
     osal::PeriodicThread *speed_loop {nullptr};
     osal::PeriodicThread *slow_loop {nullptr};
     osal::PeriodicThread *pos_loop {nullptr};
     SensorCore *imu_core {nullptr};
 
-    // NVS ID 偏移基址 (motor0=0x0001, motor1=0x0101)
+    // NVS ID 鍋忕Щ鍩哄潃 (motor0=0x0001, motor1=0x0101)
     uint16_t nvs_id_base {0x0001};
 
-    // NVS ID 计算
+    // NVS ID 璁＄畻
     uint16_t nvs_id_calib()         const { return nvs_id_base + 0; }
     uint16_t nvs_id_protect()       const { return nvs_id_base + 1; }
     uint16_t nvs_id_leso()          const { return nvs_id_base + 2; }
@@ -152,7 +152,7 @@ struct MotorContext {
     uint16_t nvs_id_output_angle()  const { return nvs_id_base + 5; }
     uint16_t nvs_id_max_pos()       const { return nvs_id_base + 6; }
 
-    // 位置插补
+    // 浣嶇疆鎻掕ˉ
     void pos_iter_init(float current, float target, float time_ms, uint32_t pos_loop_hz) {
         pos_current = current;
         pos_setpoint = target;
@@ -178,9 +178,8 @@ struct MotorContext {
     }
 };
 
-// ─── 多电机实例 ───────────────────────────────────────────────
+// 鈹€鈹€鈹€ 澶氱數鏈哄疄渚?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 static constexpr uint8_t MAX_MOTORS = 2;
 
-// 电机上下文数组（由 foc_app::start 填充）
-// 实际定义在 foc_app.cc 中
+// 鐢垫満涓婁笅鏂囨暟缁勶紙鐢?app::start_control 濉厖锛?// 瀹為檯瀹氫箟鍦?control_app.cc 涓?

@@ -31,7 +31,7 @@ endif()
 set(LINKER_SCRIPT ${LINKER_SCRIPT} CACHE PATH "Linker script path" FORCE)
 message(STATUS "Link script: ${LINKER_SCRIPT}")
 
-set(VECTOR_TABLE_LINK_FLAG "-Wl,-u,Default_Handler,-u,main")
+set(VECTOR_TABLE_LINK_FLAG "-Wl,-u,Default_Handler,-u,z_cstart")
 
 if(ARMGCC9_UNRESOLVED)
     set(UNRESOLVED_FLAG "-Wl,--unresolved-symbols=ignore-in-object-files -Wl,--allow-multiple-definition")

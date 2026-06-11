@@ -135,13 +135,15 @@ public:
     }
 
     [[nodiscard]] Status erase(uint32_t offset, size_t length) {
-        if (!m_initialized) return Status::InvalidArgument;
+        if (!m_initialized || m_sector_size == 0 || length == 0) {
+            return Status::InvalidArgument;
+        }
 
         if (m_unlock) m_unlock(m_hw_ctx);
 
         uint32_t start_sector = offset / m_sector_size;
-        uint32_t num_sectors =
-            (length + m_sector_size - 1) / m_sector_size;
+        uint32_t num_sectors = ((offset % m_sector_size) + length +
+                                m_sector_size - 1) / m_sector_size;
 
         for (uint32_t s = 0; s < num_sectors; s++) {
             uint32_t addr = m_flash_base
@@ -170,8 +172,7 @@ private:
     bool m_initialized {false};
 };
 
-// SOC 工厂函数 — 各 SOC 的 .cc 文件中实现
-Flash flash_create_gd32();
-Flash flash_create_stm32h7();
+// Provided by the enabled CONFIG_FLASH_* backend.
+Flash flash_create_default();
 
 } // namespace hal

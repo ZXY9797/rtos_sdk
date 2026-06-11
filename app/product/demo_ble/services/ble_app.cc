@@ -1,14 +1,15 @@
-/**
- * BLE application layer — services, advertising, event handling.
+﻿/**
+ * BLE application layer 鈥?services, advertising, event handling.
  *
  * This file contains all BLE-specific logic. main.cc only calls
- * ble_app_init() and the accessor functions.
+ * init_ble() and the accessor functions.
  */
 
-#include "ble_app.h"
+#include "services/ble_app.h"
 
-#include <device.h>
-#include <drivers_generated.h>
+#include "board/board_devices.h"
+
+#include <boot/product_info.h>
 #include <log.h>
 
 #include "ble/ble_device.h"
@@ -28,8 +29,12 @@ static ble::BleUartService s_uart;
 static ble::BleBattService s_batt;
 static ble::BleDisService s_dis;
 
+__attribute__((section(".product_info"), used))
+const boot::ProductInfo kProductInfo = boot::make_product_info(
+    boot::PRODUCT_ID_DEMO_BLE, 0x0100, {1, 0, 0, 0});
+
 /* ---- Link layer RX bridge ---- */
-static BleRxCallback s_link_rx_cb = nullptr;
+static app::BleRxCallback s_link_rx_cb = nullptr;
 
 static void ble_uart_rx_bridge(const uint8_t *data, size_t len, void *) {
     if (s_link_rx_cb) s_link_rx_cb(data, len);
@@ -149,29 +154,35 @@ static void on_ble_event(const ble::Event &evt, void *) {
 
 /* ---- Public API ---- */
 
-void ble_app_init() {
-    // BLE 配置由设备树 initcall 自动存储，应用层只需提供事件回调
-    auto &ble_dev = device_get(ble0);
+namespace app {
+
+void init_ble() {
+    // BLE 閰嶇疆鐢辫澶囨爲 initcall 鑷姩瀛樺偍锛屽簲鐢ㄥ眰鍙渶鎻愪緵浜嬩欢鍥炶皟
+    auto &ble_dev = board::ble();
     ble_dev.init(on_ble_event, nullptr);
     s_ble = &ble_dev.stack();
 
-    // 应用层特定：设置广播数据
+    // 搴旂敤灞傜壒瀹氾細璁剧疆骞挎挱鏁版嵁
     s_ble->set_adv_data(s_adv_data, sizeof(s_adv_data));
 }
 
-bool ble_app_is_connected() { return s_ble->is_connected(); }
-uint8_t ble_app_conn_idx() { return s_ble->conn_index(); }
+bool ble_is_connected() { return s_ble && s_ble->is_connected(); }
+uint8_t ble_conn_idx() { return s_ble ? s_ble->conn_index() : 0; }
 
-void ble_app_send_keyboard(const uint8_t *report, size_t len) {
+void ble_send_keyboard(const uint8_t *report, size_t len) {
+    if (!s_ble) return;
     s_hid.send_keyboard_report(s_ble->conn_index(), 1, report, len);
 }
 
-void ble_app_send_uart(const uint8_t *data, size_t len) {
+void ble_send_uart(const uint8_t *data, size_t len) {
+    if (!s_ble) return;
     s_uart.send(s_ble->conn_index(), data, len);
 }
 
-bool ble_app_uart_tx_ready() { return s_uart.is_tx_ready(); }
+bool ble_uart_tx_ready() { return s_uart.is_tx_ready(); }
 
-void ble_app_scheduler_run() { pwr_mgmt_schedule(); }
+void run_ble_scheduler() { pwr_mgmt_schedule(); }
 
-void ble_app_set_rx_callback(BleRxCallback cb) { s_link_rx_cb = cb; }
+void set_ble_rx_callback(BleRxCallback cb) { s_link_rx_cb = cb; }
+
+} // namespace app

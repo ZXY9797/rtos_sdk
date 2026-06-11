@@ -1,25 +1,25 @@
-#include "foc_app.h"
-#include "app_services.h"
+#include "services/app_services.h"
+#include "control/control_app.h"
 
 #include <log.h>
 #include <osal.h>
 
 int main(void) {
-    demo_app::confirm_boot_image();
+    app::confirm_boot_image();
 
-    demo_app::init_logging();
+    app::init_logging();
 
     LOGI("foc", "=== FOC Motor Control Demo (DM-4340) ===");
 
-    demo_app::print_device_registry();
+    app::print_device_registry();
 
-    demo_app::assert_required_devices();
+    app::assert_required_devices();
 
     LOGI("foc", "Type 'help' for CLI commands");
 
-    foc_app::start();
+    app::start_control();
 
-    demo_app::start_cli_poll();
+    app::start_cli_poll();
 
     LOGI("foc", "FOC system ready.");
 
@@ -27,6 +27,6 @@ int main(void) {
     while (true) {
         osal::this_thread::sleep_for(10);
         loop_count++;
-        demo_app::print_periodic_diagnostics(loop_count);
+        app::print_periodic_diagnostics(loop_count);
     }
 }

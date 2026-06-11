@@ -1,6 +1,6 @@
-#include "board_devices.h"
+#include "board/board_devices.h"
 
-namespace demo::board {
+namespace app::board {
 
 decltype(device_get(uart0)) console() {
     return device_get(uart0);
@@ -32,4 +32,4 @@ decltype(device_get(motor0)) main_motor() {
     return device_get(motor0);
 }
 
-} // namespace demo::board
+} // namespace app::board

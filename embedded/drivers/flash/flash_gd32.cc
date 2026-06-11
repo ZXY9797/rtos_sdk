@@ -34,7 +34,7 @@ static void gd32_lock(void *) {
     fmc_bank0_lock();
 }
 
-Flash flash_create_gd32() {
+Flash flash_create_default() {
     return Flash(GD32_FLASH_BASE, GD32_WRITE_BLOCK,
                     GD32_SECTOR_SIZE, nullptr,
                     gd32_write_block, gd32_erase_sector,

@@ -1,7 +1,7 @@
-#include "app_services.h"
+#include "services/app_services.h"
 
-#include "board_devices.h"
-#include "foc_app.h"
+#include "board/board_devices.h"
+#include "control/control_app.h"
 
 #include <boot/boot_ctrl.h>
 #include <boot/product_info.h>
@@ -23,19 +23,15 @@ constexpr int32_t CLI_POLL_PRIO = 8;
 
 // 产品信息标记区：app 偏移 1KB 处，用于启动加载器校验防误升级。
 __attribute__((section(".product_info"), used))
-const boot::ProductInfo kProductInfo = {
-    .magic      = boot::PRODUCT_INFO_MAGIC,
-    .product_id = boot::PRODUCT_ID_DEMO,
-    .hw_version = 0x0100,
-    .fw_version = {1, 0, 0, 0},
-};
+const boot::ProductInfo kProductInfo = boot::make_product_info(
+    boot::PRODUCT_ID_DEMO, 0x0100, {1, 0, 0, 0});
 
 void cli_poll_entry(void *, const osal::PeriodicStats &) {
-    auto &uart = demo::board::console();
+    auto &uart = app::board::console();
     uint8_t ch;
     size_t n = 0;
     while (uart.recv(&ch, 1, &n, 0) == hal::Status::Ok && n > 0) {
-        foc_app::feed_char(static_cast<char>(ch));
+        app::feed_control_char(static_cast<char>(ch));
     }
 }
 
@@ -48,14 +44,14 @@ void print_uart_stats(hal::UartBase &uart) {
 
 } // 匿名命名空间
 
-namespace demo_app {
+namespace app {
 
 void confirm_boot_image() {
     boot::confirm_image();
 }
 
 void init_logging() {
-    (void)log_uart(demo::board::console(), LogLevel::Info);
+    (void)log_uart(app::board::console(), LogLevel::Info);
 }
 
 void print_device_registry() {
@@ -71,8 +67,8 @@ void print_device_registry() {
 }
 
 void assert_required_devices() {
-    HAL_ASSERT(demo::board::console().is_initialized());
-    HAL_ASSERT(demo::board::main_motor().is_initialized());
+    HAL_ASSERT(app::board::console().is_initialized());
+    HAL_ASSERT(app::board::main_motor().is_initialized());
 }
 
 void start_cli_poll() {
@@ -87,8 +83,8 @@ void start_cli_poll() {
 
 void print_periodic_diagnostics(uint32_t loop_count) {
     if (loop_count % 1000 == 0) {
-        print_uart_stats(demo::board::console());
+        print_uart_stats(app::board::console());
     }
 }
 
-} // 命名空间 demo_app
+} // namespace app

@@ -1,0 +1,7 @@
+config FLASH_GOODIX
+	bool "Flash driver for Goodix GR5525"
+	select FLASH
+	default y
+	depends on SOC_SERIES_GR5525X
+	help
+	  Enable Flash driver for Goodix GR5525 external flash.

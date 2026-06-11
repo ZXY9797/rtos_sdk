@@ -19,6 +19,8 @@ embedded/soc
 的设备别名以及公开 boot API；不能包含 SoC HAL 头文件，也不能直接编译
 bootloader 私有源文件。
 
+`app/product/<product>` 的入口文件固定为根目录下的 `main.cc`。产品内部按职责拆分为 `board/`、`services/`、`comm/`、`control/`、`tasks/` 等目录，统一使用 `app` 命名空间和 `app::board` 板级设备门面。详细约定见 [APP_LAYOUT.md](APP_LAYOUT.md)。
+
 组件层负责可复用的领域逻辑或服务逻辑。组件可以按职责依赖更底层的驱动抽象
 和 OSAL，但不能依赖具体产品应用，也不能依赖 bootloader 的私有实现。
 

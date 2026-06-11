@@ -1,64 +1,79 @@
-#include <boot/image.h>
+#include <boot/boot_ctrl.h>
 #include <boot/flash_map.h>
-#include <cstring>
+#include <boot/flash_ops.h>
+#include <boot/image.h>
 
-// NVS loader_upgrade 标志存储在 storage 区固定偏移处
-// 简化实现: 直接读写 flash 标志 (不依赖 NVS mount)
-static constexpr uint32_t UPGRADE_FLAG_MAGIC  = 0x55504752; // "UPGR"
-
-struct UpgradeFlag {
-    uint32_t magic;
-    uint32_t flag;   // 1 = loader upgrade pending
-};
+#include <algorithm>
+#include <cstdint>
 
 namespace preloader {
+namespace {
 
-// 检查 loader_upgrade 标志
-static bool is_loader_upgrade_pending() {
-    auto *flag = reinterpret_cast<const UpgradeFlag *>(
-        boot::flash_area_addr(boot::FLASH_AREA_STORAGE));
-    return flag->magic == UPGRADE_FLAG_MAGIC && flag->flag == 1;
+void jump_to(uint32_t addr) {
+    const uint32_t sp = *reinterpret_cast<uint32_t *>(addr);
+    const uint32_t entry = *reinterpret_cast<uint32_t *>(addr + 4);
+
+    asm volatile("cpsid i" ::: "memory");
+    asm volatile("msr msp, %0" ::"r"(sp) : "memory");
+    *reinterpret_cast<volatile uint32_t *>(0xE000ED08U) = addr;
+    reinterpret_cast<void (*)()>(entry)();
+    while (1) {}
 }
 
-static void clear_upgrade_flag() {
-    // TODO: flash erase + write 清除标志
+bool has_loader_upgrade() {
+    uint8_t flag = 0;
+    (void)boot::loader_upgrade_read(flag);
+    return flag != 0;
 }
 
-// 将 upgrade 区拷贝到 slot0，然后清除标志
-bool check_and_do_loader_upgrade() {
-    if (!is_loader_upgrade_pending()) return false;
+bool copy_upgrade_to_slot0(uint32_t copy_len) {
+    const auto &src_area = boot::flash_area_get(boot::FLASH_AREA_UPGRADE);
+    const auto &dst_area = boot::flash_area_get(boot::FLASH_AREA_SLOT0);
+    const uint32_t sector_size = boot::flash_erase_sector_size();
 
-    uint32_t src_addr = boot::flash_area_addr(boot::FLASH_AREA_UPGRADE);
-    uint32_t dst_addr = boot::flash_area_addr(boot::FLASH_AREA_SLOT0);
-    uint32_t size = boot::flash_area_get(boot::FLASH_AREA_UPGRADE).size;
-
-    // 校验 upgrade 区镜像
-    auto *hdr = reinterpret_cast<const boot::ImageHeader *>(src_addr);
-    if (hdr->magic != boot::IMAGE_MAGIC) {
-        clear_upgrade_flag();
+    if (sector_size == 0 || sector_size > 4096 ||
+        copy_len > src_area.size || copy_len > dst_area.size) {
         return false;
     }
 
-    // 逐扇区拷贝
-    uint32_t sector_size = 2048;
-    for (uint32_t offset = 0; offset < size; offset += sector_size) {
-        // TODO: 实际 flash 操作
-        // 1. erase dst sector
-        // 2. copy src sector to dst
+    const uint32_t src_addr = boot::flash_area_addr(boot::FLASH_AREA_UPGRADE);
+    const uint32_t dst_addr = boot::flash_area_addr(boot::FLASH_AREA_SLOT0);
+    static uint8_t sector[4096];
+
+    for (uint32_t offset = 0; offset < copy_len; offset += sector_size) {
+        const uint32_t chunk = std::min(sector_size, copy_len - offset);
+        if (!boot::flash_read(src_addr + offset, sector, chunk)) return false;
+        if (!boot::flash_erase(dst_addr + offset, sector_size)) return false;
+        if (!boot::flash_write(dst_addr + offset, sector, chunk)) return false;
     }
 
-    // 清除标志
-    clear_upgrade_flag();
+    return true;
+}
 
-    // 跳转到 slot0 (升级 app)
-    uint32_t sp = *reinterpret_cast<uint32_t *>(dst_addr);
-    uint32_t entry = *reinterpret_cast<uint32_t *>(dst_addr + 4);
-    asm volatile("cpsid i" ::: "memory");
-    asm volatile("msr msp, %0" ::"r"(sp) : "memory");
-    *reinterpret_cast<volatile uint32_t *>(0xE000ED08) = dst_addr;
-    reinterpret_cast<void(*)()>(entry)();
-    while (1) {}
+} // namespace
 
+bool check_and_do_loader_upgrade() {
+    if (!has_loader_upgrade()) return false;
+
+    const uint32_t src_addr = boot::flash_area_addr(boot::FLASH_AREA_UPGRADE);
+    boot::ImageHeader hdr{};
+    if (!boot::flash_read(src_addr, &hdr, sizeof(hdr)) ||
+        hdr.magic != boot::IMAGE_MAGIC ||
+        hdr.hdr_size != sizeof(boot::ImageHeader) ||
+        hdr.img_size == 0) {
+        (void)boot::loader_upgrade_clear();
+        return false;
+    }
+
+    const uint64_t copy_len64 =
+        static_cast<uint64_t>(hdr.hdr_size) + hdr.img_size;
+    if (copy_len64 > UINT32_MAX ||
+        !copy_upgrade_to_slot0(static_cast<uint32_t>(copy_len64))) {
+        return false;
+    }
+
+    (void)boot::loader_upgrade_clear();
+    jump_to(boot::flash_area_addr(boot::FLASH_AREA_SLOT0));
     return true;
 }
 

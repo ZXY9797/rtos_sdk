@@ -6,6 +6,11 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/component/foc component_foc)
 target_include_directories(${MODULE_NAME}
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/board
+        ${CMAKE_CURRENT_SOURCE_DIR}/services
+        ${CMAKE_CURRENT_SOURCE_DIR}/control
+        ${CMAKE_CURRENT_SOURCE_DIR}/control/controller
+        ${CMAKE_CURRENT_SOURCE_DIR}/comm
     PRIVATE
         ${BSP_DIR}/include
         ${BSP_DIR}/soc/gd/gd32f50x/include
@@ -17,14 +22,14 @@ target_include_directories(${MODULE_NAME}
 target_sources(${MODULE_NAME}
     PRIVATE
         main.cc
-        board_devices.cc
-        app_services.cc
-        foc_app.cc
-        controller/speed_controller.cc
-        controller/protection.cc
-        controller/position_sensor.cc
-        controller/pos_controller.cc
-        controller/calibration.cc
+        services/app_services.cc
+        board/board_devices.cc
+        control/control_app.cc
+        control/controller/speed_controller.cc
+        control/controller/protection.cc
+        control/controller/position_sensor.cc
+        control/controller/pos_controller.cc
+        control/controller/calibration.cc
         comm/can_handler.cc
         ${DRIVERS_GENERATED_CC}
         ${PINCTRL_GENERATED_CC}

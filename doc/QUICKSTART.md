@@ -26,7 +26,7 @@ ninja -C out
 ls out/demo.elf  out/demo.bin  out/demo.hex
 ```
 
-Demo 源码在 `app/demo/main.cc`，面向 GD32F503，展示 FOC 电机控制（PWM + ADC + CLI 调试）。
+Demo 源码在 `app/product/demo/main.cc`，产品目录结构见 [APP_LAYOUT.md](APP_LAYOUT.md)。该工程面向 GD32F503，展示 FOC 电机控制（PWM + ADC + CLI 调试）。
 
 ## 构建 Demo BLE（GR5525 HID 键盘 + UART 透传）
 
@@ -44,7 +44,7 @@ ninja -C out_ble
 ls out_ble/demo_ble.elf  out_ble/demo_ble.bin
 ```
 
-Demo BLE 源码在 `app/demo_ble/`，面向 Goodix GR5525RGNI，展示 BLE HID 键盘 + UART 透传。
+Demo BLE 源码在 `app/product/demo_ble/`，产品目录结构见 [APP_LAYOUT.md](APP_LAYOUT.md)。该工程面向 Goodix GR5525RGNI，展示 BLE HID 键盘 + UART 透传。
 
 > **为什么需要 GCC 9.3.1？** Goodix 预编译的 `libble_sdk.a` 使用 GCC 9.3.1 编译，与 GCC 15.x 的 binutils 存在二进制兼容性问题（dangerous relocation）。`-Dt=armgcc9` 会自动启用兼容标记（`-std=c++2a`、`--unresolved-symbols=ignore-in-object-files`）。
 

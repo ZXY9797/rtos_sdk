@@ -22,6 +22,14 @@ target_link_libraries(${MODULE_NAME}
         drivers
         modules
         osal
-        system
+        $<$<STREQUAL:${FIRMWARE_TYPE},app>:system>
         -Wl,--no-whole-archive
 )
+
+if(FIRMWARE_TYPE STREQUAL "app")
+    target_link_libraries(${MODULE_NAME}
+        PUBLIC
+        osal
+        system
+    )
+endif()

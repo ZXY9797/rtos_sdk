@@ -139,7 +139,7 @@ SDK 提供厂商无关的 BLE API（`ble::` 命名空间），当前实现基于
 
 `app/product` 只负责产品编排和产品策略；`component` 保持产品无关，承载可复用算法、FOC、Link、NVS、BLE 适配等能力；应用固件可使用公开 boot API，但不能直接编译 bootloader 私有源文件。
 
-详见 [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md)
+详见 [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md) 和 [doc/APP_LAYOUT.md](doc/APP_LAYOUT.md)
 
 ### 11. 异常处理框架 — 可插拔后端 + noinit 故障记录
 
@@ -202,6 +202,7 @@ rtos_sdk/
 │   └── linkscript/               # 链接脚本
 │
 ├── doc/                          # 文档
+│   ├── APP_LAYOUT.md             # app/product 产品目录约定
 │   ├── ARCHITECTURE.md           # 架构边界说明
 │   ├── BOOTLOADER.md             # Bootloader 构建与目录约定
 │   ├── INITCALL.md               # initcall 自动初始化
