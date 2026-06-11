@@ -1,7 +1,7 @@
 # RTOS SDK
 
 <p align="center">
-  <b>轻量级嵌入式开发框架 | 基于 Zephyr 精简 · 设备树驱动 · 编译期零开销</b>
+  <b>轻量级嵌入式开发框架 | 基于 Zephyr 精简 · 设备树驱动 · 编译期零开销 · 产品级 Bootloader</b>
 </p>
 
 ---
@@ -24,6 +24,7 @@
 | RTOS 绑定 | 仅支持 Zephyr 内核 | **OSAL 多内核**（FreeRTOS、RT-Thread） |
 | SoC 支持 | 内置 400+ | **STM32、GD32、Goodix GR5525** |
 | BLE 支持 | 内置 | **GR5525 BLE（HID + UART 透传）** |
+| 启动升级 | MCUboot + Zephyr 配置体系 | **preloader/loader/upgrade + 三合一固件** |
 | 代码规模 | ~500K 行 | **~5K 行**（不含 SOC HAL） |
 
 ---
@@ -126,13 +127,27 @@ SDK 提供厂商无关的 BLE API（`ble::` 命名空间），当前实现基于
 
 详见 [doc/LINK.md](doc/LINK.md)
 
-### 9. 异常处理框架 — 可插拔后端 + noinit 故障记录
+### 9. Bootloader — 公共 boot API + 三合一固件
+
+`boot_common` 提供 app、loader、preloader、upgrade 共享的镜像元数据、产品元数据、Flash 分区接口、镜像确认、SHA-256 和 DFU CRC。产品相关配置放在 `app/product/<product>` 和 `bootloader/product/<product>`，公共 bootloader 目录只保留跨产品源码。
+
+支持通过 `-DFIRMWARE_TYPE=app|preloader|loader|upgrade` 单独构建固件，也支持使用 `bootloader/scripts/build_3in1.py` 生成 `<product>_3in1.bin`。
+
+详见 [doc/BOOTLOADER.md](doc/BOOTLOADER.md)
+
+### 10. 架构边界 — 产品编排与可复用组件分离
+
+`app/product` 只负责产品编排和产品策略；`component` 保持产品无关，承载可复用算法、FOC、Link、NVS、BLE 适配等能力；应用固件可使用公开 boot API，但不能直接编译 bootloader 私有源文件。
+
+详见 [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md)
+
+### 11. 异常处理框架 — 可插拔后端 + noinit 故障记录
 
 统一处理 HardFault/MemManage/BusFault/UsageFault，支持帧指针回溯、栈快照、noinit 故障记录持久化。
 
 详见 [doc/EXCEPTION_DESIGN.md](doc/EXCEPTION_DESIGN.md)
 
-### 9. 分层命名空间
+### 12. 分层命名空间
 
 ```cpp
 namespace hal {      // 硬件抽象层：驱动、寄存器访问
@@ -157,13 +172,25 @@ namespace osal {     // OS 抽象层：线程、同步原语
 ```
 rtos_sdk/
 ├── app/                          # 应用项目
-│   ├── demo/                     # GD32 FOC 电机控制 Demo
-│   └── demo_ble/                 # GR5525 BLE Demo（HID 键盘 + UART 透传）
+│   └── product/                  # 产品固件
+│       ├── demo/                 # GD32 FOC 电机控制 Demo
+│       └── demo_ble/             # GR5525 BLE Demo（HID 键盘 + UART 透传）
+│
+├── bootloader/                   # 启动与升级固件
+│   ├── include/boot/             # 公开 boot API
+│   ├── common/                   # app/loader/preloader/upgrade 共享实现
+│   ├── loader/                   # 启动决策、DFU 协议处理、跳转应用
+│   ├── preloader/                # loader 自升级拷贝和早期交接
+│   ├── upgrade/                  # 写入新的 loader 镜像
+│   ├── product/                  # 产品 boot 配置、linker 和分区实现
+│   └── scripts/                  # 三合一固件构建与合并脚本
 │
 ├── component/                    # 应用级组件
+│   ├── algo/                     # 纯算法组件
 │   ├── foc/                      # FOC 电机控制库
-│   ├── ble/                      # BLE 蓝牙组件
-│   └── link/                     # Link 通信协议栈
+│   ├── nvs/                      # 非易失键值存储
+│   ├── link/                     # Link 通信协议栈
+│   └── ble/goodix/               # Goodix BLE 适配
 │
 ├── embedded/                     # SDK 核心
 │   ├── include/                  # 公共头文件
@@ -175,6 +202,8 @@ rtos_sdk/
 │   └── linkscript/               # 链接脚本
 │
 ├── doc/                          # 文档
+│   ├── ARCHITECTURE.md           # 架构边界说明
+│   ├── BOOTLOADER.md             # Bootloader 构建与目录约定
 │   ├── INITCALL.md               # initcall 自动初始化
 │   ├── DEVICE_TRAIT.md           # DeviceTrait 编译期分发
 │   ├── DRIVER_DESIGN.md          # 驱动设计与扩展指南
@@ -203,6 +232,17 @@ ninja -C out
 
 # 产物
 ls out/demo.elf  out/demo.bin  out/demo.hex
+```
+
+Bootloader 和三合一固件：
+
+```bash
+# 单独构建 loader
+cmake -S . -B out/demo_3in1/loader -GNinja -Dp=demo -DFIRMWARE_TYPE=loader
+ninja -C out/demo_3in1/loader
+
+# 构建 preloader + loader + app 并合并三合一固件
+python bootloader/scripts/build_3in1.py demo --out out/demo_3in1
 ```
 
 详见 [doc/QUICKSTART.md](doc/QUICKSTART.md)
