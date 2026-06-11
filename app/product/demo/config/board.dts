@@ -10,6 +10,34 @@
     chosen {
         zephyr,console = &usart0;
         zephyr,shell-uart = &usart0;
+        zephyr,flash = &flash0;
+        zephyr,flash-partition = &slot0_partition;
+    };
+
+    flash0: flash@8000000 {
+        compatible = "soc-nv-flash";
+        reg = <0x08000000 0x60000>;  /* 384KB */
+        erase-block-size = <2048>;    /* 2KB sector */
+        write-block-size = <4>;
+
+        partitions {
+            compatible = "fixed-partitions";
+            #address-cells = <1>;
+            #size-cells = <1>;
+
+            slot0_partition: partition@8000 {
+                label = "slot0";
+                reg = <0x8000 0x28000>;  /* 160KB */
+            };
+            upgrade_partition: partition@30000 {
+                label = "upgrade";
+                reg = <0x30000 0x28000>;  /* 160KB */
+            };
+            storage_partition: partition@58000 {
+                label = "storage";
+                reg = <0x58000 0x8000>;   /* 32KB */
+            };
+        };
     };
 
     aliases {

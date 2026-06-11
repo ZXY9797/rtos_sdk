@@ -28,7 +28,6 @@ target_link_libraries(${MODULE_NAME}
         -Wl,--no-whole-archive
 )
 
-# Link
 if(TARGET link)
     target_link_libraries(${MODULE_NAME} PRIVATE link)
 endif()

@@ -3,6 +3,8 @@ add_library(${MODULE_NAME} ${NULL_C})
 
 add_subdirectory(${CMAKE_SOURCE_DIR}/component/foc component_foc)
 
+set(BOOT_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/bootloader/include)
+
 target_include_directories(${MODULE_NAME}
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}
@@ -12,6 +14,7 @@ target_include_directories(${MODULE_NAME}
         ${BSP_DIR}/modules/cmsis/CMSIS/Core/Include
         ${BSP_DIR}/modules/cmsis
         ${BSP_DIR}/soc/gd/gd32f50x
+        ${BOOT_INCLUDE_DIR}
 )
 
 target_sources(${MODULE_NAME}
@@ -25,6 +28,7 @@ target_sources(${MODULE_NAME}
         controller/calibration.cc
         comm/can_handler.cc
         ${DRIVERS_GENERATED_CC}
+        ${CMAKE_SOURCE_DIR}/bootloader/loader/src/boot_confirm.cc
 )
 
 target_link_libraries(${MODULE_NAME}
@@ -35,12 +39,10 @@ target_link_libraries(${MODULE_NAME}
         algo
 )
 
-# NVS
 if(TARGET nvs)
     target_link_libraries(${MODULE_NAME} PRIVATE nvs)
 endif()
 
-# Link
 if(TARGET link)
     target_link_libraries(${MODULE_NAME} PRIVATE link)
 endif()

@@ -1,0 +1,23 @@
+/dts-v1/;
+
+#include <arm/goodix/gr5525x.dtsi>
+
+/ {
+    compatible = "goodix,gr5525";
+    model = "GR5525 BLE Loader";
+
+    aliases {
+        uart0 = &uart0;
+    };
+
+    soc {
+        uart0: uart@40013800 {
+            compatible = "goodix,gr5525-uart";
+            reg = <0x40013800 0x400>;
+            interrupts = <37 0>;
+            status = "okay";
+            current-speed = <115200>;
+            label = "UART0";
+        };
+    };
+};

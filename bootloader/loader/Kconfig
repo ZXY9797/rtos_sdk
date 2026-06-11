@@ -1,0 +1,41 @@
+menu "Bootloader Configuration"
+
+choice BOOT_MODE
+    prompt "Boot upgrade mode"
+    default BOOT_MODE_AB
+
+config BOOT_MODE_AB
+    bool "AB backup mode"
+    help
+      slot0 + upgrade 区互备。
+      升级时先写入 upgrade 区，校验后拷贝到 slot0。
+      支持回滚。
+
+config BOOT_MODE_DIRECT
+    bool "Direct overwrite mode"
+    help
+      直接写入 slot0，不备份。
+      升级速度快，但不支持回滚。
+
+endchoice
+
+config BOOT_FORCE_GPIO
+    bool "Enable GPIO force-enter-DFU"
+    default y
+    help
+      启动时检测 GPIO 拉低，强制进入 DFU 模式。
+
+config BOOT_SHA256_HW
+    bool "Use hardware SHA-256 (HAU)"
+    default n
+    help
+      使用 GD32 硬件 HAU 加速 SHA-256 计算。
+      不支持则自动回退到软件实现。
+
+config BOOT_DFU_UART
+    bool "Enable UART DFU transport"
+    default y
+    help
+      bootloader 中启用 UART 传输层用于 DFU。
+
+endmenu

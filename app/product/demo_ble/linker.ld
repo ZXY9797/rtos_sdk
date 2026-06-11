@@ -1,13 +1,15 @@
+/* GR5525 app linker script - slot0 @ 0x0020C000. */
+
 ENTRY(Reset_Handler)
 
 _region_min_align = 4;
 
-/* GCC RW Compress: flash size = physical flash + physical RAM */
-__flash_size__ = 1024K + 256K;
+/* GCC RW Compress: app flash slot + physical RAM. */
+__flash_size__ = 160K + 256K;
 
 MEMORY
 {
-    FLASH (rx) :    ORIGIN = 0x00200000,    LENGTH = __flash_size__
+    FLASH (rx) :    ORIGIN = 0x0020C000,    LENGTH = __flash_size__
     RAM   (rw) :    ORIGIN = 0x20000000,    LENGTH = 256K
 }
 
@@ -15,7 +17,7 @@ _system_stack_size = 0x800;
 
 SECTIONS
 {
-    __rom_region_start = (0x00200000 + 0x0);
+    __rom_region_start = (0x0020C000 + 0x0);
 
     rom_start :
     {
@@ -23,6 +25,8 @@ SECTIONS
         _vector_start = .;
         KEEP(*(.exc_vector_table))
         KEEP(*(".exc_vector_table.*"))
+        KEEP(*(.vectors))
+        KEEP(*(".vectors.*"))
         _vector_end = .;
         . = ALIGN(4);
     } > FLASH
@@ -49,14 +53,12 @@ SECTIONS
         KEEP(*(.fini))
 
         . = ALIGN(4);
-        /*ctors*/
         KEEP(*crtbegin.o(.ctors))
         KEEP(*crtbegin?.o(.ctors))
         KEEP(*(EXCLUDE_FILE(*crtend?.o *crtend.o) .ctors))
         KEEP(*(SORT(.ctors.*)))
         KEEP(*(.ctors))
 
-        /*dtors*/
         KEEP(*crtbegin.o(.dtors))
         KEEP(*crtbegin?.o(.dtors))
         KEEP(*(EXCLUDE_FILE(*crtend?.o *crtend.o) .dtors))
@@ -87,23 +89,18 @@ SECTIONS
     {
         . = ALIGN(4);
         __init_start = .;
+        __init_EARLY_start = .;
         KEEP(*(.z_init_EARLY*))
-        __init_EARLY_end = .;
         __init_PRE_KERNEL_1_start = .;
         KEEP(*(.z_init_PRE_KERNEL_1*))
-        __init_PRE_KERNEL_1_end = .;
         __init_PRE_KERNEL_2_start = .;
         KEEP(*(.z_init_PRE_KERNEL_2*))
-        __init_PRE_KERNEL_2_end = .;
         __init_PRE_KERNEL_3_start = .;
         KEEP(*(.z_init_PRE_KERNEL_3*))
-        __init_PRE_KERNEL_3_end = .;
         __init_POST_KERNEL_start = .;
         KEEP(*(.z_init_POST_KERNEL*))
-        __init_POST_KERNEL_end = .;
         __init_APPLICATION_start = .;
         KEEP(*(.z_init_APPLICATION*))
-        __init_APPLICATION_end = .;
         __init_end = .;
         . = ALIGN(4);
     } > FLASH
@@ -164,16 +161,13 @@ SECTIONS
         __data_region_end = .;
 
         . = ALIGN(4);
-        /* pre-init data */
         KEEP(*(.pre_init_array))
         PROVIDE_HIDDEN (__pre_init_array_end = .);
 
-        /* init data */
         KEEP(*(SORT_BY_INIT_PRIORITY(.init_array.*) SORT_BY_INIT_PRIORITY(.ctors.*)))
         KEEP(*(.ctors))
         PROVIDE_HIDDEN (__init_array_end = .);
 
-        /* fini data */
         KEEP(*(SORT_BY_INIT_PRIORITY(.fini_array.*) SORT_BY_INIT_PRIORITY(.dtors.*)))
         KEEP(*(.dtors))
         PROVIDE_HIDDEN (__fini_array_end = .);
@@ -182,7 +176,6 @@ SECTIONS
     } > RAM AT > FLASH
 
     __data_size__ = _edata - _sdata;
-
     __data_load_start = LOADADDR(datas);
 
     FPB (NOLOAD) :
@@ -214,10 +207,6 @@ SECTIONS
         . = ALIGN(4);
     } > RAM
 
-    /* Globals from LD should be at the end so that they get the
-     * highest addresses. This region is used for sct_load
-     * configuration in the linker script.
-     */
     .sct_load_config :
     {
         . = ALIGN(4);
@@ -227,7 +216,14 @@ SECTIONS
         . = ALIGN(4);
     } > RAM
 
-    /* Make sure there is enough room for the stack */
+    KE_MSG_TABLE (NOLOAD) :
+    {
+        . = ALIGN(4);
+        *(KE_MSG_TABLE)
+        *(KE_MSG_TABLE.*)
+        . = ALIGN(4);
+    } > RAM
+
     .stack (NOLOAD) :
     {
         . = ALIGN(8);

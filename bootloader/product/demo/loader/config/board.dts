@@ -1,0 +1,28 @@
+/dts-v1/;
+
+#include <arm/gd/gd32f50x.dtsi>
+#include <dt-bindings/gpio/gpio.h>
+
+/ {
+    compatible = "gd,gd32f503";
+    model = "Demo Loader";
+
+    chosen {
+        zephyr,console = &usart0;
+    };
+
+    aliases {
+        uart0 = &usart0;
+    };
+
+    soc {
+        usart0: usart@40013800 {
+            compatible = "gd,gd32-usart";
+            reg = <0x40013800 0x400>;
+            interrupts = <37 0>;
+            status = "okay";
+            current-speed = <115200>;
+            label = "USART0";
+        };
+    };
+};

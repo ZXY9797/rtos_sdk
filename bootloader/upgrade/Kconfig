@@ -1,0 +1,9 @@
+menu "Upgrade App Configuration"
+
+config UPGRADE_TARGET_PRODUCT_ID
+    hex "Target product ID"
+    default 0x0001
+    help
+      升级目标产品 ID，必须与 ProductInfo 匹配。
+
+endmenu

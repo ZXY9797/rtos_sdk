@@ -1,0 +1,9 @@
+menu "Preloader Configuration"
+
+config PRELOADER_PRODUCT_ID
+    hex "Expected product ID"
+    default 0x0001
+    help
+      产品 ID，用于校验 bootloader 和 app 的 ProductInfo。
+
+endmenu

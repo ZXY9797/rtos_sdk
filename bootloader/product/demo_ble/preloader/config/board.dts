@@ -1,0 +1,8 @@
+/dts-v1/;
+
+#include <arm/goodix/gr5525x.dtsi>
+
+/ {
+    compatible = "goodix,gr5525";
+    model = "GR5525 BLE Preloader";
+};

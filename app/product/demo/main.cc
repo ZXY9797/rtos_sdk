@@ -6,6 +6,17 @@
 #include <drivers_generated.h>
 #include <log.h>
 #include <osal.h>
+#include <boot/product_info.h>
+#include <boot/boot_ctrl.h>
+
+// ProductInfo 标记区: app 偏移 1KB 处，用于 bootloader 校验防误升级
+__attribute__((section(".product_info"), used))
+const boot::ProductInfo kProductInfo = {
+    .magic      = boot::PRODUCT_INFO_MAGIC,
+    .product_id = boot::PRODUCT_ID_DEMO,
+    .hw_version = 0x0100,       // v1.0
+    .fw_version = {1, 0, 0, 0}, // v1.0.0
+};
 
 namespace {
 
@@ -45,6 +56,9 @@ void cli_poll_entry(void *, const osal::PeriodicStats &) {
 } // namespace
 
 int main(void) {
+    // 确认镜像有效，防止 bootloader 回滚
+    boot::confirm_image();
+
     (void)log_uart(device_get(uart0), LogLevel::Info);
 
     LOGI("foc", "=== FOC Motor Control Demo (DM-4340) ===");

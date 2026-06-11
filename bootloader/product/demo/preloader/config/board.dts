@@ -1,0 +1,11 @@
+/dts-v1/;
+
+#include <arm/gd/gd32f50x.dtsi>
+
+/ {
+    compatible = "gd,gd32f503";
+    model = "Demo Preloader";
+
+    chosen {
+    };
+};
