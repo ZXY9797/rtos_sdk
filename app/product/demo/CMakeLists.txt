@@ -17,6 +17,7 @@ target_include_directories(${MODULE_NAME}
 target_sources(${MODULE_NAME}
     PRIVATE
         main.cc
+        board_devices.cc
         app_services.cc
         foc_app.cc
         controller/speed_controller.cc

@@ -4,9 +4,48 @@
 #include <device_base.h>
 #include <cstddef>
 #include <type_traits>
+#include <utility>
 
 #ifdef __cplusplus
 namespace hal {
+
+namespace detail {
+
+template <typename T, typename = void>
+struct HasIsReady : std::false_type {};
+
+template <typename T>
+struct HasIsReady<T, std::void_t<decltype(std::declval<T &>().is_ready())>>
+    : std::true_type {};
+
+template <typename T, typename = void>
+struct HasIsInitialized : std::false_type {};
+
+template <typename T>
+struct HasIsInitialized<T,
+    std::void_t<decltype(std::declval<T &>().is_initialized())>>
+    : std::true_type {};
+
+/**
+ * 统一设备就绪判定。
+ *
+ * 有完整状态机的驱动优先走 DeviceBase::is_ready()；轻量驱动如果只提供
+ * is_initialized()，则使用初始化状态；GPIO pin 这类无状态门面默认视为就绪。
+ */
+template <typename T>
+inline bool device_ready(T &dev) {
+    if constexpr (std::is_base_of_v<DeviceBase, std::remove_reference_t<T>>) {
+        return dev.is_ready();
+    } else if constexpr (HasIsReady<T>::value) {
+        return dev.is_ready();
+    } else if constexpr (HasIsInitialized<T>::value) {
+        return dev.is_initialized();
+    } else {
+        return true;
+    }
+}
+
+} // namespace detail
 
 /**
  * @brief 设备驱动特征 — 主模板
@@ -76,11 +115,7 @@ const DeviceInfo *get_device_registry(size_t *count);
 template <int Ord>
 inline bool device_is_ready() {
     auto &dev = device_get<Ord>();
-    if constexpr (std::is_base_of_v<DeviceBase,
-                     std::remove_reference_t<decltype(dev)>>) {
-        return dev.is_ready();
-    }
-    return true;
+    return detail::device_ready(dev);
 }
 
 } // namespace hal

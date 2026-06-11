@@ -71,6 +71,7 @@ properties:
 cxx-driver:
   template: I2c
   header: drivers/i2c.h
+  readiness: device-base
   args:
     - node-reg
   device-base: true

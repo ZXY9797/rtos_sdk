@@ -1,4 +1,5 @@
 #include "foc_app.h"
+#include "board_devices.h"
 #include "motor_context.h"
 #include "controller/speed_controller.h"
 #include "controller/protection.h"
@@ -105,14 +106,14 @@ static osal::PeriodicThread *g_led_thread = nullptr;
 static imu::ImuData g_imu_data;
 
 static bool imu_read_in_isr(void *) {
-    return device_get(imu0).read(g_imu_data);
+    return demo::board::imu().read(g_imu_data);
 }
 #endif
 
 // ─── Link 通信 ─────────────────────────────────────────────────
 
 #ifdef CONFIG_LINK
-static link::UartLink g_uart_link(device_get(uart0));
+static link::UartLink g_uart_link(demo::board::console());
 static link::CanLink  g_can_link(0, 0x100);
 
 static void comm_init() {
@@ -321,7 +322,7 @@ static void slow_loop_entry(void *arg, const osal::PeriodicStats &stats) {
     float board_temp = 25.0f;
     float motor_temp = 25.0f;
     {
-        auto &adc = device_get(adc0);
+        auto &adc = demo::board::main_adc();
         uint16_t board_raw = 0, motor_raw = 0;
         if (adc.read(static_cast<hal::AdcChannel>(CONFIG_BOARD_TEMP_ADC_CHANNEL), board_raw) == hal::Status::Ok) {
             float v = static_cast<float>(board_raw) * 3.3f / 4096.0f;
@@ -486,7 +487,7 @@ static void ctrl_loop_entry(void *arg, const osal::PeriodicStats &stats) {
 // ─── LED 心跳 ───────────────────────────────────────────────────
 
 static void led_heartbeat_entry(void *, const osal::PeriodicStats &stats) {
-    auto &led = device_get(led0);
+    auto &led = demo::board::status_led();
     if (!g_motors[0].motor) return;
 
     bool any_fault = false;
@@ -760,7 +761,7 @@ static void cli_process(const char *cmd) {
                  i, registry[i].alias, registry[i].ord, registry[i].type_name);
         }
     } else if (strcmp(cmd, "uart_stats") == 0 || strcmp(cmd, "ust") == 0) {
-        auto &uart = device_get(uart0);
+        auto &uart = demo::board::console();
         auto stats = uart.get_stats();
         LOGI("cli", "=== UART Stats ===");
         LOGI("cli", "  TX:       %lu bytes", stats.tx_bytes);
@@ -770,7 +771,7 @@ static void cli_process(const char *cmd) {
         LOGI("cli", "  Parity:   %lu", stats.parity_errors);
         LOGI("cli", "  State:    %s", uart.is_initialized() ? "ready" : "not init");
     } else if (strcmp(cmd, "uart_stats reset") == 0 || strcmp(cmd, "ust_r") == 0) {
-        device_get(uart0).reset_stats();
+        demo::board::console().reset_stats();
         LOGI("cli", "UART stats reset");
     } else if (strcmp(cmd, "assert_test") == 0) {
         LOGI("cli", "triggering HAL_ASSERT(false)...");
@@ -926,7 +927,7 @@ static int init_motor(MotorContext &ctx, uint8_t motor_idx) {
     ctx.can.set_callback(can_cmd_callback);
 
     // 速度环线程 — 硬件定时器 TIMER5 驱动 (4kHz)
-    auto &speed_tim = device_get(tim5);
+    auto &speed_tim = demo::board::speed_timer();
     ctx.speed_loop = osal::PeriodicThread::create(spd_name,
         speed_loop_entry, &ctx,
         SPEED_LOOP_STACK, SPEED_LOOP_PRIO,
@@ -959,7 +960,7 @@ static int init_motor(MotorContext &ctx, uint8_t motor_idx) {
     // 闭环任务 — SensorCore 驱动（TIMER6 16kHz → IMU read → ÷8 → 2kHz）
     // IMU 由设备树 initcall 自动初始化
     {
-        auto &imu_tim = device_get(tim6);
+        auto &imu_tim = demo::board::control_timer();
         SensorCore::Config sc_cfg;
         sc_cfg.name = "ctrl";
         sc_cfg.entry = ctrl_loop_entry;
@@ -996,7 +997,7 @@ int start() {
     (void)nvs_flash().init();
 
     // 初始化 motor 0
-    auto &motor_dev = device_get(motor0);
+    auto &motor_dev = demo::board::main_motor();
     auto &ctx0 = g_motors[0];
     ctx0.motor = &motor_dev.motor();
     ctx0.motor_cfg.rs = CONFIG_FOC_RS_OHMS * 0.001f;
@@ -1015,7 +1016,7 @@ int start() {
 #endif
 
     // TODO: 如需第二电机，在此处初始化 motor 1
-    // auto &motor_dev1 = device_get(motor1);
+    // auto &motor_dev1 = demo::board::secondary_motor();
     // auto &ctx1 = g_motors[1];
     // ctx1.motor = &motor_dev1.motor();
     // ctx1.motor_cfg = ...;

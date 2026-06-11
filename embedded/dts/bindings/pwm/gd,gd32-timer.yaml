@@ -7,6 +7,7 @@ include: [pwm-controller.yaml, base.yaml]
 cxx-driver:
   template: Pwm
   header: drivers/pwm.h
+  readiness: is-initialized
   args:
     - node-reg
     - node-prop:channel

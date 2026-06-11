@@ -29,6 +29,12 @@ properties:
 cxx-driver:
   template: imu::Icm40609d
   header: imu/icm40609d.h
+  readiness: is-initialized
+  requires:
+    - parent
+    - phandle-array: int-gpios
+  init-level: pre-kernel-3
+  init-priority: 20
   args:
     - parent-reg
     - phandle-reg: int-gpios

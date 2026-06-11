@@ -16,6 +16,7 @@ DeviceTrait 特化生成器 — YAML 驱动版。
 import os
 import re
 import sys
+import json
 import yaml
 
 DEFAULT_INIT_PRIORITY = 25
@@ -29,6 +30,8 @@ INIT_LEVELS = {
     'post-kernel': 'INITCALL_LEVEL_POST_KERNEL',
     'application': 'INITCALL_LEVEL_APPLICATION',
 }
+
+INIT_LEVEL_ORDER = {level: index for index, level in enumerate(INIT_LEVELS)}
 
 
 def normalize_init_level(value):
@@ -57,6 +60,44 @@ def normalize_init_level(value):
         raise ValueError(f'unknown init-level {value!r}; expected one of: {valid}')
 
     return key
+
+
+def normalize_prop_name(name):
+    return str(name).replace('-', '_')
+
+
+def parse_driver_requires(raw_requires, filepath):
+    """Parse cxx-driver.requires into normalized dependency descriptors."""
+    if raw_requires is None:
+        return []
+    if not isinstance(raw_requires, list):
+        raise ValueError(f'invalid requires in {filepath}: expected a list')
+
+    requires = []
+    for item in raw_requires:
+        if isinstance(item, str):
+            if item == 'parent':
+                requires.append(('parent', None))
+            else:
+                requires.append(('phandle', item))
+            continue
+
+        if isinstance(item, dict) and len(item) == 1:
+            key, val = next(iter(item.items()))
+            if key == 'parent':
+                requires.append(('parent', None))
+            elif key == 'phandle':
+                requires.append(('phandle', val))
+            elif key == 'phandle-array':
+                requires.append(('phandle_array', val))
+            else:
+                raise ValueError(
+                    f'invalid requires entry in {filepath}: {item!r}')
+            continue
+
+        raise ValueError(f'invalid requires entry in {filepath}: {item!r}')
+
+    return requires
 
 
 # ─── 解析 binding YAML 的 cxx-driver 节 ────────────────────────────────
@@ -91,6 +132,9 @@ def parse_yaml_comments(filepath):
     raw_args = cxx_raw.get('args', [])
     init_level = cxx_raw.get('init-level', DEFAULT_INIT_LEVEL)
     init_priority = cxx_raw.get('init-priority', DEFAULT_INIT_PRIORITY)
+    requires = parse_driver_requires(cxx_raw.get('requires', []), filepath)
+    device_base = cxx_raw.get('device-base', False)
+    readiness = cxx_raw.get('readiness')
 
     if not template or not header:
         return None, None
@@ -149,14 +193,15 @@ def parse_yaml_comments(filepath):
         'args': args,
         'init_level': init_level,
         'init_priority': init_priority,
+        'requires': requires,
+        'device_base': bool(device_base),
+        'readiness': readiness or ('device-base' if device_base else 'auto'),
+        'binding_path': filepath,
     }
 
     isr_handler = cxx_raw.get('isr-handler')
     if isr_handler:
         cxx['isr_handler'] = isr_handler
-
-    device_base = cxx_raw.get('device-base', False)
-    cxx['device_base'] = bool(device_base)
 
     # 解析 init-cfg（init() 参数映射）
     init_cfg_raw = cxx_raw.get('init-cfg')
@@ -246,13 +291,25 @@ def parse_generated_header(filepath):
     for m in prop_exists_re.finditer(content):
         node_props.setdefault(m.group(1), set()).add(m.group(2))
 
-    # phandle 引用: node_P_prop_IDX_0_PH target
+    # phandle 引用: node_P_prop_IDX_n_PH target
     ph_re = re.compile(
-        r'^#define\s+(DT_N_(?:S_\w+)+)_P_(\w+)_IDX_0_PH\s+(DT_N_(?:S_\w+)+)',
+        r'^#define\s+(DT_N_(?:S_\w+)+)_P_(\w+)_IDX_(\d+)_PH\s+(DT_N_(?:S_\w+)+)',
         re.MULTILINE)
     phandles = {}
+    phandle_refs = {}
     for m in ph_re.finditer(content):
-        phandles[(m.group(1), m.group(2))] = m.group(3)
+        node_id = m.group(1)
+        prop = m.group(2)
+        idx = int(m.group(3))
+        target = m.group(4)
+        phandle_refs.setdefault((node_id, prop), []).append((idx, target))
+        if idx == 0:
+            phandles[(node_id, prop)] = target
+
+    phandle_refs = {
+        key: [target for _, target in sorted(values)]
+        for key, values in phandle_refs.items()
+    }
 
     # 属性字段值: node_P_prop_IDX_0_VAL_field <number>
     val_re = re.compile(
@@ -322,6 +379,7 @@ def parse_generated_header(filepath):
         'node_compats': node_compats,
         'node_props': node_props,
         'phandles': phandles,
+        'phandle_refs': phandle_refs,
         'prop_fields': prop_fields,
         'direct_props': direct_props,
         'string_props': string_props,
@@ -426,6 +484,81 @@ def is_node_enabled(node_id, dt_data):
     return status == 'okay'
 
 
+def parent_node_id(node_id):
+    last_sep = node_id.rfind('_S_')
+    if last_sep <= 0:
+        return None
+    return node_id[:last_sep]
+
+
+def add_dependency(deps, seen, node_id, reason, dt_data):
+    if not node_id or node_id not in dt_data['ordinals']:
+        return
+    if node_id in seen:
+        return
+    seen.add(node_id)
+    deps.append({
+        'node_id': node_id,
+        'ord': dt_data['ordinals'][node_id],
+        'alias': dt_data['aliases'].get(node_id, ''),
+        'reason': reason,
+    })
+
+
+def resolve_requires_dependencies(node_id, requires, dt_data):
+    deps = []
+    seen = set()
+
+    for dep_type, dep_value in requires:
+        if dep_type == 'parent':
+            add_dependency(deps, seen, parent_node_id(node_id), 'parent', dt_data)
+            continue
+
+        if dep_type in ('phandle', 'phandle_array'):
+            prop = normalize_prop_name(dep_value)
+            for target in dt_data.get('phandle_refs', {}).get((node_id, prop), []):
+                add_dependency(deps, seen, target, f'{dep_type}:{dep_value}',
+                               dt_data)
+
+    return deps
+
+
+def resolve_arg_dependencies(node_id, args, dt_data):
+    deps = []
+    seen = set()
+
+    for arg in args:
+        arg_type = arg[0]
+        if arg_type == 'parent_reg':
+            add_dependency(deps, seen, parent_node_id(node_id), 'arg:parent-reg',
+                           dt_data)
+        elif arg_type in ('phandle_reg', 'phandle_ord'):
+            prop = normalize_prop_name(arg[1])
+            for target in dt_data.get('phandle_refs', {}).get((node_id, prop), []):
+                add_dependency(deps, seen, target, f'arg:{arg_type}:{arg[1]}',
+                               dt_data)
+        elif arg_type == 'phandle_parent_reg':
+            prop = normalize_prop_name(arg[1])
+            for target in dt_data.get('phandle_refs', {}).get((node_id, prop), []):
+                add_dependency(deps, seen, parent_node_id(target),
+                               f'arg:{arg_type}:{arg[1]}', dt_data)
+
+    return deps
+
+
+def merge_dependencies(*groups):
+    merged = []
+    seen = set()
+    for group in groups:
+        for dep in group:
+            node_id = dep['node_id']
+            if node_id in seen:
+                continue
+            seen.add(node_id)
+            merged.append(dep)
+    return merged
+
+
 def generate_specializations(dt_data, compat_map):
     """为所有匹配且启用的节点生成特化代码。"""
     specs = []
@@ -453,14 +586,24 @@ def generate_specializations(dt_data, compat_map):
             continue
 
         alias = dt_data['aliases'].get(node_id, '')
+        dependencies = merge_dependencies(
+            resolve_requires_dependencies(node_id, driver.get('requires', []),
+                                          dt_data),
+            resolve_arg_dependencies(node_id, driver.get('args', []), dt_data),
+        )
         spec = {
             'ord': ord_val,
             'alias': alias,
             'type': driver['template'],
             'args': args_code,
+            'arg_defs': driver.get('args', []),
             'header': driver['header'],
             'enabled': enabled,
             'node_id': node_id,
+            'compatible': driver.get('compatible', compat),
+            'binding_path': driver.get('binding_path', ''),
+            'readiness': driver.get('readiness', 'auto'),
+            'dependencies': dependencies,
             'init_level': driver.get('init_level', DEFAULT_INIT_LEVEL),
             'init_priority': driver.get('init_priority', DEFAULT_INIT_PRIORITY),
         }
@@ -489,46 +632,39 @@ def generate_specializations(dt_data, compat_map):
     return specs, used_headers
 
 
-def check_init_dependencies(specs):
-    """检查 phandle 依赖的设备是否先初始化。
-
-    如果设备 A 通过 phandle 引用设备 B，且两者在同一 init level 内，
-    则 A 的 init-priority 必须大于 B（数值越大越晚初始化）。
-    """
-    spec_by_ord = {s['ord']: s for s in specs}
+def check_init_dependencies(specs, dt_data):
+    """Check generated device dependencies against init level and priority."""
+    spec_by_node = {s['node_id']: s for s in specs}
     warnings = []
-
-    level_order = {v: i for i, v in enumerate(INIT_LEVELS.values())}
 
     for spec in specs:
         if not spec['enabled']:
             continue
-        for arg in spec.get('args', []):
-            if arg[0] in ('phandle_ord', 'phandle_parent_reg'):
-                target_ord = int(arg[1]) if arg[0] == 'phandle_ord' else None
-                if target_ord is not None:
-                    target = spec_by_ord.get(target_ord)
-                    if target and target['enabled']:
-                        src = spec['alias'] or f"ord={spec['ord']}"
-                        dst = target['alias'] or f"ord={target['ord']}"
-                        # 同级检查：priority 必须更大
-                        if (spec['init_level'] == target['init_level'] and
-                                spec['init_priority'] < target['init_priority']):
-                            warnings.append(
-                                f"WARNING: {src} (prio={spec['init_priority']}) "
-                                f"depends on {dst} (prio={target['init_priority']}) "
-                                f"but initializes earlier!")
-                        # 跨级检查：A 的 level 不能早于 B 的 level
-                        src_lvl = level_order.get(spec['init_level'], 99)
-                        dst_lvl = level_order.get(target['init_level'], 99)
-                        if src_lvl < dst_lvl:
-                            warnings.append(
-                                f"ERROR: {src} (level={spec['init_level']}) "
-                                f"depends on {dst} (level={target['init_level']}) "
-                                f"but initializes at an earlier level!")
 
-    for w in warnings:
-        print(w)
+        src_level = resolve_init_level_key(spec, dt_data)
+        src_prio = resolve_init_priority(spec, dt_data)
+        src_order = (INIT_LEVEL_ORDER.get(src_level, 99), src_prio)
+        src = spec['alias'] or f"ord={spec['ord']}"
+
+        for dep in spec.get('dependencies', []):
+            target = spec_by_node.get(dep['node_id'])
+            if not target or not target['enabled']:
+                continue
+
+            dst_level = resolve_init_level_key(target, dt_data)
+            dst_prio = resolve_init_priority(target, dt_data)
+            dst_order = (INIT_LEVEL_ORDER.get(dst_level, 99), dst_prio)
+            dst = target['alias'] or f"ord={target['ord']}"
+
+            if src_order <= dst_order:
+                warnings.append(
+                    f"WARNING: {src} (level={src_level}, prio={src_prio}) "
+                    f"depends on {dst} (level={dst_level}, prio={dst_prio}) "
+                    f"via {dep.get('reason', 'dependency')} but does not "
+                    f"initialize later.")
+
+    for warning in warnings:
+        print(warning)
 
     return len(warnings) == 0
 
@@ -608,14 +744,13 @@ def write_output(specs, used_headers, output_path):
     if enabled_specs:
         # 为 DeviceBase 派生类型生成 is_ready 检查函数
         for spec in enabled_specs:
-            if spec.get('device_base', False):
-                ord_val = spec['ord']
-                alias = spec['alias'] or f'ord{ord_val}'
-                lines.append(
-                    f'inline bool _check_{alias}(void *inst) {{')
-                lines.append(
-                    f'    return static_cast<DeviceBase *>(inst)->is_ready();')
-                lines.append('}')
+            ord_val = spec['ord']
+            alias = normalize_compat(spec['alias'] or f'ord{ord_val}')
+            lines.append(f'inline bool _check_{alias}(void *inst) {{')
+            lines.append(
+                f'    auto *dev = static_cast<DeviceTrait<{ord_val}>::type *>(inst);')
+            lines.append('    return detail::device_ready(*dev);')
+            lines.append('}')
 
         lines.append('// 设备注册表 — 用于运行时枚举和调试')
         lines.append('inline const DeviceInfo s_device_registry[] = {')
@@ -623,7 +758,7 @@ def write_output(specs, used_headers, output_path):
             ord_val = spec['ord']
             alias = spec['alias'] or f'ord{ord_val}'
             type_name = spec['type'].split('::')[-1]
-            check_fn = f'_check_{alias}' if spec.get('device_base') else 'nullptr'
+            check_fn = f'_check_{normalize_compat(alias)}'
             lines.append(f'    {{ .ord = {ord_val}, .alias = "{alias}", '
                         f'.type_name = "{type_name}", '
                         f'.instance = &DeviceTrait<{ord_val}>::instance, '
@@ -734,8 +869,8 @@ def resolve_init_priority(spec, dt_data):
     return prio
 
 
-def resolve_init_level(spec, dt_data):
-    """Return DTS node init-level override, or the binding default."""
+def resolve_init_level_key(spec, dt_data):
+    """Return normalized DTS node init-level override, or the binding default."""
     node_id = spec['node_id']
     prop_key = (node_id, 'init_level')
     if prop_key in dt_data.get('string_props', {}):
@@ -748,6 +883,12 @@ def resolve_init_level(spec, dt_data):
     except ValueError as e:
         raise ValueError(f'invalid init-level for {node_id}: {e}')
 
+    return level
+
+
+def resolve_init_level(spec, dt_data):
+    """Return DTS node init-level macro override, or the binding default."""
+    level = resolve_init_level_key(spec, dt_data)
     return INIT_LEVELS[level]
 
 
@@ -860,6 +1001,56 @@ def write_cc_output(specs, cc_path, dt_data):
 
 # ─── 入口 ─────────────────────────────────────────────────────────────
 
+def write_device_report(specs, report_path, dt_data):
+    """Write a JSON report for generated device model diagnostics."""
+    spec_by_node = {s['node_id']: s for s in specs}
+    devices = []
+
+    for spec in sorted(specs, key=lambda item: item['ord']):
+        deps = []
+        for dep in spec.get('dependencies', []):
+            target = spec_by_node.get(dep['node_id'])
+            deps.append({
+                'ord': dep['ord'],
+                'alias': dep['alias'],
+                'node_id': dep['node_id'],
+                'reason': dep.get('reason', ''),
+                'has_cxx_driver': target is not None,
+                'enabled': bool(target and target.get('enabled', False)),
+                'init_level': resolve_init_level_key(target, dt_data)
+                              if target else None,
+                'init_priority': resolve_init_priority(target, dt_data)
+                                 if target else None,
+            })
+
+        devices.append({
+            'ord': spec['ord'],
+            'alias': spec['alias'],
+            'node_id': spec['node_id'],
+            'compatible': spec.get('compatible', ''),
+            'type': spec['type'],
+            'header': spec['header'],
+            'enabled': spec['enabled'],
+            'init_level': resolve_init_level_key(spec, dt_data),
+            'init_priority': resolve_init_priority(spec, dt_data),
+            'readiness': spec.get('readiness', 'auto'),
+            'device_base': bool(spec.get('device_base', False)),
+            'binding': spec.get('binding_path', ''),
+            'dependencies': deps,
+        })
+
+    report = {
+        'schema': 'rtos-sdk.devices.v1',
+        'device_count': len(devices),
+        'enabled_count': sum(1 for item in devices if item['enabled']),
+        'devices': devices,
+    }
+
+    with open(report_path, 'w', encoding='utf-8') as f:
+        json.dump(report, f, ensure_ascii=False, indent=2)
+        f.write('\n')
+
+
 def main():
     if len(sys.argv) < 3:
         print(f'用法: {sys.argv[0]} <devicetree_generated.h> <output.h> [bindings_dir] [output.cc]')
@@ -869,6 +1060,7 @@ def main():
     output_path = sys.argv[2]
     bindings_dir = sys.argv[3] if len(sys.argv) > 3 else None
     cc_path = sys.argv[4] if len(sys.argv) > 4 else None
+    report_path = sys.argv[5] if len(sys.argv) > 5 else None
 
     # 1. 扫描 binding YAML
     compat_map = {}
@@ -887,7 +1079,7 @@ def main():
 
     # 3.5 检查 init 依赖
     if specs:
-        if not check_init_dependencies(specs):
+        if not check_init_dependencies(specs, dt_data):
             print("WARNING: Init dependency issues detected! "
                   "Devices may access uninitialized dependencies.")
 
@@ -907,6 +1099,11 @@ def main():
                 f.write('// Auto-generated by gen_device_traits.py. DO NOT EDIT.\n')
                 f.write('// No devices with init-cfg found.\n')
             print(f'生成 {cc_path}: 无 initcall（无 init-cfg 节点）')
+
+
+    if report_path:
+        write_device_report(specs, report_path, dt_data)
+        print(f'生成 {report_path}: device model diagnostics')
 
 
 if __name__ == '__main__':

@@ -50,6 +50,9 @@ child-binding:
 cxx-driver:
   template: GpioPort
   header: drivers/gpio.h
+  readiness: always-ready
+  requires:
+    - phandle-array: gpios
   args:
     - phandle-reg: gpios
     - field: gpios/pin

@@ -1,5 +1,6 @@
 #include "app_services.h"
 
+#include "board_devices.h"
 #include "foc_app.h"
 
 #include <boot/boot_ctrl.h>
@@ -30,7 +31,7 @@ const boot::ProductInfo kProductInfo = {
 };
 
 void cli_poll_entry(void *, const osal::PeriodicStats &) {
-    auto &uart = device_get(uart0);
+    auto &uart = demo::board::console();
     uint8_t ch;
     size_t n = 0;
     while (uart.recv(&ch, 1, &n, 0) == hal::Status::Ok && n > 0) {
@@ -54,7 +55,7 @@ void confirm_boot_image() {
 }
 
 void init_logging() {
-    (void)log_uart(device_get(uart0), LogLevel::Info);
+    (void)log_uart(demo::board::console(), LogLevel::Info);
 }
 
 void print_device_registry() {
@@ -70,8 +71,8 @@ void print_device_registry() {
 }
 
 void assert_required_devices() {
-    HAL_ASSERT(device_get(uart0).is_initialized());
-    HAL_ASSERT(device_get(motor0).is_initialized());
+    HAL_ASSERT(demo::board::console().is_initialized());
+    HAL_ASSERT(demo::board::main_motor().is_initialized());
 }
 
 void start_cli_poll() {
@@ -86,7 +87,7 @@ void start_cli_poll() {
 
 void print_periodic_diagnostics(uint32_t loop_count) {
     if (loop_count % 1000 == 0) {
-        print_uart_stats(device_get(uart0));
+        print_uart_stats(demo::board::console());
     }
 }
 

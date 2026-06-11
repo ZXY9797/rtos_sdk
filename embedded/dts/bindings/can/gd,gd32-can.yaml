@@ -7,6 +7,7 @@ include: [can-controller.yaml, base.yaml]
 cxx-driver:
   template: CanDriver
   header: drivers/can.h
+  readiness: is-initialized
   args:
     - node-reg
   init-level: pre-kernel-2

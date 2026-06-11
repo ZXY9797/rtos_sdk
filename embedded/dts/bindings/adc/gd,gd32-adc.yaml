@@ -7,6 +7,7 @@ include: [adc-controller.yaml, base.yaml]
 cxx-driver:
   template: Adc
   header: drivers/adc.h
+  readiness: is-initialized
   args:
     - node-reg
   init-level: pre-kernel-2

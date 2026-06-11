@@ -94,6 +94,10 @@ properties:
 cxx-driver:
   template: foc::MotorDevice
   header: foc/motor_device.h
+  readiness: is-initialized
+  requires:
+    - phandle: pwm-dev
+    - phandle: adc-dev
   args:
     - phandle-ord: pwm-dev
     - phandle-ord: adc-dev

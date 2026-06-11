@@ -74,3 +74,6 @@ CLI、产品启动流程、boot 状态和板级策略应放在 `app/product`。
 本项目继续保留当前 DeviceTrait 模型，不采用 Zephyr 的运行时 `struct device`
 模型。设备实例来自 DTS 和生成代码，C++ 模板负责保留编译期分发能力，避免
 不必要的运行时间接调用。
+
+设备驱动模型的细化规则见 [DRIVER_MODEL.md](DRIVER_MODEL.md)。后续驱动接入、设备依赖、
+初始化顺序和产品级设备门面都以该文档为准。
