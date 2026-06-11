@@ -16,7 +16,7 @@
 #include <cstdint>
 #include <cstring>
 
-// 鈹€鈹€鈹€ 鎺у埗妯″紡 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// Control modes
 
 enum class ControlMode : uint8_t {
     Idle = 0,
@@ -26,7 +26,7 @@ enum class ControlMode : uint8_t {
     Sweep,
 };
 
-// 鈹€鈹€鈹€ NVS 鏁版嵁缁撴瀯 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// NVS data structures
 
 struct CalibData {
     float rs;
@@ -90,10 +90,10 @@ struct MaxPosNvsData {
 };
 static_assert(sizeof(MaxPosNvsData) == 8);
 
-// 鈹€鈹€鈹€ 鐢垫満涓婁笅鏂?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// Motor context
 
 struct MotorContext {
-    // 纭欢
+    // Hardware
     foc::Motor *motor {nullptr};
     foc::MotorConfig motor_cfg;
 
@@ -123,7 +123,7 @@ struct MotorContext {
     uint32_t pos_iter_cnt {0};
     float pos_step {0.0f};
 
-    // 鏍″噯鏁版嵁
+    // Calibration data
     CurrentCalibNvsData current_calib {};
     float elec_angle_table[36] {};
     bool elec_angle_calib_done {false};
@@ -134,16 +134,16 @@ struct MotorContext {
     bool max_pos_calib_done {false};
     bool auto_calib_pending {false};
 
-    // 绾跨▼鍙ユ焺
+    // Thread handles
     osal::PeriodicThread *speed_loop {nullptr};
     osal::PeriodicThread *slow_loop {nullptr};
     osal::PeriodicThread *pos_loop {nullptr};
     SensorCore *imu_core {nullptr};
 
-    // NVS ID 鍋忕Щ鍩哄潃 (motor0=0x0001, motor1=0x0101)
+    // NVS ID base (motor0=0x0001, motor1=0x0101)
     uint16_t nvs_id_base {0x0001};
 
-    // NVS ID 璁＄畻
+    // NVS ID calculation
     uint16_t nvs_id_calib()         const { return nvs_id_base + 0; }
     uint16_t nvs_id_protect()       const { return nvs_id_base + 1; }
     uint16_t nvs_id_leso()          const { return nvs_id_base + 2; }
@@ -152,7 +152,7 @@ struct MotorContext {
     uint16_t nvs_id_output_angle()  const { return nvs_id_base + 5; }
     uint16_t nvs_id_max_pos()       const { return nvs_id_base + 6; }
 
-    // 浣嶇疆鎻掕ˉ
+    // Position interpolation
     void pos_iter_init(float current, float target, float time_ms, uint32_t pos_loop_hz) {
         pos_current = current;
         pos_setpoint = target;
@@ -178,8 +178,8 @@ struct MotorContext {
     }
 };
 
-// 鈹€鈹€鈹€ 澶氱數鏈哄疄渚?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// Multi-motor instances
 
 static constexpr uint8_t MAX_MOTORS = 2;
 
-// 鐢垫満涓婁笅鏂囨暟缁勶紙鐢?app::start_control 濉厖锛?// 瀹為檯瀹氫箟鍦?control_app.cc 涓?
+// Motor context array, populated by app::start_control and defined in control_app.cc.

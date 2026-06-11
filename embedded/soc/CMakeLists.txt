@@ -18,9 +18,8 @@ execute_process(
     RESULT_VARIABLE gen_result
 )
 
-# 检查生成结果
+# Load generated SoC metadata.
 if(gen_result EQUAL 0)
-    # 包含生成的CMake文件
     if(EXISTS "${SOC_INFO_FILE}")
         include("${SOC_INFO_FILE}")
         message(STATUS "SOC information loaded from: ${SOC_INFO_FILE}")
@@ -34,7 +33,7 @@ endif()
 set(SOC_VENDER_DIR ${CMAKE_CURRENT_LIST_DIR}/${SOC_VENDOR})
 set(SOC_SERIES_DIR ${CMAKE_CURRENT_LIST_DIR}/${SOC_VENDOR}/${SOC_SERIES})
 
-# 根据 SOC 厂商设置编译定义
+# Configure vendor-specific compile definitions.
 if(SOC_VENDOR STREQUAL "st")
     target_compile_definitions(soc
         PUBLIC

@@ -49,13 +49,15 @@ Boot 代码分为公共代码和固件私有代码。
 
 各固件目录只保留自己的职责：
 
-- `bootloader/loader`：启动决策、DFU 协议处理、跳转应用。
-- `bootloader/preloader`：loader 自升级拷贝和早期交接。
-- `bootloader/upgrade`：写入新的 loader 镜像。
+- `bootloader/preloader`：第一阶段跳转选择，只读 `boot_ctrl` 并跳转目标分区。
+- `bootloader/loader`：第二阶段启动决策、DFU 协议处理、app 校验、app AB 拷贝和跳转应用。
+- `bootloader/upgrade`：loader 自升级执行，处理 `loader_upgrade` 路径并写入新的 loader 镜像。
 - `app/product/*`：产品固件编排和产品元数据。
 
 应用固件可以调用 `boot::confirm_image()`，也可以发布 `boot::ProductInfo`，
 但不能编译 `bootloader/loader/src` 下的私有文件。
+
+完整启动和升级关系见 [BOOT_FLOW.md](BOOT_FLOW.md)。
 
 ## 组件依赖等级
 

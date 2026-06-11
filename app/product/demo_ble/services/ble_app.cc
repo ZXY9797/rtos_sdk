@@ -1,5 +1,5 @@
 ﻿/**
- * BLE application layer 鈥?services, advertising, event handling.
+ * BLE application layer: services, advertising, event handling.
  *
  * This file contains all BLE-specific logic. main.cc only calls
  * init_ble() and the accessor functions.
@@ -157,12 +157,12 @@ static void on_ble_event(const ble::Event &evt, void *) {
 namespace app {
 
 void init_ble() {
-    // BLE 閰嶇疆鐢辫澶囨爲 initcall 鑷姩瀛樺偍锛屽簲鐢ㄥ眰鍙渶鎻愪緵浜嬩欢鍥炶皟
+    // BLE config comes from initcall; app supplies the event callback.
     auto &ble_dev = board::ble();
     ble_dev.init(on_ble_event, nullptr);
     s_ble = &ble_dev.stack();
 
-    // 搴旂敤灞傜壒瀹氾細璁剧疆骞挎挱鏁版嵁
+    // Application-specific advertising data.
     s_ble->set_adv_data(s_adv_data, sizeof(s_adv_data));
 }
 

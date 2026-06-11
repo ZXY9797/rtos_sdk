@@ -6,7 +6,7 @@ target_include_directories(soc
         ${BSP_DIR}/include
 )
 
-# SOC 源文件 - 使用寄存器操作，不依赖外设库
+# Core GD32 SoC sources.
 set(SOC_SOURCES
     soc.c
     src/system_gd32f50x.c
@@ -16,6 +16,13 @@ set(SOC_SOURCES
 target_sources(soc
     PRIVATE
         ${SOC_SOURCES}
+)
+
+target_sources_ifdef(CONFIG_CAN_GD32 soc
+    PRIVATE
+        src/gd32f50x_can.c
+        src/gd32f50x_dbg.c
+        src/gd32f50x_rcu.c
 )
 
 target_link_libraries(soc

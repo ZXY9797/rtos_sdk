@@ -24,7 +24,6 @@ target_sources(${MODULE_NAME}
     PRIVATE
         src/preloader_init.cc
         src/preloader_main.cc
-        src/upgrade_copy.cc
         ${BOOT_FLASH_MAP_SOURCE}
 )
 

@@ -601,7 +601,7 @@ uint8_t u8_to_dec(char *buf, uint8_t buflen, uint8_t value);
  *      printf("Original : %s\n", test_str); // €€€
  *      strncpy(trunc_utf8, test_str, sizeof(trunc_utf8));
  *      trunc_utf8[sizeof(trunc_utf8) - 1] = '\0';
- *      printf("Bad      : %s\n", trunc_utf8); // €€�
+ *      printf("Bad      : %s\n", trunc_utf8); // invalid UTF-8 after truncation
  *      utf8_trunc(trunc_utf8);
  *      printf("Truncated: %s\n", trunc_utf8); // €€
  * @endcode

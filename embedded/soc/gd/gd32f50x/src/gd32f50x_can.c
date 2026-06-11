@@ -33,6 +33,8 @@ OF SUCH DAMAGE.
 */
 
 #include "gd32f50x_can.h"
+#include "gd32f50x_dbg.h"
+#include "gd32f50x_rcu.h"
 #include <stdlib.h>
 
 #define CAN_ERROR_HANDLE(s)     do{}while(1)

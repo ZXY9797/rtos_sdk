@@ -56,6 +56,15 @@ app/product/demo/linker.ld
 app/product/demo_ble/linker.ld
 ```
 
+## 固件职责
+
+boot 固件的运行职责见 [BOOT_FLOW.md](BOOT_FLOW.md)。当前分工是：
+
+- `preloader`：第一阶段跳转选择，只读取 `boot_ctrl` 并跳转目标分区，不做 flash 拷贝、不跑 DFU、不升级 loader。
+- `loader`：第二阶段启动与 DFU，负责 app 校验、app AB 拷贝、DFU 协议处理和跳转 app。
+- `upgrade`：loader 自升级执行固件，负责 `loader_upgrade` 路径下的 `FLASH_AREA_UPGRADE -> FLASH_AREA_SLOT0` 拷贝，以及写入新的 `FLASH_AREA_BOOTLOADER`。
+- `app`：产品业务固件，发布 `ProductInfo`，必要时通过公开 boot API 设置启动控制标记。
+
 ## CMake 构建入口
 
 统一使用产品名 `-Dp=<product>`，用 `-DFIRMWARE_TYPE=<type>` 决定构建哪个固件类型。
@@ -209,36 +218,41 @@ ACK payload 当前为 1 字节 `status`，CRC 使用 `boot_proto::crc16_ccitt()`
 
 GR5525 app 链接脚本里把 `FPB` 和 `KE_MSG_TABLE` 等 RAM 区域放在 `NOLOAD` section，避免 `objcopy -Obinary` 把 FLASH 到 RAM 的地址空洞展开成几百 MB 的 `.bin`。
 
-当前 `demo_ble.bin` 验证大小约 91KB：
+当前已验证的 `demo_ble` app bin 大小：
 
 ```text
-out\demo_ble_3in1\app\demo_ble.bin  92991 bytes
+out\build_matrix_gcc9b\demo_ble_freertos\demo_ble.bin  96701 bytes
+out\build_matrix_gcc9b\demo_ble_rtthread\demo_ble.bin  90356 bytes
 ```
 
 ## 已验证命令
 
 ```powershell
-python -m py_compile bootloader\scripts\merge_firmware.py bootloader\scripts\build_3in1.py
-python bootloader\scripts\build_3in1.py demo --out out\demo_3in1
-python bootloader\scripts\build_3in1.py demo_ble --out out\demo_ble_3in1
-cmake -S . -B out\demo_3in1\upgrade -GNinja -Dp=demo -DFIRMWARE_TYPE=upgrade
-ninja -C out\demo_3in1\upgrade
-cmake -S . -B out\demo_ble_3in1\upgrade -GNinja -Dp=demo_ble -DFIRMWARE_TYPE=upgrade
-ninja -C out\demo_ble_3in1\upgrade
+ninja -C out\build_boot_fix\demo_preloader
+ninja -C out\build_boot_fix\demo_loader
+ninja -C out\build_boot_fix\demo_upgrade
+ninja -C out\build_boot_fix\demo_ble_preloader
+ninja -C out\build_boot_fix\demo_ble_loader
+ninja -C out\build_boot_fix\demo_ble_upgrade
+
+ninja -C out\build_matrix_fix\demo_freertos
+ninja -C out\build_matrix_fix\demo_rtthread
+ninja -C out\build_matrix_gcc9b\demo_ble_freertos
+ninja -C out\build_matrix_gcc9b\demo_ble_rtthread
 ```
 
 验证产物：
 
 ```text
-out\demo_3in1\preloader\demo_preloader.bin           8919 bytes
-out\demo_3in1\loader\demo_loader.bin                16638 bytes
-out\demo_3in1\upgrade\demo_upgrade.bin               9079 bytes
-out\demo_3in1\app\demo.bin                          78428 bytes
-out\demo_3in1\demo_3in1.bin                        204800 bytes
+out\build_boot_fix\demo_preloader\demo_preloader.bin             2396 bytes
+out\build_boot_fix\demo_loader\demo_loader.bin                   7200 bytes
+out\build_boot_fix\demo_upgrade\demo_upgrade.bin                 3768 bytes
+out\build_boot_fix\demo_ble_preloader\demo_ble_preloader.bin     1592 bytes
+out\build_boot_fix\demo_ble_loader\demo_ble_loader.bin           6416 bytes
+out\build_boot_fix\demo_ble_upgrade\demo_ble_upgrade.bin         2968 bytes
 
-out\demo_ble_3in1\preloader\demo_ble_preloader.bin   8359 bytes
-out\demo_ble_3in1\loader\demo_ble_loader.bin        16266 bytes
-out\demo_ble_3in1\upgrade\demo_ble_upgrade.bin       8519 bytes
-out\demo_ble_3in1\app\demo_ble.bin                  92991 bytes
-out\demo_ble_3in1\demo_ble_3in1.bin                212992 bytes
+out\build_matrix_fix\demo_freertos\demo.bin                     81368 bytes
+out\build_matrix_fix\demo_rtthread\demo.bin                     77156 bytes
+out\build_matrix_gcc9b\demo_ble_freertos\demo_ble.bin           96701 bytes
+out\build_matrix_gcc9b\demo_ble_rtthread\demo_ble.bin           90356 bytes
 ```

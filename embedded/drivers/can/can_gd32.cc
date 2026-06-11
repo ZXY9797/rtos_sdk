@@ -5,7 +5,9 @@
 
 #ifdef CONFIG_CAN_GD32
 
+extern "C" {
 #include "gd32f50x_can.h"
+}
 
 namespace hal {
 

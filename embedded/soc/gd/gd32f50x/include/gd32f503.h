@@ -226,6 +226,9 @@ typedef enum {
 #define TRNG_BASE                       (AHB2_BUS_BASE + 0x00006000U)
 #define IPA_BASE                        (AHB2_BUS_BASE + 0x00008000U)
 
+/* Core debug peripheral base address */
+#define DBG_BASE                        ((uint32_t)0xE0042000U)
+
 /* NVIC priority bits */
 #define __NVIC_PRIO_BITS                4U
 

@@ -39,7 +39,7 @@
 #include <cstdint>
 #include <cmath>
 
-// 鈹€鈹€鈹€ 甯搁噺 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// Constants
 
 namespace {
 
@@ -69,13 +69,13 @@ constexpr uint32_t NVS_OFFSET = 512U * 1024U - 3U * 2048U;
 
 constexpr float TWO_PI = 2.0f * 3.14159265358979323846f;
 
-// 鈹€鈹€鈹€ DM-4340 鍙傛暟 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// DM-4340 parameters
 
 constexpr float MOTOR_TORQUE_CONSTANT = 4.074f;
 constexpr float MOTOR_GEAR_RATIO = 40.0f;
 constexpr uint8_t MOTOR_POLE_PAIRS = 14;
 
-// 鈹€鈹€鈹€ NTC 鏌ヨ〃 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// NTC lookup table
 
 static const NtcPoint NTC_TABLE[] = {
     {-20.0f, 105.3847f}, {-15.0f, 77.8981f}, {-10.0f, 58.2457f},
@@ -92,11 +92,11 @@ static const NtcPoint NTC_TABLE[] = {
     {145.0f,  0.2233f},  {150.0f,  0.1997f},
 };
 
-// 鈹€鈹€鈹€ 澶氱數鏈轰笂涓嬫枃 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// Motor contexts
 
 static MotorContext g_motors[MAX_MOTORS];
 static uint8_t g_motor_count = 0;
-static uint8_t g_active_motor = 0;  // CLI 褰撳墠閫変腑鐨勭數鏈?
+static uint8_t g_active_motor = 0;  // Currently selected CLI motor.
 static osal::PeriodicThread *g_led_thread = nullptr;
 
 // IMU data updated from SensorCore ISR
@@ -109,7 +109,7 @@ static bool imu_read_in_isr(void *) {
 }
 #endif
 
-// 鈹€鈹€鈹€ Link 閫氫俊 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// Link communication
 
 #ifdef CONFIG_LINK
 static link::UartLink g_uart_link(app::board::console());
@@ -122,7 +122,7 @@ static void comm_init() {
     g_can_link.set_id(2);
     router.set_self_addr(link::make_addr(0x10, 0));
 
-    // 璺敱琛細PC(host_id=0x10) 鈫?UART, 涓绘帶(host_id=0x40) 鈫?CAN
+    // Route table: PC (host_id=0x10) to UART, main controller (host_id=0x40) to CAN.
     static const link::RouteEntry routes[] = {
         link::make_route(link::route_by_host(0x10, 0xF0).to(1)),
         link::make_route(link::route_by_host(0x40, 0xF0).to(2)),
@@ -138,7 +138,7 @@ static void comm_init() {
 static char cli_buf[CLI_BUF_SIZE];
 static size_t cli_pos = 0;
 
-// 鈹€鈹€鈹€ NVS 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// NVS
 
 static hal::Flash &nvs_flash() {
     static hal::Flash flash(hal::flash_create_default());
@@ -256,7 +256,7 @@ static void nvs_save_max_pos(MotorContext &ctx, float max_rad) {
     LOGI("nvs", "max pos saved: %.3f rad", max_rad);
 }
 
-// 鈹€鈹€鈹€ 閫熷害鐜嚎绋?(4kHz) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// Speed loop thread (4 kHz)
 
 static void speed_loop_entry(void *arg, const osal::PeriodicStats &) {
     auto &ctx = *static_cast<MotorContext *>(arg);
@@ -289,7 +289,7 @@ static void speed_loop_entry(void *arg, const osal::PeriodicStats &) {
     }
 }
 
-// 鈹€鈹€鈹€ 浣嶇疆鐜嚎绋?(1kHz) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// Position loop thread (1 kHz)
 
 static void pos_loop_entry(void *arg, const osal::PeriodicStats &) {
     auto &ctx = *static_cast<MotorContext *>(arg);
@@ -309,7 +309,7 @@ static void pos_loop_entry(void *arg, const osal::PeriodicStats &) {
     ctx.motor->set_torque(iq);
 }
 
-// 鈹€鈹€鈹€ 鎱㈠惊鐜嚎绋?(1kHz) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// Slow loop thread (1 kHz)
 
 static void slow_loop_entry(void *arg, const osal::PeriodicStats &stats) {
     auto &ctx = *static_cast<MotorContext *>(arg);
@@ -349,7 +349,7 @@ static void slow_loop_entry(void *arg, const osal::PeriodicStats &stats) {
         }
     }
 
-    // 鏍″噯鐘舵€佹満
+    // Calibration state machine
     if (ctx.calib.is_running()) {
         float iu = ctx.motor->phase_current_u();
         float iv = 0.0f;
@@ -432,7 +432,7 @@ static void slow_loop_entry(void *arg, const osal::PeriodicStats &stats) {
         }
     }
 
-    // 娴嬮噺瀹屾垚鑷姩淇濆瓨
+    // Auto-save completed measurement results.
     if (ctx.motor->measurement().is_done()) {
         auto &meas = ctx.motor->measurement();
         ctx.motor_cfg.rs = meas.rs();
@@ -451,7 +451,7 @@ static void slow_loop_entry(void *arg, const osal::PeriodicStats &stats) {
              static_cast<int>(ctx.ctrl_mode), ctx.protection.flag_str());
     }
 
-    // CAN 鐘舵€佷笂鎶?(10Hz)
+    // CAN status report (10 Hz)
     if ((stats.sequence % (SLOW_LOOP_HZ / 10)) == 0 && ctx.can.is_ready()) {
         ctx.can.report_status(static_cast<uint8_t>(ctx.ctrl_mode),
                               static_cast<uint32_t>(ctx.protection.flags()));
@@ -463,7 +463,7 @@ static void slow_loop_entry(void *arg, const osal::PeriodicStats &stats) {
         }
     }
 
-    // 棣栨涓婄數鑷姩鏍″噯
+    // First power-on auto calibration.
     if (ctx.auto_calib_pending && stats.sequence > 1000) {
         ctx.auto_calib_pending = false;
         LOGI("calib", "auto-calibration starting...");
@@ -474,16 +474,16 @@ static void slow_loop_entry(void *arg, const osal::PeriodicStats &stats) {
     }
 }
 
-// 鈹€鈹€鈹€ 闂幆浠诲姟 (2kHz, SensorCore 椹卞姩) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// Closed-loop task (2 kHz, SensorCore driven)
 
 static void ctrl_loop_entry(void *arg, const osal::PeriodicStats &stats) {
-    // TODO: 濮挎€佷及璁°€佸姏鎺х瓑
-    // g_imu_data 鍦ㄦ瘡娆″敜閱掓椂宸茬敱 SensorCore ISR 鏇存柊
+    // TODO: Add attitude estimation, force control, and related control logic.
+    // g_imu_data is updated by the SensorCore ISR on each wakeup.
     (void)arg;
     (void)stats;
 }
 
-// 鈹€鈹€鈹€ LED 蹇冭烦 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// LED heartbeat
 
 static void led_heartbeat_entry(void *, const osal::PeriodicStats &stats) {
     auto &led = app::board::status_led();
@@ -505,7 +505,7 @@ static void led_heartbeat_entry(void *, const osal::PeriodicStats &stats) {
     }
 }
 
-// 鈹€鈹€鈹€ CAN 鍛戒护鍥炶皟 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// CAN command callback
 
 static void can_cmd_callback(CanCmd cmd, const uint8_t *data, uint8_t len) {
     MotorContext &ctx = g_motors[g_active_motor];
@@ -595,7 +595,7 @@ static void can_cmd_callback(CanCmd cmd, const uint8_t *data, uint8_t len) {
     }
 }
 
-// 鈹€鈹€鈹€ CLI 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// CLI
 
 static void cli_process(const char *cmd) {
     MotorContext &ctx = g_motors[g_active_motor];
@@ -805,7 +805,7 @@ static void cli_process(const char *cmd) {
 
 } // namespace
 
-// 鈹€鈹€鈹€ 鍗曠數鏈哄垵濮嬪寲 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// Single motor initialization
 
 static int init_motor(MotorContext &ctx, uint8_t motor_idx) {
     char spd_name[16], pos_name[16], slw_name[16];
@@ -813,7 +813,7 @@ static int init_motor(MotorContext &ctx, uint8_t motor_idx) {
     snprintf(pos_name, sizeof(pos_name), "pos_%d", motor_idx);
     snprintf(slw_name, sizeof(slw_name), "slow_%d", motor_idx);
 
-    // NVS 鍔犺浇
+    // NVS load
     if (nvs_store().mount() == nvs::Status::Ok) {
         nvs_load_calib(ctx);
         nvs_load_pos_offset(ctx);
@@ -891,7 +891,7 @@ static int init_motor(MotorContext &ctx, uint8_t motor_idx) {
         ctx.pos_ctrl.set_max_pos_rad(ctx.max_pos_rad);
     }
 
-    // 淇濇姢
+    // Protection
     ProtectionConfig prot_cfg;
     prot_cfg.bus_overvoltage = 45.0f;
     prot_cfg.bus_undervoltage = 12.0f;
@@ -908,7 +908,7 @@ static int init_motor(MotorContext &ctx, uint8_t motor_idx) {
     prot_cfg.slow_recover_cnt = 2000;
     ctx.protection.init(prot_cfg);
 
-    // 閫熷害鐜?LESO
+    // Speed loop LESO
     SpeedController::Config spd_cfg;
     spd_cfg.leso.type = algo::LesoType::FirstOrder;
     spd_cfg.leso.omega = 3000.0f;
@@ -925,7 +925,7 @@ static int init_motor(MotorContext &ctx, uint8_t motor_idx) {
     ctx.can.init(ctx.can_base_id);
     ctx.can.set_callback(can_cmd_callback);
 
-    // 閫熷害鐜嚎绋?鈥?纭欢瀹氭椂鍣?TIMER5 椹卞姩 (4kHz)
+    // Speed loop thread, driven by hardware timer TIMER5 (4 kHz).
     auto &speed_tim = app::board::speed_timer();
     ctx.speed_loop = osal::PeriodicThread::create(spd_name,
         speed_loop_entry, &ctx,
@@ -980,7 +980,7 @@ static int init_motor(MotorContext &ctx, uint8_t motor_idx) {
         }
     }
 
-    // 棣栨涓婄數鑷姩鏍″噯
+    // First power-on auto calibration.
     if (!ctx.current_calib.calib_done || !ctx.pos_sensor.is_calibrated()) {
         ctx.auto_calib_pending = true;
         LOGI("foc", "motor %d: no calib data, auto-calib will run after 1s", motor_idx);
@@ -989,14 +989,14 @@ static int init_motor(MotorContext &ctx, uint8_t motor_idx) {
     return 0;
 }
 
-// 鈹€鈹€鈹€ 鍏叡鎺ュ彛 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// Public API
 
 namespace app {
 
 int start_control() {
     (void)nvs_flash().init();
 
-    // 鍒濆鍖?motor 0
+    // Initialize motor 0.
     auto &motor_dev = app::board::main_motor();
     auto &ctx0 = g_motors[0];
     ctx0.motor = &motor_dev.motor();
@@ -1015,7 +1015,7 @@ int start_control() {
     comm_init();
 #endif
 
-    // TODO: 濡傞渶绗簩鐢垫満锛屽湪姝ゅ鍒濆鍖?motor 1
+    // TODO: Initialize motor 1 here if a second motor is needed.
     // auto &motor_dev1 = app::board::secondary_motor();
     // auto &ctx1 = g_motors[1];
     // ctx1.motor = &motor_dev1.motor();
@@ -1025,7 +1025,7 @@ int start_control() {
     // g_motor_count = 2;
     // if (init_motor(ctx1, 1) != 0) return -1;
 
-    // LED 蹇冭烦
+    // LED heartbeat
     g_led_thread = osal::PeriodicThread::create("led_hb",
         led_heartbeat_entry, nullptr,
         LED_STACK, LED_PRIO,

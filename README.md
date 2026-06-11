@@ -127,13 +127,15 @@ SDK 提供厂商无关的 BLE API（`ble::` 命名空间），当前实现基于
 
 详见 [doc/LINK.md](doc/LINK.md)
 
-### 9. Bootloader — 公共 boot API + 三合一固件
+### 9. Bootloader — 分阶段启动 + DFU + loader 自升级
+
+当前 boot 链路分为 `preloader`、`loader`、`upgrade` 和 `app`。`preloader` 只负责按 `boot_ctrl` 选择跳转目标；`loader` 负责 DFU、app 校验和 app AB 拷贝；`upgrade` 负责 loader 自升级执行；`app` 只通过公开 boot API 发布产品元数据和设置启动标记。
 
 `boot_common` 提供 app、loader、preloader、upgrade 共享的镜像元数据、产品元数据、Flash 分区接口、镜像确认、SHA-256 和 DFU CRC。产品相关配置放在 `app/product/<product>` 和 `bootloader/product/<product>`，公共 bootloader 目录只保留跨产品源码。
 
 支持通过 `-DFIRMWARE_TYPE=app|preloader|loader|upgrade` 单独构建固件，也支持使用 `bootloader/scripts/build_3in1.py` 生成 `<product>_3in1.bin`。
 
-详见 [doc/BOOTLOADER.md](doc/BOOTLOADER.md)
+详见 [doc/BOOT_FLOW.md](doc/BOOT_FLOW.md) 和 [doc/BOOTLOADER.md](doc/BOOTLOADER.md)
 
 ### 10. 架构边界 — 产品编排与可复用组件分离
 
@@ -179,9 +181,9 @@ rtos_sdk/
 ├── bootloader/                   # 启动与升级固件
 │   ├── include/boot/             # 公开 boot API
 │   ├── common/                   # app/loader/preloader/upgrade 共享实现
-│   ├── loader/                   # 启动决策、DFU 协议处理、跳转应用
-│   ├── preloader/                # loader 自升级拷贝和早期交接
-│   ├── upgrade/                  # 写入新的 loader 镜像
+│   ├── loader/                   # 启动决策、DFU、app 校验与 app AB 拷贝
+│   ├── preloader/                # 第一阶段跳转选择，不做拷贝和 DFU
+│   ├── upgrade/                  # loader 自升级执行固件
 │   ├── product/                  # 产品 boot 配置、linker 和分区实现
 │   └── scripts/                  # 三合一固件构建与合并脚本
 │
@@ -204,6 +206,7 @@ rtos_sdk/
 ├── doc/                          # 文档
 │   ├── APP_LAYOUT.md             # app/product 产品目录约定
 │   ├── ARCHITECTURE.md           # 架构边界说明
+│   ├── BOOT_FLOW.md              # Boot 启动与升级关系
 │   ├── BOOTLOADER.md             # Bootloader 构建与目录约定
 │   ├── INITCALL.md               # initcall 自动初始化
 │   ├── DEVICE_TRAIT.md           # DeviceTrait 编译期分发

@@ -1,4 +1,4 @@
-set(FREERTOS_DIR "../rtos/freertos")
+set(FREERTOS_DIR "${CMAKE_CURRENT_LIST_DIR}/../rtos/freertos")
 
 # Select FreeRTOS port based on CPU core
 if(CONFIG_CPU_CORTEX_M7)

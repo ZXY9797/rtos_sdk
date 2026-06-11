@@ -36,11 +36,6 @@ void boot_logic() {
     }
 
     if (flag == BOOT_CTRL_UPGRADE_LOADER) {
-        const uint32_t slot0_addr = flash_area_addr(FLASH_AREA_SLOT0);
-        if (check_image(slot0_addr, 0)) {
-            jump_to_app(slot0_addr);
-        }
-
         (void)boot_ctrl_clear();
         (void)loader_upgrade_clear();
         enter_dfu();
