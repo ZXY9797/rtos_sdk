@@ -31,22 +31,14 @@ target_sources(${MODULE_NAME}
         upgrade_logic/flash_copy.cc
         protocol/protocol.cc
         transport.cc
+        ${DRIVERS_GENERATED_CC}
         ${PINCTRL_GENERATED_CC}
         ${BOOT_FLASH_MAP_SOURCE}
-)
-
-target_sources_ifdef(CONFIG_BOOT_DFU_UART ${MODULE_NAME}
-    PRIVATE
-        ${DRIVERS_GENERATED_CC}
 )
 
 target_link_libraries(${MODULE_NAME}
     PRIVATE
         boot_common
-)
-
-target_link_libraries_ifdef(CONFIG_BOOT_DFU_UART ${MODULE_NAME}
-    PRIVATE
         drivers
         osal
 )
