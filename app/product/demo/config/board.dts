@@ -19,30 +19,26 @@
         compatible = "gd,gd32-pinctrl";
 
         usart0_tx_pa9: usart0_tx_pa9 {
-            pinmux = <GD32_PINMUX_GPIOA(9, 7)>;
-            drive-push-pull;
-            slew-rate = <3>;
+            pinmux = <GD32_PINMUX_AF(GD32_PORT_A, 9, 7,
+                                      GD32_PULL_NONE,
+                                      GD32_DRIVE_PUSH_PULL, 3)>;
         };
 
         usart0_rx_pa10: usart0_rx_pa10 {
-            pinmux = <GD32_PINMUX_GPIOA(10, 7)>;
-            bias-pull-up;
-            slew-rate = <3>;
+            pinmux = <GD32_PINMUX_AF(GD32_PORT_A, 10, 7,
+                                      GD32_PULL_UP,
+                                      GD32_DRIVE_PUSH_PULL, 3)>;
         };
 
         green_led_pa5: green_led_pa5 {
-            pinmux = <GD32_PINMUX_GPIOA(5, 0)>;
-            output-enable;
-            output-low;
-            drive-push-pull;
-            slew-rate = <2>;
+            pinmux = <GD32_PINMUX_OUTPUT_LOW(GD32_PORT_A, 5,
+                                             GD32_PULL_NONE,
+                                             GD32_DRIVE_PUSH_PULL, 2)>;
         };
 
         user_key_pa0: user_key_pa0 {
-            pinmux = <GD32_PINMUX_GPIOA(0, 0)>;
-            input-enable;
-            bias-pull-up;
-            slew-rate = <0>;
+            pinmux = <GD32_PINMUX_INPUT(GD32_PORT_A, 0,
+                                        GD32_PULL_UP, 0)>;
         };
     };
 

@@ -3,9 +3,3 @@ menuconfig PINCTRL
 	help
 	  将引脚控制驱动纳入系统配置，用于在设备驱动初始化前完成 IO 复用、
 	  上下拉和默认输出状态配置。
-
-if PINCTRL
-
-rsource "Kconfig.gd32"
-
-endif # PINCTRL

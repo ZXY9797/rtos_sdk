@@ -37,6 +37,25 @@ SECTIONS
         . = ALIGN(4);
     } > FLASH
 
+    initlevel : ALIGN(4)
+    {
+        __init_start = .;
+        __init_EARLY_start = .;
+        KEEP(*(.z_init_EARLY*))
+        __init_PRE_KERNEL_1_start = .;
+        KEEP(*(.z_init_PRE_KERNEL_1*))
+        __init_PRE_KERNEL_2_start = .;
+        KEEP(*(.z_init_PRE_KERNEL_2*))
+        __init_PRE_KERNEL_3_start = .;
+        KEEP(*(.z_init_PRE_KERNEL_3*))
+        __init_POST_KERNEL_start = .;
+        KEEP(*(.z_init_POST_KERNEL*))
+        __init_APPLICATION_start = .;
+        KEEP(*(.z_init_APPLICATION*))
+        __init_end = .;
+        . = ALIGN(4);
+    } > FLASH
+
     rodata : ALIGN(4)
     {
         *(.rodata)

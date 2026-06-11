@@ -7,49 +7,28 @@
 namespace hal {
 namespace pinctrl {
 
-enum class PinMode : uint8_t {
-    Input,
-    Output,
-    Alternate,
-    Analog,
-};
-
-enum class Pull : uint8_t {
-    None,
-    Up,
-    Down,
-};
-
-enum class Drive : uint8_t {
-    PushPull,
-    OpenDrain,
-};
-
-enum class OutputState : uint8_t {
-    Unchanged,
-    Low,
-    High,
+enum class OperationType : uint8_t {
+    Rmw = 0,
+    Write = 1,
 };
 
 /**
- * @brief DTS 生成的引脚配置项。
+ * @brief DTS 生成的通用 MMIO 操作。
  *
- * pinmux 的编码由 SoC dt-binding 定义，公共生成器只负责搬运配置，
- * 具体端口、引脚和复用功能的解码由各芯片 pinctrl 驱动完成。
+ * SoC 差异由 dt-bindings/pinctrl 下的宏展开为 MMIO 操作流；
+ * 运行时只按操作类型执行寄存器读改写或直接写。
  */
-struct PinConfig {
-    uint32_t pinmux;
-    PinMode mode;
-    Pull pull;
-    Drive drive;
-    OutputState output;
-    uint8_t slew_rate;
+struct Operation {
+    OperationType type;
+    uintptr_t address;
+    uint32_t clear_mask;
+    uint32_t set_value;
 };
 
 /**
- * @brief 批量应用一组引脚配置。
+ * @brief 批量应用一组 pinctrl 操作。
  */
-Status apply(const PinConfig *pins, std::size_t count);
+Status apply(const Operation *ops, std::size_t count);
 
 } // namespace pinctrl
 } // namespace hal

@@ -46,7 +46,7 @@ else()
 endif()
 
 set(CMAKE_EXE_LINKER_FLAGS
-    "${CMAKE_EXE_LINKER_FLAGS} -T ${LINKER_SCRIPT} -Wl,-Map=${PROJECT_BINARY_DIR}/${LINK_MAP_NAME}.map -Wl,--gc-sections,--print-memory-usage ${UNRESOLVED_FLAG} ${VECTOR_TABLE_LINK_FLAG}"
+    "-T ${LINKER_SCRIPT} -Wl,-Map=${PROJECT_BINARY_DIR}/${LINK_MAP_NAME}.map -Wl,--gc-sections,--print-memory-usage ${UNRESOLVED_FLAG} ${VECTOR_TABLE_LINK_FLAG}"
     CACHE STRING "" FORCE
 )
 

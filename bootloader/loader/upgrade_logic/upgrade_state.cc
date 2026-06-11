@@ -69,11 +69,8 @@ uint8_t upgrade_verify(const uint8_t expected_hash[32]) {
     uint32_t base = flash_area_addr(FLASH_AREA_SLOT0);
 #endif
 
-    (void)base;
-
     uint8_t computed[32];
-    // TODO: 对实际写入的数据计算 SHA-256
-    // sha256(reinterpret_cast<const uint8_t *>(base), g_rx_offset, computed);
+    sha256(reinterpret_cast<const uint8_t *>(base), g_rx_offset, computed);
 
     if (memcmp(computed, expected_hash, 32) != 0) {
         return boot_proto::ACK_ERR_HASH;

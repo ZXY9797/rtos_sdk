@@ -1,7 +1,0 @@
-config PINCTRL_GD32
-	bool "GD32 pin control driver"
-	depends on SOC_SERIES_GD32F50X
-	default y
-	help
-	  根据 DTS pinctrl 状态配置 GD32 的 GPIO 模式、复用功能、上下拉、
-	  输出类型和默认输出电平。

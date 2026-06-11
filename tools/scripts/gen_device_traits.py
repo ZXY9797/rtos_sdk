@@ -922,46 +922,23 @@ def resolve_init_level(spec, dt_data):
     return INIT_LEVELS[level]
 
 
-def _has_prop(dt_data, node_id, prop):
-    return bool(dt_data.get('direct_props', {}).get((node_id, prop), 0))
+PINCTRL_OP_RMW = 0
+PINCTRL_OP_WRITE = 1
+PINCTRL_OP_CELLS = 4
 
 
-def _pinctrl_pin_mode(dt_data, state_node):
-    if _has_prop(dt_data, state_node, 'analog_enable'):
-        return 'Analog'
-    if (_has_prop(dt_data, state_node, 'output_enable') or
-            _has_prop(dt_data, state_node, 'output_low') or
-            _has_prop(dt_data, state_node, 'output_high')):
-        return 'Output'
-    if _has_prop(dt_data, state_node, 'input_enable'):
-        return 'Input'
-    return 'Alternate'
-
-
-def _pinctrl_pull(dt_data, state_node):
-    if _has_prop(dt_data, state_node, 'bias_pull_up'):
-        return 'Up'
-    if _has_prop(dt_data, state_node, 'bias_pull_down'):
-        return 'Down'
-    return 'None'
-
-
-def _pinctrl_drive(dt_data, state_node):
-    if _has_prop(dt_data, state_node, 'drive_open_drain'):
-        return 'OpenDrain'
-    return 'PushPull'
-
-
-def _pinctrl_output(dt_data, state_node):
-    if _has_prop(dt_data, state_node, 'output_high'):
-        return 'High'
-    if _has_prop(dt_data, state_node, 'output_low'):
-        return 'Low'
-    return 'Unchanged'
+def _pinctrl_op_type_name(op_type):
+    names = {
+        PINCTRL_OP_RMW: 'Rmw',
+        PINCTRL_OP_WRITE: 'Write',
+    }
+    if op_type not in names:
+        raise ValueError(f'unknown pinctrl operation type: {op_type}')
+    return names[op_type]
 
 
 def collect_pinctrl_configs(dt_data):
-    """从所有启用节点的 pinctrl-0 状态收集默认引脚配置。"""
+    """从所有启用节点的 pinctrl-0 状态收集默认 MMIO 操作。"""
     configs = []
     seen = set()
     array_props = dt_data.get('array_props', {})
@@ -979,28 +956,30 @@ def collect_pinctrl_configs(dt_data):
             pinmux_values = array_props.get((state_node, 'pinmux'), [])
             if not pinmux_values:
                 continue
+            if len(pinmux_values) % PINCTRL_OP_CELLS != 0:
+                raise ValueError(
+                    f'pinctrl state {state_node} pinmux length '
+                    f'{len(pinmux_values)} is not a multiple of '
+                    f'{PINCTRL_OP_CELLS}')
 
-            mode = _pinctrl_pin_mode(dt_data, state_node)
-            pull = _pinctrl_pull(dt_data, state_node)
-            drive = _pinctrl_drive(dt_data, state_node)
-            output = _pinctrl_output(dt_data, state_node)
-            slew_rate = dt_data.get('direct_props', {}).get(
-                (state_node, 'slew_rate'), 3)
-
-            for pinmux in pinmux_values:
-                key = (pinmux, mode, pull, drive, output, slew_rate)
+            for offset in range(0, len(pinmux_values), PINCTRL_OP_CELLS):
+                op_type = pinmux_values[offset]
+                address = pinmux_values[offset + 1]
+                clear_mask = pinmux_values[offset + 2]
+                set_value = pinmux_values[offset + 3]
+                op_type_name = _pinctrl_op_type_name(op_type)
+                key = (op_type, address, clear_mask, set_value)
                 if key in seen:
                     continue
                 seen.add(key)
                 configs.append({
                     'source_node': node_id,
                     'state_node': state_node,
-                    'pinmux': pinmux,
-                    'mode': mode,
-                    'pull': pull,
-                    'drive': drive,
-                    'output': output,
-                    'slew_rate': slew_rate,
+                    'op_type': op_type,
+                    'op_type_name': op_type_name,
+                    'address': address,
+                    'clear_mask': clear_mask,
+                    'set_value': set_value,
                 })
 
     return configs
@@ -1030,17 +1009,15 @@ def write_pinctrl_cc_output(pinctrl_configs, cc_path):
         '',
         'namespace hal {',
         '',
-        'static const pinctrl::PinConfig _pinctrl_default[] = {',
+        'static const pinctrl::Operation _pinctrl_default[] = {',
     ])
 
     for cfg in pinctrl_configs:
         lines.append(
-            f'    {{ {_format_u32(cfg["pinmux"])}, '
-            f'pinctrl::PinMode::{cfg["mode"]}, '
-            f'pinctrl::Pull::{cfg["pull"]}, '
-            f'pinctrl::Drive::{cfg["drive"]}, '
-            f'pinctrl::OutputState::{cfg["output"]}, '
-            f'{int(cfg["slew_rate"])}U }},')
+            f'    {{ pinctrl::OperationType::{cfg["op_type_name"]}, '
+            f'{_format_u32(cfg["address"])}, '
+            f'{_format_u32(cfg["clear_mask"])}, '
+            f'{_format_u32(cfg["set_value"])} }},')
 
     lines.extend([
         '};',
