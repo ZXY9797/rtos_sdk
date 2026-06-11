@@ -47,6 +47,7 @@ include_directories(${BINARY_DIR_INCLUDE_GENERATED})
 
 add_subdirectory(embedded)
 add_subdirectory(component)
+add_subdirectory(bootloader/common)
 add_subdirectory(${PROJECT_DIR})
 
 add_executable(${PROJECT_NAME} ${NULL_C})

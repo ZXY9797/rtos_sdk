@@ -3,7 +3,6 @@ cmake_minimum_required(VERSION 3.20)
 set(MODULE_NAME app)
 add_library(${MODULE_NAME} ${NULL_C})
 
-set(BOOT_INCLUDE_DIR ${CMAKE_CURRENT_LIST_DIR}/../include)
 set(UPGRADE_INCLUDE_DIR ${CMAKE_CURRENT_LIST_DIR}/include)
 set(BOOT_FLASH_MAP_SOURCE ${PROJECT_BOOT_COMMON_DIR}/flash_map.cc)
 if(NOT EXISTS "${BOOT_FLASH_MAP_SOURCE}")
@@ -19,7 +18,6 @@ target_include_directories(${MODULE_NAME}
         ${BSP_DIR}/modules/cmsis/CMSIS/Core/Include
         ${BSP_DIR}/modules/cmsis
         ${BSP_DIR}/soc/gd/gd32f50x
-        ${BOOT_INCLUDE_DIR}
         ${UPGRADE_INCLUDE_DIR}
         ${PROJECT_PRODUCT_DIR}/include
 )
@@ -29,4 +27,9 @@ target_sources(${MODULE_NAME}
         src/upgrade_main.cc
         src/loader_flash.cc
         ${BOOT_FLASH_MAP_SOURCE}
+)
+
+target_link_libraries(${MODULE_NAME}
+    PRIVATE
+        boot_common
 )

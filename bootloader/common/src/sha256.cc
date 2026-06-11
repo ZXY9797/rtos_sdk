@@ -1,12 +1,8 @@
 #include <boot/sha256.h>
-#include <cstring>
 
 namespace boot {
 
-// 软件 SHA-256 实现 (tiny SHA-256)
-// 硬件 HAU 版本在 sha256_hau.cc 中
-
-static const uint32_t K[64] = {
+static constexpr uint32_t K[64] = {
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
     0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
     0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
@@ -25,13 +21,33 @@ static const uint32_t K[64] = {
     0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
 };
 
-#define ROTR(x, n) (((x) >> (n)) | ((x) << (32 - (n))))
-#define CH(x, y, z)  (((x) & (y)) ^ (~(x) & (z)))
-#define MAJ(x, y, z) (((x) & (y)) ^ ((x) & (z)) ^ ((y) & (z)))
-#define EP0(x) (ROTR(x, 2) ^ ROTR(x, 13) ^ ROTR(x, 22))
-#define EP1(x) (ROTR(x, 6) ^ ROTR(x, 11) ^ ROTR(x, 25))
-#define SIG0(x) (ROTR(x, 7) ^ ROTR(x, 18) ^ ((x) >> 3))
-#define SIG1(x) (ROTR(x, 17) ^ ROTR(x, 19) ^ ((x) >> 10))
+static constexpr uint32_t rotr(uint32_t x, uint32_t n) {
+    return (x >> n) | (x << (32U - n));
+}
+
+static constexpr uint32_t ch(uint32_t x, uint32_t y, uint32_t z) {
+    return (x & y) ^ (~x & z);
+}
+
+static constexpr uint32_t maj(uint32_t x, uint32_t y, uint32_t z) {
+    return (x & y) ^ (x & z) ^ (y & z);
+}
+
+static constexpr uint32_t ep0(uint32_t x) {
+    return rotr(x, 2U) ^ rotr(x, 13U) ^ rotr(x, 22U);
+}
+
+static constexpr uint32_t ep1(uint32_t x) {
+    return rotr(x, 6U) ^ rotr(x, 11U) ^ rotr(x, 25U);
+}
+
+static constexpr uint32_t sig0(uint32_t x) {
+    return rotr(x, 7U) ^ rotr(x, 18U) ^ (x >> 3U);
+}
+
+static constexpr uint32_t sig1(uint32_t x) {
+    return rotr(x, 17U) ^ rotr(x, 19U) ^ (x >> 10U);
+}
 
 static void sha256_transform(Sha256Ctx &ctx) {
     uint32_t w[64];
@@ -42,7 +58,7 @@ static void sha256_transform(Sha256Ctx &ctx) {
                uint32_t(ctx.buffer[i * 4 + 3]);
     }
     for (int i = 16; i < 64; i++) {
-        w[i] = SIG1(w[i - 2]) + w[i - 7] + SIG0(w[i - 15]) + w[i - 16];
+        w[i] = sig1(w[i - 2]) + w[i - 7] + sig0(w[i - 15]) + w[i - 16];
     }
 
     uint32_t a = ctx.state[0], b = ctx.state[1];
@@ -51,8 +67,8 @@ static void sha256_transform(Sha256Ctx &ctx) {
     uint32_t g = ctx.state[6], h = ctx.state[7];
 
     for (int i = 0; i < 64; i++) {
-        uint32_t t1 = h + EP1(e) + CH(e, f, g) + K[i] + w[i];
-        uint32_t t2 = EP0(a) + MAJ(a, b, c);
+        uint32_t t1 = h + ep1(e) + ch(e, f, g) + K[i] + w[i];
+        uint32_t t2 = ep0(a) + maj(a, b, c);
         h = g; g = f; f = e; e = d + t1;
         d = c; c = b; b = a; a = t1 + t2;
     }
@@ -96,13 +112,14 @@ void sha256_final(Sha256Ctx &ctx, uint8_t hash[32]) {
     }
     while (idx < 56) ctx.buffer[idx++] = 0;
 
-    for (int i = 7; i >= 0; i--)
+    for (int i = 7; i >= 0; i--) {
         ctx.buffer[idx++] = uint8_t(bits >> (i * 8));
+    }
 
     sha256_transform(ctx);
 
     for (int i = 0; i < 8; i++) {
-        hash[i * 4]     = uint8_t(ctx.state[i] >> 24);
+        hash[i * 4] = uint8_t(ctx.state[i] >> 24);
         hash[i * 4 + 1] = uint8_t(ctx.state[i] >> 16);
         hash[i * 4 + 2] = uint8_t(ctx.state[i] >> 8);
         hash[i * 4 + 3] = uint8_t(ctx.state[i]);
@@ -116,4 +133,4 @@ void sha256(const uint8_t *data, size_t len, uint8_t hash[32]) {
     sha256_final(ctx, hash);
 }
 
-} // namespace boot
+} // 命名空间 boot

@@ -1,7 +1,7 @@
 #include <boot/image.h>
-#include <cstring>
 
-// 由链接脚本定义
+#include <cstdint>
+
 extern "C" uint32_t __rom_region_start;
 
 namespace boot {
@@ -11,10 +11,10 @@ void confirm_image() {
     if (hdr->magic != IMAGE_MAGIC) return;
     if (hdr->flags & IMAGE_F_CONFIRMED) return;
 
-    // TODO: 实际 flash 操作
-    // 1. 读出 header 到 RAM
-    // 2. 修改 flags |= IMAGE_F_CONFIRMED
-    // 3. erase + write flash
+    // 待办：应用自写闪存能力接通后，通过闪存驱动完成确认写回。
+    // 1. 将镜像头读到 RAM。
+    // 2. 设置 IMAGE_F_CONFIRMED 标志。
+    // 3. 擦除并重写镜像头所在扇区。
 }
 
-} // namespace boot
+} // 命名空间 boot
