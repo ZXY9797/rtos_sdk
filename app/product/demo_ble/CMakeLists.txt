@@ -16,6 +16,7 @@ target_sources(${MODULE_NAME}
         main.cc
         ble_app.cc
         ${DRIVERS_GENERATED_CC}
+        ${PINCTRL_GENERATED_CC}
 )
 
 target_link_libraries(${MODULE_NAME}

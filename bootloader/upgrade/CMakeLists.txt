@@ -26,6 +26,7 @@ target_sources(${MODULE_NAME}
     PRIVATE
         src/upgrade_main.cc
         src/loader_flash.cc
+        ${PINCTRL_GENERATED_CC}
         ${BOOT_FLASH_MAP_SOURCE}
 )
 

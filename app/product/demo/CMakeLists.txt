@@ -27,6 +27,7 @@ target_sources(${MODULE_NAME}
         controller/calibration.cc
         comm/can_handler.cc
         ${DRIVERS_GENERATED_CC}
+        ${PINCTRL_GENERATED_CC}
 )
 
 target_link_libraries(${MODULE_NAME}

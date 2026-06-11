@@ -66,6 +66,13 @@ def normalize_prop_name(name):
     return str(name).replace('-', '_')
 
 
+def parse_int_literal(value):
+    return int(value, 0)
+
+
+INT_LITERAL_RE = r'(?:0[xX][0-9A-Fa-f]+|\d+)'
+
+
 def parse_driver_requires(raw_requires, filepath):
     """Parse cxx-driver.requires into normalized dependency descriptors."""
     if raw_requires is None:
@@ -313,16 +320,38 @@ def parse_generated_header(filepath):
 
     # 属性字段值: node_P_prop_IDX_0_VAL_field <number>
     val_re = re.compile(
-        r'^#define\s+(DT_N_(?:S_\w+)+)_P_(\w+)_IDX_\d+_VAL_(\w+)\s+(\d+)',
+        r'^#define\s+(DT_N_(?:S_\w+)+)_P_(\w+)_IDX_\d+_VAL_(\w+)\s+'
+        f'({INT_LITERAL_RE})',
         re.MULTILINE)
     prop_fields = {}
     for m in val_re.finditer(content):
-        prop_fields[(m.group(1), m.group(2), m.group(3))] = int(m.group(4))
+        prop_fields[(m.group(1), m.group(2), m.group(3))] = parse_int_literal(m.group(4))
+
+    # 数组属性：node_P_prop_IDX_n <number>，用于 pinctrl/pinmux 等普通数组
+    array_re = re.compile(
+        r'^#define\s+(DT_N_(?:S_\w+)+)_P_(\w+)_IDX_(\d+)\s+'
+        f'({INT_LITERAL_RE})',
+        re.MULTILINE)
+    array_props = {}
+    for m in array_re.finditer(content):
+        node_id = m.group(1)
+        prop = m.group(2)
+        idx = int(m.group(3))
+        value = parse_int_literal(m.group(4))
+        array_props.setdefault((node_id, prop), []).append((idx, value))
+
+    array_props = {
+        key: [value for _, value in sorted(values)]
+        for key, values in array_props.items()
+    }
 
     # 直接整数属性
     direct_props = {}
     for line in content.splitlines():
-        m = re.match(r'^#define\s+(DT_N_(?:S_\w+)+)_P_(\w+)\s+(\d+)\s*$', line)
+        m = re.match(
+            r'^#define\s+(DT_N_(?:S_\w+)+)_P_(\w+)\s+'
+            f'({INT_LITERAL_RE})\\s*$',
+            line)
         if not m:
             continue
         prop = m.group(2)
@@ -330,7 +359,7 @@ def parse_generated_header(filepath):
             continue
         if any(f'_{p}_' in prop for p in ('IDX', 'FOREACH', 'ENUM', 'PHA')):
             continue
-        direct_props[(m.group(1), prop)] = int(m.group(3))
+        direct_props[(m.group(1), prop)] = parse_int_literal(m.group(3))
 
     # 直接字符串属性，例如 node_P_init_level "pre-kernel-3"
     string_prop_re = re.compile(
@@ -381,6 +410,7 @@ def parse_generated_header(filepath):
         'phandles': phandles,
         'phandle_refs': phandle_refs,
         'prop_fields': prop_fields,
+        'array_props': array_props,
         'direct_props': direct_props,
         'string_props': string_props,
         'aliases': aliases,
@@ -892,6 +922,145 @@ def resolve_init_level(spec, dt_data):
     return INIT_LEVELS[level]
 
 
+def _has_prop(dt_data, node_id, prop):
+    return bool(dt_data.get('direct_props', {}).get((node_id, prop), 0))
+
+
+def _pinctrl_pin_mode(dt_data, state_node):
+    if _has_prop(dt_data, state_node, 'analog_enable'):
+        return 'Analog'
+    if (_has_prop(dt_data, state_node, 'output_enable') or
+            _has_prop(dt_data, state_node, 'output_low') or
+            _has_prop(dt_data, state_node, 'output_high')):
+        return 'Output'
+    if _has_prop(dt_data, state_node, 'input_enable'):
+        return 'Input'
+    return 'Alternate'
+
+
+def _pinctrl_pull(dt_data, state_node):
+    if _has_prop(dt_data, state_node, 'bias_pull_up'):
+        return 'Up'
+    if _has_prop(dt_data, state_node, 'bias_pull_down'):
+        return 'Down'
+    return 'None'
+
+
+def _pinctrl_drive(dt_data, state_node):
+    if _has_prop(dt_data, state_node, 'drive_open_drain'):
+        return 'OpenDrain'
+    return 'PushPull'
+
+
+def _pinctrl_output(dt_data, state_node):
+    if _has_prop(dt_data, state_node, 'output_high'):
+        return 'High'
+    if _has_prop(dt_data, state_node, 'output_low'):
+        return 'Low'
+    return 'Unchanged'
+
+
+def collect_pinctrl_configs(dt_data):
+    """从所有启用节点的 pinctrl-0 状态收集默认引脚配置。"""
+    configs = []
+    seen = set()
+    array_props = dt_data.get('array_props', {})
+    phandle_refs = dt_data.get('phandle_refs', {})
+
+    for node_id, ord_val in sorted(dt_data['ordinals'].items(),
+                                   key=lambda item: item[1]):
+        if not is_node_enabled(node_id, dt_data):
+            continue
+
+        for state_node in phandle_refs.get((node_id, 'pinctrl_0'), []):
+            if not is_node_enabled(state_node, dt_data):
+                continue
+
+            pinmux_values = array_props.get((state_node, 'pinmux'), [])
+            if not pinmux_values:
+                continue
+
+            mode = _pinctrl_pin_mode(dt_data, state_node)
+            pull = _pinctrl_pull(dt_data, state_node)
+            drive = _pinctrl_drive(dt_data, state_node)
+            output = _pinctrl_output(dt_data, state_node)
+            slew_rate = dt_data.get('direct_props', {}).get(
+                (state_node, 'slew_rate'), 3)
+
+            for pinmux in pinmux_values:
+                key = (pinmux, mode, pull, drive, output, slew_rate)
+                if key in seen:
+                    continue
+                seen.add(key)
+                configs.append({
+                    'source_node': node_id,
+                    'state_node': state_node,
+                    'pinmux': pinmux,
+                    'mode': mode,
+                    'pull': pull,
+                    'drive': drive,
+                    'output': output,
+                    'slew_rate': slew_rate,
+                })
+
+    return configs
+
+
+def _format_u32(value):
+    return f'0x{int(value) & 0xFFFFFFFF:X}U'
+
+
+def write_pinctrl_cc_output(pinctrl_configs, cc_path):
+    """生成 pinctrl_generated.cc：只负责默认 IO 状态 initcall。"""
+    lines = [
+        '// Auto-generated by gen_device_traits.py. DO NOT EDIT.',
+        '',
+    ]
+
+    if not pinctrl_configs:
+        lines.append('// No pinctrl states found.')
+        lines.append('')
+        with open(cc_path, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(lines))
+        return
+
+    lines.extend([
+        '#include <init.h>',
+        '#include <pinctrl.h>',
+        '',
+        'namespace hal {',
+        '',
+        'static const pinctrl::PinConfig _pinctrl_default[] = {',
+    ])
+
+    for cfg in pinctrl_configs:
+        lines.append(
+            f'    {{ {_format_u32(cfg["pinmux"])}, '
+            f'pinctrl::PinMode::{cfg["mode"]}, '
+            f'pinctrl::Pull::{cfg["pull"]}, '
+            f'pinctrl::Drive::{cfg["drive"]}, '
+            f'pinctrl::OutputState::{cfg["output"]}, '
+            f'{int(cfg["slew_rate"])}U }},')
+
+    lines.extend([
+        '};',
+        '',
+        'static int _init_pinctrl_default() {',
+        '    return static_cast<int>(',
+        '        pinctrl::apply(_pinctrl_default,',
+        '                       sizeof(_pinctrl_default) / sizeof(_pinctrl_default[0])));',
+        '}',
+        '',
+        '} // namespace hal',
+        '',
+        'SYS_INIT(hal::_init_pinctrl_default, INITCALL_LEVEL_PRE_KERNEL_1, 5);',
+        '',
+    ])
+
+    with open(cc_path, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(lines))
+
+
 def write_cc_output(specs, cc_path, dt_data):
     """生成 drivers_generated.cc — 实例定义 + initcall 注册。"""
     lines = [
@@ -899,10 +1068,13 @@ def write_cc_output(specs, cc_path, dt_data):
         '',
         '#include <drivers_generated.h>',
         '#include <init.h>',
+    ]
+
+    lines.extend([
         '',
         'namespace hal {',
         '',
-    ]
+    ])
 
     init_funcs = []  # (alias, func_name, level_macro, priority)
 
@@ -1005,6 +1177,7 @@ def write_device_report(specs, report_path, dt_data):
     """Write a JSON report for generated device model diagnostics."""
     spec_by_node = {s['node_id']: s for s in specs}
     devices = []
+    pinctrl_configs = collect_pinctrl_configs(dt_data)
 
     for spec in sorted(specs, key=lambda item: item['ord']):
         deps = []
@@ -1044,6 +1217,8 @@ def write_device_report(specs, report_path, dt_data):
         'device_count': len(devices),
         'enabled_count': sum(1 for item in devices if item['enabled']),
         'devices': devices,
+        'pinctrl_count': len(pinctrl_configs),
+        'pinctrl': pinctrl_configs,
     }
 
     with open(report_path, 'w', encoding='utf-8') as f:
@@ -1053,7 +1228,9 @@ def write_device_report(specs, report_path, dt_data):
 
 def main():
     if len(sys.argv) < 3:
-        print(f'用法: {sys.argv[0]} <devicetree_generated.h> <output.h> [bindings_dir] [output.cc]')
+        print(
+            f'用法: {sys.argv[0]} <devicetree_generated.h> <output.h> '
+            f'[bindings_dir] [drivers.cc] [devices.json] [pinctrl.cc]')
         sys.exit(1)
 
     dt_header = sys.argv[1]
@@ -1061,6 +1238,7 @@ def main():
     bindings_dir = sys.argv[3] if len(sys.argv) > 3 else None
     cc_path = sys.argv[4] if len(sys.argv) > 4 else None
     report_path = sys.argv[5] if len(sys.argv) > 5 else None
+    pinctrl_cc_path = sys.argv[6] if len(sys.argv) > 6 else None
 
     # 1. 扫描 binding YAML
     compat_map = {}
@@ -1099,6 +1277,12 @@ def main():
                 f.write('// Auto-generated by gen_device_traits.py. DO NOT EDIT.\n')
                 f.write('// No devices with init-cfg found.\n')
             print(f'生成 {cc_path}: 无 initcall（无 init-cfg 节点）')
+
+
+    if pinctrl_cc_path:
+        pinctrl_configs = collect_pinctrl_configs(dt_data)
+        write_pinctrl_cc_output(pinctrl_configs, pinctrl_cc_path)
+        print(f'生成 {pinctrl_cc_path}: {len(pinctrl_configs)} 个 pinctrl 配置')
 
 
     if report_path:

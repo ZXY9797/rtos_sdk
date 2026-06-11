@@ -2,7 +2,7 @@ description: GD32 USART
 
 compatible: "gd,gd32-usart"
 
-include: [uart-controller.yaml, base.yaml]
+include: [uart-controller.yaml, base.yaml, pinctrl-device.yaml]
 
 cxx-driver:
   template: Uart

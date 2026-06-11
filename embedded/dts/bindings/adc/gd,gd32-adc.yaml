@@ -2,7 +2,7 @@ description: GD32 ADC controller
 
 compatible: "gd,gd32-adc"
 
-include: [adc-controller.yaml, base.yaml]
+include: [adc-controller.yaml, base.yaml, pinctrl-device.yaml]
 
 cxx-driver:
   template: Adc

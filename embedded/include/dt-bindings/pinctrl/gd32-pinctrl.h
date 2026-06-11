@@ -1,0 +1,33 @@
+#ifndef EMBEDDED_INCLUDE_DT_BINDINGS_PINCTRL_GD32_PINCTRL_H_
+#define EMBEDDED_INCLUDE_DT_BINDINGS_PINCTRL_GD32_PINCTRL_H_
+
+#define GD32_PINMUX_PORT_SHIFT 8U
+#define GD32_PINMUX_PIN_SHIFT  4U
+#define GD32_PINMUX_AF_MASK    0x0FU
+
+#define GD32_PORT_A 0U
+#define GD32_PORT_B 1U
+#define GD32_PORT_C 2U
+#define GD32_PORT_D 3U
+#define GD32_PORT_E 4U
+#define GD32_PORT_F 5U
+#define GD32_PORT_G 6U
+#define GD32_PORT_H 7U
+#define GD32_PORT_I 8U
+
+#define GD32_PINMUX(port, pin, af) \
+    ((((port) & 0xFFU) << GD32_PINMUX_PORT_SHIFT) | \
+     (((pin) & 0x0FU) << GD32_PINMUX_PIN_SHIFT) | \
+     ((af) & GD32_PINMUX_AF_MASK))
+
+#define GD32_PINMUX_GPIOA(pin, af) GD32_PINMUX(GD32_PORT_A, pin, af)
+#define GD32_PINMUX_GPIOB(pin, af) GD32_PINMUX(GD32_PORT_B, pin, af)
+#define GD32_PINMUX_GPIOC(pin, af) GD32_PINMUX(GD32_PORT_C, pin, af)
+#define GD32_PINMUX_GPIOD(pin, af) GD32_PINMUX(GD32_PORT_D, pin, af)
+#define GD32_PINMUX_GPIOE(pin, af) GD32_PINMUX(GD32_PORT_E, pin, af)
+#define GD32_PINMUX_GPIOF(pin, af) GD32_PINMUX(GD32_PORT_F, pin, af)
+#define GD32_PINMUX_GPIOG(pin, af) GD32_PINMUX(GD32_PORT_G, pin, af)
+#define GD32_PINMUX_GPIOH(pin, af) GD32_PINMUX(GD32_PORT_H, pin, af)
+#define GD32_PINMUX_GPIOI(pin, af) GD32_PINMUX(GD32_PORT_I, pin, af)
+
+#endif /* EMBEDDED_INCLUDE_DT_BINDINGS_PINCTRL_GD32_PINCTRL_H_ */

@@ -1,0 +1,57 @@
+description: GD32 引脚控制器
+
+compatible: "gd,gd32-pinctrl"
+
+properties:
+  label:
+    type: string
+
+child-binding:
+  description: GD32 引脚配置状态
+
+  properties:
+    pinmux:
+      type: array
+      required: true
+      description: 由 GD32_PINMUX_* 宏编码的端口、引脚和复用功能。
+
+    input-enable:
+      type: boolean
+      description: 将引脚配置为 GPIO 输入。
+
+    output-enable:
+      type: boolean
+      description: 将引脚配置为 GPIO 输出。
+
+    analog-enable:
+      type: boolean
+      description: 将引脚配置为模拟输入。
+
+    bias-pull-up:
+      type: boolean
+      description: 使能内部上拉。
+
+    bias-pull-down:
+      type: boolean
+      description: 使能内部下拉。
+
+    drive-push-pull:
+      type: boolean
+      description: 配置为推挽输出。
+
+    drive-open-drain:
+      type: boolean
+      description: 配置为开漏输出。
+
+    output-low:
+      type: boolean
+      description: 应用 pinctrl 时先输出低电平。
+
+    output-high:
+      type: boolean
+      description: 应用 pinctrl 时先输出高电平。
+
+    slew-rate:
+      type: int
+      default: 3
+      description: GD32 GPIO 输出速度字段，取值范围 0..3。

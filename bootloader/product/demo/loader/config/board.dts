@@ -2,6 +2,7 @@
 
 #include <arm/gd/gd32f50x.dtsi>
 #include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/pinctrl/gd32-pinctrl.h>
 
 / {
     compatible = "gd,gd32f503";
@@ -15,6 +16,22 @@
         uart0 = &usart0;
     };
 
+    pinctrl: pinctrl {
+        compatible = "gd,gd32-pinctrl";
+
+        usart0_tx_pa9: usart0_tx_pa9 {
+            pinmux = <GD32_PINMUX_GPIOA(9, 7)>;
+            drive-push-pull;
+            slew-rate = <3>;
+        };
+
+        usart0_rx_pa10: usart0_rx_pa10 {
+            pinmux = <GD32_PINMUX_GPIOA(10, 7)>;
+            bias-pull-up;
+            slew-rate = <3>;
+        };
+    };
+
     soc {
         usart0: usart@40013800 {
             compatible = "gd,gd32-usart";
@@ -22,6 +39,8 @@
             interrupts = <37 0>;
             status = "okay";
             current-speed = <115200>;
+            pinctrl-0 = <&usart0_tx_pa9 &usart0_rx_pa10>;
+            pinctrl-names = "default";
             label = "USART0";
         };
     };

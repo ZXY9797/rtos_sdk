@@ -12,6 +12,9 @@ compatible: "gpio-keys"
 child-binding:
   description: GPIO key child node
 
+  include:
+    - name: pinctrl-device.yaml
+
   properties:
     gpios:
       type: phandle-array

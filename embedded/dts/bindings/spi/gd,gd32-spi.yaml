@@ -2,7 +2,7 @@ description: GD32 SPI controller
 
 compatible: "gd,gd32-spi"
 
-include: [spi-controller.yaml, base.yaml]
+include: [spi-controller.yaml, base.yaml, pinctrl-device.yaml]
 
 cxx-driver:
   template: Spi

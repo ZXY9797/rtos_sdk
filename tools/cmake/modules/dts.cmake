@@ -156,6 +156,7 @@ message(STATUS "Generated devicetree_generated.h: ${DEVICETREE_GENERATED_H}")
 set(GEN_DEVICE_TRAITS_SCRIPT ${TOP_DIR}/tools/scripts/gen_device_traits.py)
 set(DRIVERS_GENERATED_H ${BINARY_DIR_INCLUDE_GENERATED}/drivers_generated.h)
 set(DRIVERS_GENERATED_CC ${BINARY_DIR_INCLUDE_GENERATED}/drivers_generated.cc)
+set(PINCTRL_GENERATED_CC ${BINARY_DIR_INCLUDE_GENERATED}/pinctrl_generated.cc)
 set(DEVICES_REPORT_JSON ${BINARY_DIR_INCLUDE_GENERATED}/devices.json)
 set(DTS_BINDINGS_DIR ${TOP_DIR}/embedded/dts/bindings)
 
@@ -166,6 +167,7 @@ execute_process(
     ${DTS_BINDINGS_DIR}
     ${DRIVERS_GENERATED_CC}
     ${DEVICES_REPORT_JSON}
+    ${PINCTRL_GENERATED_CC}
   WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
   RESULT_VARIABLE ret
   )
@@ -174,6 +176,7 @@ if(NOT "${ret}" STREQUAL "0")
 endif()
 message(STATUS "Generated drivers_generated.h: ${DRIVERS_GENERATED_H}")
 message(STATUS "Generated drivers_generated.cc: ${DRIVERS_GENERATED_CC}")
+message(STATUS "Generated pinctrl_generated.cc: ${PINCTRL_GENERATED_CC}")
 message(STATUS "Generated devices.json: ${DEVICES_REPORT_JSON}")
 
 #

@@ -31,6 +31,7 @@ target_sources(${MODULE_NAME}
         upgrade_logic/flash_copy.cc
         protocol/protocol.cc
         transport.cc
+        ${PINCTRL_GENERATED_CC}
         ${BOOT_FLASH_MAP_SOURCE}
 )
 

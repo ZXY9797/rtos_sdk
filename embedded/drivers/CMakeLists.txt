@@ -29,6 +29,9 @@ target_link_libraries_ifdef(CONFIG_PWM ${MODULE_NAME} PUBLIC pwm)
 add_subdirectory_ifdef(CONFIG_ADC adc)
 target_link_libraries_ifdef(CONFIG_ADC ${MODULE_NAME} PUBLIC adc)
 
+add_subdirectory_ifdef(CONFIG_PINCTRL pinctrl)
+target_link_libraries_ifdef(CONFIG_PINCTRL ${MODULE_NAME} PUBLIC pinctrl)
+
 add_subdirectory_ifdef(CONFIG_DMA dma)
 target_link_libraries_ifdef(CONFIG_DMA ${MODULE_NAME} PUBLIC dma)
 

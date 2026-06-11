@@ -2,7 +2,7 @@ description: GD32 CAN controller
 
 compatible: "gd,gd32-can"
 
-include: [can-controller.yaml, base.yaml]
+include: [can-controller.yaml, base.yaml, pinctrl-device.yaml]
 
 cxx-driver:
   template: CanDriver
