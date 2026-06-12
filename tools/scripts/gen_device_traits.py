@@ -167,6 +167,8 @@ def parse_yaml_comments(filepath):
                 args.append(('node_reg', None))
             elif item == 'parent-reg':
                 args.append(('parent_reg', None))
+            elif item == 'parent-ord':
+                args.append(('parent_ord', None))
             elif item == 'irq':
                 args.append(('irq', None))
             elif item == 'opt_irq':
@@ -185,6 +187,8 @@ def parse_yaml_comments(filepath):
                 args.append(('prop_val', val))
             elif key == 'parent-reg':
                 args.append(('parent_reg', None))
+            elif key == 'parent-ord':
+                args.append(('parent_ord', None))
             elif key == 'field':
                 parts = val.split('/')
                 if len(parts) == 2:
@@ -465,6 +469,14 @@ def resolve_arg(arg, node_id, dt_data):
                 return f'DT_REG_ADDR({parent_id})'
         return None
 
+    elif arg_type == 'parent_ord':
+        last_sep = node_id.rfind('_S_')
+        if last_sep > 0:
+            parent_id = node_id[:last_sep]
+            if parent_id in dt_data['ordinals']:
+                return str(dt_data['ordinals'][parent_id])
+        return None
+
     elif arg_type == 'prop_field_val':
         prop, field = arg[1].replace('-', '_'), arg[2]
         if (node_id, prop, field) in dt_data['prop_fields']:
@@ -559,8 +571,10 @@ def resolve_arg_dependencies(node_id, args, dt_data):
 
     for arg in args:
         arg_type = arg[0]
-        if arg_type == 'parent_reg':
-            add_dependency(deps, seen, parent_node_id(node_id), 'arg:parent-reg',
+        if arg_type in ('parent_reg', 'parent_ord'):
+            reason = 'arg:parent-ord' if arg_type == 'parent_ord' else \
+                     'arg:parent-reg'
+            add_dependency(deps, seen, parent_node_id(node_id), reason,
                            dt_data)
         elif arg_type in ('phandle_reg', 'phandle_ord'):
             prop = normalize_prop_name(arg[1])
@@ -1235,8 +1249,10 @@ def main():
     # 3.5 检查 init 依赖
     if specs:
         if not check_init_dependencies(specs, dt_data):
-            print("WARNING: Init dependency issues detected! "
-                  "Devices may access uninitialized dependencies.")
+            print("ERROR: Init dependency issues detected. "
+                  "Fix init-level/init-priority before building.",
+                  file=sys.stderr)
+            sys.exit(1)
 
     # 4. 写入 .h
     write_output(specs, used_headers, output_path)

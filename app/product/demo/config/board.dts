@@ -130,7 +130,7 @@
                 accel-fs = <0>;
                 gyro-fs = <0>;
                 sample-rate = <16000>;
-                int-gpios = <&gpiob 6 0>;
+                cs-gpios = <&gpiob 6 0>;
                 label = "IMU0";
             };
         };

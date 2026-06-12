@@ -21,10 +21,10 @@ properties:
     type: int
     default: 16000
     description: Output data rate in Hz
-  int-gpios:
+  cs-gpios:
     type: phandle-array
     required: true
-    description: Data ready interrupt GPIO
+    description: Manual chip-select GPIO
 
 cxx-driver:
   template: imu::Icm40609d
@@ -32,13 +32,13 @@ cxx-driver:
   readiness: is-initialized
   requires:
     - parent
-    - phandle-array: int-gpios
+    - phandle-array: cs-gpios
   init-level: pre-kernel-3
   init-priority: 20
   args:
-    - parent-reg
-    - phandle-reg: int-gpios
-    - field: int-gpios/pin
+    - parent-ord
+    - phandle-reg: cs-gpios
+    - field: cs-gpios/pin
   init-cfg:
     type: imu::ImuConfig
     fields:

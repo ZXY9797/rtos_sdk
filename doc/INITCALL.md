@@ -58,6 +58,8 @@ gen_device_traits.py 读取 YAML init-cfg + DTS 属性
         ↓
 启动：z_cstart() → run_initcalls() → 自动 init 所有设备
         ↓
+任意 initcall 返回非 0 → 停止后续启动
+        ↓
 main()：auto &uart = device_get(uart0);  // 直接用
 ```
 
@@ -65,10 +67,12 @@ main()：auto &uart = device_get(uart0);  // 直接用
 
 | 级别 | 值 | 用途 |
 |:---|:---:|:---|
-| `PRE_KERNEL_1` | 0 | 最早初始化，无依赖 |
-| `PRE_KERNEL_2` | 1 | 依赖基础服务（如时钟） |
-| `POST_KERNEL` | 2 | 内核初始化完成后 |
-| `APPLICATION` | 3 | 应用层初始化 |
+| `EARLY` | 0 | 架构最早期初始化 |
+| `PRE_KERNEL_1` | 1 | 基础硬件和故障记录等早期组件 |
+| `PRE_KERNEL_2` | 2 | 依赖基础服务的驱动 |
+| `PRE_KERNEL_3` | 3 | RTOS 启动前的较晚驱动 |
+| `POST_KERNEL` | 4 | OSAL 启动后、应用前 |
+| `APPLICATION` | 5 | 应用层初始化 |
 
 ```cpp
 // 注册自定义 initcall
@@ -78,3 +82,11 @@ SYS_INIT(my_init, INITCALL_LEVEL_PRE_KERNEL_2, 30);
 ## 优先级
 
 同一级别内，priority 值越小越先执行。驱动默认 priority 为 25，应用可使用 30+ 避免冲突。
+
+## 错误处理
+
+`SYS_INIT` 注册函数返回 `int`，`0` 表示成功，非 0 表示初始化失败。生成的设备初始化包装函数会把
+`driver.init(cfg)` 的返回值转换为 `int` 并向上传递。
+
+`EARLY` 到 `PRE_KERNEL_3` 的错误会让 `z_cstart()` 停在错误点，不再启动 OSAL。`POST_KERNEL` 和
+`APPLICATION` 的错误会让后台主线程停在错误点，不再进入 `main()`。

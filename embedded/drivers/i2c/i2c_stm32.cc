@@ -311,7 +311,7 @@ Status I2cBase::mem_read(uint16_t addr, uint16_t mem_addr, MemAddrSize addr_size
     return Status::Ok;
 }
 
-Status I2cBase::is_ready(uint16_t addr, uint32_t retries, uint32_t timeout_ms) {
+Status I2cBase::probe(uint16_t addr, uint32_t retries, uint32_t timeout_ms) {
     if (!is_initialized()) return Status::InvalidArgument;
 
     osal::LockGuard lock(m_bus_mutex);

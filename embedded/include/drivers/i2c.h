@@ -1,7 +1,7 @@
 #pragma once
 
+#include <device.h>
 #include <drivers/status.h>
-#include <device_base.h>
 #include <osal.h>
 #include <cstdint>
 #include <cstddef>
@@ -21,6 +21,8 @@ struct I2cStats {
 
 class I2cBase : public DeviceBase {
 public:
+    using DeviceBase::is_ready;
+
     [[nodiscard]] Status init(uint32_t timing);
     [[nodiscard]] Status deinit();
 
@@ -30,7 +32,8 @@ public:
                                    const uint8_t *data, size_t len, uint32_t timeout_ms);
     [[nodiscard]] Status mem_read(uint16_t addr, uint16_t mem_addr, MemAddrSize addr_size,
                                   uint8_t *data, size_t len, uint32_t timeout_ms);
-    [[nodiscard]] Status is_ready(uint16_t addr, uint32_t retries, uint32_t timeout_ms);
+    [[nodiscard]] Status probe(uint16_t addr, uint32_t retries,
+                               uint32_t timeout_ms);
 
     /// 获取运行时统计
     [[nodiscard]] I2cStats get_stats() const { return m_stats; }
@@ -65,7 +68,7 @@ public:
 };
 
 /// I2C 设备（挂在总线上的从设备，支持多设备共享总线）
-template <uintptr_t BusBase, uint16_t Addr>
+template <int BusOrd, uint16_t Addr>
 class I2cDevice {
 public:
     [[nodiscard]] Status init(uint32_t timing) {
@@ -78,7 +81,11 @@ public:
 
     /// 获取总线实例引用
     [[nodiscard]] I2cBase &bus() {
-        return *reinterpret_cast<I2cBase *>(BusBase);
+        return DeviceTrait<BusOrd>::instance;
+    }
+
+    [[nodiscard]] const I2cBase &bus() const {
+        return DeviceTrait<BusOrd>::instance;
     }
 
     /// 获取从机地址
@@ -113,7 +120,7 @@ public:
     /// 探测设备是否就绪
     [[nodiscard]] Status is_ready(uint32_t retries = 3,
                                   uint32_t timeout_ms = 10) {
-        return bus().is_ready(Addr, retries, timeout_ms);
+        return bus().probe(Addr, retries, timeout_ms);
     }
 };
 

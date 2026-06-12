@@ -44,6 +44,7 @@ RTOS SDK 使用编译期模板特化实现设备分发，相比 Zephyr 的运行
 ## 代码生成器
 
 `gen_device_traits.py` 解析 DT 绑定 YAML 中的 `cxx-driver` 节，自动生成 `DeviceTrait<Ord>` 特化、静态实例和 initcall 注册。
+生成器还会解析 parent/phandle 依赖，检查依赖设备是否早于当前设备初始化；顺序错误会在配置阶段失败。
 
 ### Binding YAML 示例
 
@@ -95,6 +96,33 @@ cxx-driver:
       "sec_param.level": { prop: security-level, default: 2, cast: "ble::SecParam::Level" }
 ```
 
+```yaml
+# binding YAML (invensense,icm40609d.yaml) — SPI 子设备 + 父总线 ordinal
+cxx-driver:
+  template: imu::Icm40609d
+  header: imu/icm40609d.h
+  args:
+    - parent-ord                      # 父 SPI 设备 ordinal
+    - phandle-reg: cs-gpios           # CS GPIO port base
+    - field: cs-gpios/pin             # CS pin
+  requires:
+    - parent
+    - phandle-array: cs-gpios
+```
+
+### 常用参数
+
+| 参数 | 用途 |
+|:---|:---|
+| `node-reg` | 当前节点 `reg` 基地址 |
+| `irq` | 当前节点中断号 |
+| `prop: <name>` | DTS 属性值 |
+| `phandle-ord: <prop>` | 属性引用设备的 ordinal |
+| `parent-ord` | 父节点设备的 ordinal，用于 `device_get<BusOrd>()` |
+| `parent-reg` | 父节点寄存器基地址，只用于真实寄存器访问 |
+| `phandle-reg: <prop>` | phandle-array 引用设备的 `reg` 基地址 |
+| `field: <prop>/<cell>` | phandle-array cell 值 |
+
 ### 生成的代码
 
 ```cpp
@@ -122,3 +150,4 @@ SYS_INIT(hal::_init_uart0, INITCALL_LEVEL_PRE_KERNEL_2, 25);
 - **非侵入**：不修改 Zephyr 的 `gen_defines.py`
 - **声明式**：驱动映射 + init 参数在 binding YAML 中声明
 - **自动初始化**：DTS `status = "okay"` → 启动时自动 init，业务层零配置
+- **依赖安全**：初始化顺序在配置阶段校验，错误顺序直接构建失败

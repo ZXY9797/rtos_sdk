@@ -1,7 +1,7 @@
 #pragma once
 
+#include <device.h>
 #include <drivers/status.h>
-#include <device_base.h>
 #include <osal.h>
 #include <cstdint>
 #include <cstddef>
@@ -61,7 +61,7 @@ public:
 };
 
 /// SPI 设备（挂在总线上的从设备，支持多设备共享总线）
-template <uintptr_t BusBase, uint8_t CsIndex = 0xFF>
+template <int BusOrd, uint8_t CsIndex = 0xFF>
 class SpiDevice {
 public:
     [[nodiscard]] Status init(const SpiConfig &config) {
@@ -74,10 +74,14 @@ public:
 
     /// 获取总线实例引用
     [[nodiscard]] SpiBase &bus() {
-        return *reinterpret_cast<SpiBase *>(BusBase);
+        return DeviceTrait<BusOrd>::instance;
     }
 
     /// 获取配置
+    [[nodiscard]] const SpiBase &bus() const {
+        return DeviceTrait<BusOrd>::instance;
+    }
+
     [[nodiscard]] const SpiConfig &config() const { return m_config; }
 
     /// 获取 CS 索引

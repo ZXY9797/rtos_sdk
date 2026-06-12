@@ -19,7 +19,7 @@
 | 设备树层级 | 5+ 级 `.dtsi` 继承 | **2 级**（SoC + Board） |
 | 链接脚本 | 片段拼接 | **单一 `.ld` 文件** |
 | 环境搭建 | West + Python + CMake + Ninja + DTC | **CMake + GCC + Ninja** |
-| 驱动模型 | 运行时 `struct device` + vtable | **编译期模板 + initcall 自动初始化** |
+| 驱动模型 | 运行时 `struct device` + vtable | **编译期模板 + initcall + 依赖校验** |
 | 内存管理 | 动态分配 + Slab + Heap | **全部静态分配** |
 | RTOS 绑定 | 仅支持 Zephyr 内核 | **OSAL 多内核**（FreeRTOS、RT-Thread） |
 | SoC 支持 | 内置 400+ | **STM32、GD32、Goodix GR5525** |
@@ -74,6 +74,7 @@
 ### 1. initcall 自动初始化 — DTS okay 即用
 
 设备树中 `status = "okay"` 的节点，启动时自动实例化并初始化。业务层通过 `device_get()` 获取已初始化的设备引用。
+初始化函数返回非 0 时，启动流程会停在错误点，避免失败设备继续进入业务层。
 
 > **改引脚/波特率/时钟频率？只改 DTS，业务代码零修改。**
 
@@ -82,6 +83,7 @@
 ### 2. 编译期分发 — DeviceTrait + 自动生成
 
 使用编译期模板特化实现设备分发，相比 Zephyr 的运行时 vtable 方案，实现零开销抽象。
+生成器会解析 parent/phandle 依赖并在配置阶段校验初始化顺序；子设备通过 `parent-ord` 获取父总线对象，不再把父节点寄存器地址误当成 C++ 对象指针。
 
 | | 运行时多态（Zephyr） | 编译期多态（RTOS SDK） |
 |:---|:---:|:---:|
@@ -90,6 +92,10 @@
 | 优化 | 间接调用阻碍内联 | **编译器完全优化** |
 
 详见 [doc/DEVICE_TRAIT.md](doc/DEVICE_TRAIT.md)
+
+设备状态使用显式生命周期表达。继承 `DeviceBase` 的驱动只有在 `Initialized`/`Open` 且 `last_error()==Status::Ok` 时才被认为 ready，进入 `Error` 后不会被诊断表误判为可用。
+
+详见 [doc/DRIVER_MODEL.md](doc/DRIVER_MODEL.md)
 
 ### 3. 头文件纯净 — 无 MCU 依赖
 
@@ -210,6 +216,7 @@ rtos_sdk/
 │   ├── BOOTLOADER.md             # Bootloader 构建与目录约定
 │   ├── INITCALL.md               # initcall 自动初始化
 │   ├── DEVICE_TRAIT.md           # DeviceTrait 编译期分发
+│   ├── DRIVER_MODEL.md           # 设备驱动模型与依赖约束
 │   ├── DRIVER_DESIGN.md          # 驱动设计与扩展指南
 │   ├── FOC.md                    # FOC 电机控制组件
 │   ├── BLE.md                    # BLE 蓝牙组件
