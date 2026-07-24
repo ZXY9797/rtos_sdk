@@ -51,7 +51,9 @@ spi0: spi@40013000 {
 ```
 DTS status="okay" + 属性
         ↓
-gen_device_traits.py 读取 YAML init-cfg + DTS 属性
+gen_device_traits.py 读取 EDT pickle + YAML adapter 元数据
+        ↓
+展开 C++ adapter（adapter 从 DTS 构造 DeviceTrait 和配置）
         ↓
 生成 drivers_generated.h（DeviceTrait + instance 声明 + device_get）
 生成 drivers_generated.cc（实例定义 + initcall 注册）
@@ -86,7 +88,7 @@ SYS_INIT(my_init, INITCALL_LEVEL_PRE_KERNEL_2, 30);
 ## 错误处理
 
 `SYS_INIT` 注册函数返回 `int`，`0` 表示成功，非 0 表示初始化失败。生成的设备初始化包装函数会把
-`driver.init(cfg)` 的返回值转换为 `int` 并向上传递。
+adapter 的 `DeviceTrait<Ord>::init()` 返回值会作为 `int` 向上传递。
 
 `EARLY` 到 `PRE_KERNEL_3` 的错误会让 `z_cstart()` 停在错误点，不再启动 OSAL。`POST_KERNEL` 和
 `APPLICATION` 的错误会让后台主线程停在错误点，不再进入 `main()`。

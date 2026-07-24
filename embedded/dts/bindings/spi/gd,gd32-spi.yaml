@@ -5,10 +5,12 @@ compatible: "gd,gd32-spi"
 include: [spi-controller.yaml, base.yaml, pinctrl-device.yaml]
 
 cxx-driver:
-  template: Spi
-  header: drivers/spi.h
-  args:
-    - node-reg
+  adapter:
+    header: device_adapters/spi_dt.h
+    macro: HAL_SPI_DT_ADAPT
+  type-name: Spi
+  init: true
+  readiness: device-base
   device-base: true
   # GD32 SPI is a low-level bus/HAL driver. Devices on this bus can use
   # init-level: pre-kernel-3 to run after SPI and before OS services are available.
@@ -18,17 +20,6 @@ cxx-driver:
   #   init-priority = <N>;
   # Lower values run earlier within the same init level.
   init-priority: 25
-  init-cfg:
-    type: SpiConfig
-    fields:
-      mode:
-        default: 0
-        cast: SpiMode
-      clock_hz:
-        prop: spi-max-frequency
-        default: 1000000
-      data_bits:
-        default: 8
 
 properties:
   reg:

@@ -27,27 +27,14 @@ properties:
     description: Manual chip-select GPIO
 
 cxx-driver:
-  template: imu::Icm40609d
-  header: imu/icm40609d.h
+  adapter:
+    header: device_adapters/icm40609d_dt.h
+    macro: HAL_ICM40609D_DT_ADAPT
+  type-name: imu::Icm40609d
+  init: true
   readiness: is-initialized
   requires:
     - parent
     - phandle-array: cs-gpios
   init-level: pre-kernel-3
   init-priority: 20
-  args:
-    - parent-ord
-    - phandle-reg: cs-gpios
-    - field: cs-gpios/pin
-  init-cfg:
-    type: imu::ImuConfig
-    fields:
-      accel_fs:
-        prop: accel-fs
-        default: 0
-      gyro_fs:
-        prop: gyro-fs
-        default: 0
-      sample_rate:
-        prop: sample-rate
-        default: 16000

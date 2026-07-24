@@ -5,21 +5,14 @@ compatible: "gd,gd32-timer"
 include: [pwm-controller.yaml, base.yaml, pinctrl-device.yaml]
 
 cxx-driver:
-  template: Pwm
-  header: drivers/pwm.h
+  adapter:
+    header: device_adapters/pwm_dt.h
+    macro: HAL_GD32_PWM_DT_ADAPT
+  type-name: Pwm
+  init: true
   readiness: is-initialized
-  args:
-    - node-reg
-    - node-prop:channel
   init-level: pre-kernel-2
   init-priority: 25
-  init-cfg:
-    type: PwmConfig
-    fields:
-      prescaler:
-        default: 0
-      period:
-        default: 0
 
 properties:
   reg:

@@ -7,7 +7,8 @@
 1. 板级引脚事实只写在 DTS 中，包括端口、引脚、复用功能、上下拉、输出类型和默认输出电平。
 2. SoC 差异只放在 `embedded/include/dt-bindings/pinctrl` 下的宏里。
 3. 运行时代码保持通用，只执行 DTS 宏展开后的 MMIO 操作，不感知 GD32、STM32 等具体寄存器布局。
-4. `gen_device_traits.py` 解析所有启用节点的 `pinctrl-0`，生成独立的 `pinctrl_generated.cc`。
+4. `gen_pinctrl.py` 直接读取 EDT 模型中所有启用节点的默认 pinctrl 状态，
+   生成独立的 `pinctrl_generated.cc`。
 5. `pinctrl_generated.cc` 注册 `PRE_KERNEL_1`、优先级 5 的 initcall，确保 IO 初始化早于 UART/SPI/PWM/ADC 等设备驱动。
 
 ## 通用操作格式

@@ -24,12 +24,11 @@ child-binding:
       type: string
 
 cxx-driver:
-  template: GpioPort
-  header: drivers/gpio.h
+  adapter:
+    header: device_adapters/gpio_dt.h
+    macro: HAL_GPIO_DT_ADAPT
+  type-name: GpioPort
+  scope: children
   readiness: always-ready
   requires:
     - phandle-array: gpios
-  args:
-    - phandle-reg: gpios
-    - field: gpios/pin
-    - field: gpios/flags

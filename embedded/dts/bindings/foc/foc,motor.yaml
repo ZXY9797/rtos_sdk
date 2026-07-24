@@ -92,62 +92,14 @@ properties:
       Control mode: 0=Torque, 1=Speed, 2=Duty, 3=Position
 
 cxx-driver:
-  template: foc::MotorDevice
-  header: foc/motor_device.h
+  adapter:
+    header: device_adapters/foc_motor_dt.h
+    macro: HAL_FOC_MOTOR_DT_ADAPT
+  type-name: foc::MotorDevice
+  init: true
   readiness: is-initialized
   requires:
     - phandle: pwm-dev
     - phandle: adc-dev
-  args:
-    - phandle-ord: pwm-dev
-    - phandle-ord: adc-dev
-    - prop: pwm-ch-u
-    - prop: pwm-ch-v
-    - prop: pwm-ch-w
   init-level: application
   init-priority: 80
-  init-cfg:
-    type: foc::MotorConfig
-    fields:
-      rs:
-        prop: rs-milliohm
-        default: 50
-        scale: 0.001
-      ld:
-        prop: ld-microhenry
-        default: 100
-        scale: 0.000001
-      lq:
-        prop: lq-microhenry
-        default: 100
-        scale: 0.000001
-      flux_linkage:
-        prop: flux-milliweber
-        default: 0
-        scale: 0.001
-      pole_pairs:
-        prop: pole-pairs
-        default: 7
-        cast: uint8_t
-      imax:
-        prop: max-current-ma
-        default: 20000
-        scale: 0.001
-      vmax:
-        prop: max-voltage-mv
-        default: 48000
-        scale: 0.001
-      "foc.pwm_frequency":
-        prop: pwm-frequency
-        default: 20000
-      "foc.current_bandwidth":
-        prop: current-bandwidth
-        default: 1000
-      sensor:
-        prop: sensor-mode
-        default: 0
-        cast: foc::SensorMode
-      control:
-        prop: control-mode
-        default: 1
-        cast: foc::ControlMode

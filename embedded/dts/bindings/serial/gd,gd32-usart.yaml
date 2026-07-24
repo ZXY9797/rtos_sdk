@@ -5,13 +5,13 @@ compatible: "gd,gd32-usart"
 include: [uart-controller.yaml, base.yaml, pinctrl-device.yaml]
 
 cxx-driver:
-  template: Uart
-  header: drivers/uart.h
+  adapter:
+    header: device_adapters/uart_dt.h
+    macro: HAL_UART_DT_ADAPT
+  type-name: Uart
+  init: true
+  isr: true
   readiness: device-base
-  args:
-    - node-reg
-    - irq
-  isr-handler: isr_handler
   device-base: true
   # GD32 USART is a low-level bus/HAL driver. It initializes before
   # PRE_KERNEL_3 dependent devices and before OS services are available.
@@ -21,23 +21,6 @@ cxx-driver:
   #   init-priority = <N>;
   # Lower values run earlier within the same init level.
   init-priority: 25
-  init-cfg:
-    type: UartConfig
-    rx-buffer-size:
-      default: 256
-    fields:
-      baudrate:
-        prop: current-speed
-        default: 115200
-      data_bits:
-        default: 8
-        cast: DataBits
-      stop_bits:
-        default: 0
-        cast: StopBits
-      parity:
-        default: 0
-        cast: Parity
 
 properties:
   reg:

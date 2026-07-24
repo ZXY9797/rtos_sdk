@@ -5,20 +5,14 @@ compatible: "gd,gd32-can"
 include: [can-controller.yaml, base.yaml, pinctrl-device.yaml]
 
 cxx-driver:
-  template: CanDriver
-  header: drivers/can.h
+  adapter:
+    header: device_adapters/can_dt.h
+    macro: HAL_CAN_DT_ADAPT
+  type-name: CanDriver
+  init: true
   readiness: is-initialized
-  args:
-    - node-reg
   init-level: pre-kernel-2
   init-priority: 25
-  init-cfg:
-    type: CanConfig
-    fields:
-      bitrate:
-        default: 500000
-      irq_priority:
-        default: 8
 
 properties:
   reg:
@@ -28,6 +22,14 @@ properties:
   interrupts:
     type: array
     required: true
+
+  bitrate:
+    type: int
+    default: 500000
+
+  irq-priority:
+    type: int
+    default: 8
 
   label:
     type: string

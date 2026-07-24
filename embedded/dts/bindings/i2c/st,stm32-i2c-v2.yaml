@@ -69,11 +69,11 @@ properties:
       the TX channel and "rx" for the RX channel.
 
 cxx-driver:
-  template: I2c
-  header: drivers/i2c.h
+  adapter:
+    header: device_adapters/i2c_dt.h
+    macro: HAL_I2C_DT_ADAPT
+  type-name: I2c
   readiness: device-base
-  args:
-    - node-reg
   device-base: true
   init-level: pre-kernel-2
   init-priority: 25

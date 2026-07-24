@@ -5,18 +5,14 @@ compatible: "gd,gd32-adc"
 include: [adc-controller.yaml, base.yaml, pinctrl-device.yaml]
 
 cxx-driver:
-  template: Adc
-  header: drivers/adc.h
+  adapter:
+    header: device_adapters/adc_dt.h
+    macro: HAL_ADC_DT_ADAPT
+  type-name: Adc
+  init: true
   readiness: is-initialized
-  args:
-    - node-reg
   init-level: pre-kernel-2
   init-priority: 30
-  init-cfg:
-    type: AdcConfig
-    fields:
-      resolution:
-        default: 12
 
 properties:
   reg:
@@ -26,6 +22,11 @@ properties:
   interrupts:
     type: array
     required: true
+
+  resolution:
+    type: int
+    default: 12
+    enum: [6, 8, 10, 12]
 
   label:
     type: string

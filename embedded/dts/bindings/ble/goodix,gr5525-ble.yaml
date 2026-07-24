@@ -52,41 +52,10 @@ properties:
     description: Enable bonding (0=disabled, 1=enabled)
 
 cxx-driver:
-  template: ble::BleDevice
-  header: ble/ble_device.h
-  args: []
+  adapter:
+    header: device_adapters/ble_dt.h
+    macro: HAL_BLE_DT_ADAPT
+  type-name: ble::BleDevice
+  init: true
   init-level: application
   init-priority: 80
-  init-cfg:
-    type: ble::StackConfig
-    fields:
-      device_name:
-        type: string
-        prop: device-name
-        default: "BLE"
-      "conn_param.interval_min":
-        prop: conn-interval-min
-        default: 320
-      "conn_param.interval_max":
-        prop: conn-interval-max
-        default: 520
-      "conn_param.slave_latency":
-        prop: slave-latency
-        default: 0
-      "conn_param.sup_timeout":
-        prop: sup-timeout
-        default: 400
-      "sec_param.level":
-        prop: security-level
-        default: 2
-        cast: "ble::SecParam::Level"
-      "sec_param.bonding":
-        prop: bonding
-        default: 1
-        cast: bool
-      adv_interval_min:
-        prop: adv-interval-min
-        default: 48
-      adv_interval_max:
-        prop: adv-interval-max
-        default: 80

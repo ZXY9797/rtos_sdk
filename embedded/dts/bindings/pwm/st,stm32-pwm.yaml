@@ -37,7 +37,7 @@ pwm-cells:
   - flags
 
 cxx-driver:
-  template: Pwm
-  header: drivers/pwm.h
-  args:
-    - parent-reg
+  adapter:
+    header: device_adapters/pwm_dt.h
+    macro: HAL_STM32_PWM_DT_ADAPT
+  type-name: Pwm

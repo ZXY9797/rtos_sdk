@@ -40,7 +40,8 @@ RTOS SDK 通过 `DeviceTrait<Ord>` 在编译期生成强类型设备实例；I2C
 
 新增驱动时优先遵守以下规则：
 
-- 有 `init-cfg` 或显式初始化动作的驱动，应提供 `init()`、`deinit()` 和 `is_initialized()`；
+- 有显式初始化动作的驱动，应提供 `init()`、`deinit()` 和
+  `is_initialized()`；
 - 需要统一状态、名称、错误态的驱动，应继承 `DeviceBase`；
 - 无状态门面必须在 binding 或文档中说明其就绪语义；
 - 所有驱动公共接口优先返回 `hal::Status`，避免混用裸 `int` 表达硬件错误。
@@ -62,15 +63,18 @@ cxx-driver:
 校验，但不自动重排初始化顺序。依赖顺序错误会在配置阶段作为构建错误退出，需要显式调整
 binding 或 DTS 中的 `init-level` / `init-priority`。
 
-`cxx-driver.args` 中和依赖相关的参数约定如下：
+C++ adapter 使用 devicetree 宏取得依赖对象：
 
-- `phandle-ord: <prop>`：把属性引用的设备 ordinal 作为模板参数传入，适合 FOC 这类引用同级设备的驱动。
-- `parent-ord`：把父节点设备 ordinal 作为模板参数传入，适合挂在 SPI/I2C 总线下的子设备。
-- `parent-reg`：只在驱动确实需要父节点寄存器基地址时使用，不能用于访问父总线 C++ 对象。
+- `DT_ORD(DT_PHANDLE(node_id, prop))`：取得 phandle 设备 ordinal。
+- `DT_ORD(DT_PARENT(node_id))`：取得父总线 ordinal。
+- `DT_REG_ADDR(DT_PARENT(node_id))`：仅在确实需要父节点寄存器地址时使用。
+
+`requires` 负责初始化顺序校验，adapter 负责 C++ 类型装配，两者应描述同一组
+运行期依赖。
 
 ## 诊断报告
 
-配置阶段会在构建输出目录生成 `devices.json`。报告包含：
+构建阶段会从 `edt.pickle` 在构建输出目录生成 `devices.json`。报告包含：
 
 - DTS ordinal
 - alias
@@ -82,8 +86,9 @@ binding 或 DTS 中的 `init-level` / `init-priority`。
 - readiness 策略
 - 解析到的依赖列表
 
-该文件是生成产物，不提交到仓库。它用于 review 设备模型、定位初始化顺序问题和支持后续
-CLI/测试工具扩展。
+该文件是生成产物，不提交到仓库。它用于 review 设备模型、定位初始化顺序
+问题和支持后续 CLI/测试工具扩展。报告不再混入 pinctrl 数据；pinctrl 由
+独立的 `gen_pinctrl.py` 负责。
 
 ## 产品门面
 
@@ -103,8 +108,10 @@ decltype(device_get(led0)) status_led();
 
 - `DeviceBase::is_ready()` 对 `Error` 状态恒为 false，设备失败后必须通过错误态暴露。
 - `gen_device_traits.py` 会把初始化依赖顺序问题视为构建错误，避免问题推迟到运行期。
-- 总线子设备通过 `parent-ord` 和 `device_get<BusOrd>()` 访问父总线实例。
-- `parent-reg` 只表示父节点寄存器基地址，不能替代父设备对象。
+- 总线子设备通过 `DT_ORD(DT_PARENT(node_id))` 和
+  `device_get<BusOrd>()` 访问父总线实例。
+- `DT_REG_ADDR(DT_PARENT(node_id))` 只表示父节点寄存器基地址，不能替代
+  父设备对象。
 
 应用代码优先使用产品语义接口。只有板级门面和极少数底层适配文件应该直接调用
 `device_get(alias)`。

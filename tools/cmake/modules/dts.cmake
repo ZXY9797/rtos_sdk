@@ -84,6 +84,7 @@ set_property(DIRECTORY APPEND PROPERTY
 #
 
 unset(DTS_ROOT_BINDINGS)
+unset(DTS_BINDING_FILES)
 foreach(dts_root ${DTS_ROOT})
   set(bindings_path ${dts_root}/dts/bindings)
   if(EXISTS ${bindings_path})
@@ -91,6 +92,11 @@ foreach(dts_root ${DTS_ROOT})
       DTS_ROOT_BINDINGS
       ${bindings_path}
       )
+    file(GLOB_RECURSE root_binding_files
+      CONFIGURE_DEPENDS
+      ${bindings_path}/*.yaml
+      )
+    list(APPEND DTS_BINDING_FILES ${root_binding_files})
   endif()
 
   set(vendor_prefixes ${dts_root}/${VENDOR_PREFIXES})
@@ -98,6 +104,11 @@ foreach(dts_root ${DTS_ROOT})
     list(APPEND EXTRA_GEN_EDT_ARGS --vendor-prefixes ${vendor_prefixes})
   endif()
 endforeach()
+
+set_property(DIRECTORY APPEND PROPERTY
+  CMAKE_CONFIGURE_DEPENDS
+  ${DTS_BINDING_FILES}
+  )
 
 if(WEST_TOPDIR)
   set(GEN_EDT_WORKSPACE_DIR ${WEST_TOPDIR})
@@ -150,34 +161,85 @@ file(REMOVE ${DEVICETREE_GENERATED_H}.new)
 message(STATUS "Generated devicetree_generated.h: ${DEVICETREE_GENERATED_H}")
 
 #
-# Run gen_device_traits.py — 生成 DeviceTrait 特化
+# Configure EDT-based build-time source generation.
 #
 
-set(GEN_DEVICE_TRAITS_SCRIPT ${TOP_DIR}/tools/scripts/gen_device_traits.py)
+set(DEVICE_CODEGEN_COMMON
+    ${TOP_DIR}/tools/scripts/device_codegen_common.py)
+set(DEVICE_BINDINGS_SCRIPT
+    ${TOP_DIR}/tools/scripts/device_bindings.py)
+set(GEN_DEVICE_TRAITS_SCRIPT
+    ${TOP_DIR}/tools/scripts/gen_device_traits.py)
+set(GEN_PINCTRL_SCRIPT
+    ${TOP_DIR}/tools/scripts/gen_pinctrl.py)
 set(DRIVERS_GENERATED_H ${BINARY_DIR_INCLUDE_GENERATED}/drivers_generated.h)
 set(DRIVERS_GENERATED_CC ${BINARY_DIR_INCLUDE_GENERATED}/drivers_generated.cc)
 set(PINCTRL_GENERATED_CC ${BINARY_DIR_INCLUDE_GENERATED}/pinctrl_generated.cc)
 set(DEVICES_REPORT_JSON ${BINARY_DIR_INCLUDE_GENERATED}/devices.json)
 set(DTS_BINDINGS_DIR ${TOP_DIR}/embedded/dts/bindings)
+set(DEVICE_CODEGEN_STAMP
+    ${BINARY_DIR_INCLUDE_GENERATED}/device_codegen.stamp)
+set(PINCTRL_CODEGEN_STAMP
+    ${BINARY_DIR_INCLUDE_GENERATED}/pinctrl_codegen.stamp)
 
-execute_process(
-  COMMAND ${PYTHON_EXECUTABLE} ${GEN_DEVICE_TRAITS_SCRIPT}
-    ${DEVICETREE_GENERATED_H}
+file(GLOB_RECURSE CXX_DRIVER_BINDINGS
+  CONFIGURE_DEPENDS
+  ${DTS_BINDINGS_DIR}/*.yaml
+  )
+
+add_custom_command(
+  OUTPUT ${DEVICE_CODEGEN_STAMP}
+  BYPRODUCTS
     ${DRIVERS_GENERATED_H}
-    ${DTS_BINDINGS_DIR}
     ${DRIVERS_GENERATED_CC}
     ${DEVICES_REPORT_JSON}
-    ${PINCTRL_GENERATED_CC}
+  COMMAND ${PYTHON_EXECUTABLE} ${GEN_DEVICE_TRAITS_SCRIPT}
+    --edt-pickle ${EDT_PICKLE}
+    --bindings-dir ${DTS_BINDINGS_DIR}
+    --header-out ${DRIVERS_GENERATED_H}
+    --source-out ${DRIVERS_GENERATED_CC}
+    --report-out ${DEVICES_REPORT_JSON}
+  COMMAND ${CMAKE_COMMAND} -E touch ${DEVICE_CODEGEN_STAMP}
+  DEPENDS
+    ${EDT_PICKLE}
+    ${GEN_DEVICE_TRAITS_SCRIPT}
+    ${DEVICE_BINDINGS_SCRIPT}
+    ${DEVICE_CODEGEN_COMMON}
+    ${CXX_DRIVER_BINDINGS}
   WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
-  RESULT_VARIABLE ret
+  COMMENT "Generating DeviceTrait sources from EDT"
+  VERBATIM
   )
-if(NOT "${ret}" STREQUAL "0")
-  message(FATAL_ERROR "gen_device_traits.py failed with return code: ${ret}")
-endif()
-message(STATUS "Generated drivers_generated.h: ${DRIVERS_GENERATED_H}")
-message(STATUS "Generated drivers_generated.cc: ${DRIVERS_GENERATED_CC}")
-message(STATUS "Generated pinctrl_generated.cc: ${PINCTRL_GENERATED_CC}")
-message(STATUS "Generated devices.json: ${DEVICES_REPORT_JSON}")
+
+add_custom_command(
+  OUTPUT ${PINCTRL_CODEGEN_STAMP}
+  BYPRODUCTS ${PINCTRL_GENERATED_CC}
+  COMMAND ${PYTHON_EXECUTABLE} ${GEN_PINCTRL_SCRIPT}
+    --edt-pickle ${EDT_PICKLE}
+    --output ${PINCTRL_GENERATED_CC}
+  COMMAND ${CMAKE_COMMAND} -E touch ${PINCTRL_CODEGEN_STAMP}
+  DEPENDS
+    ${EDT_PICKLE}
+    ${GEN_PINCTRL_SCRIPT}
+    ${DEVICE_CODEGEN_COMMON}
+  WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
+  COMMENT "Generating pinctrl source from EDT"
+  VERBATIM
+  )
+
+add_custom_target(device_codegen
+  DEPENDS
+    ${DEVICE_CODEGEN_STAMP}
+    ${PINCTRL_CODEGEN_STAMP}
+  )
+
+set_source_files_properties(
+  ${DRIVERS_GENERATED_H}
+  ${DRIVERS_GENERATED_CC}
+  ${PINCTRL_GENERATED_CC}
+  ${DEVICES_REPORT_JSON}
+  PROPERTIES GENERATED TRUE
+  )
 
 #
 # Run GEN_DRIVER_KCONFIG_SCRIPT.

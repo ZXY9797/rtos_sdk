@@ -50,6 +50,11 @@ add_subdirectory(component)
 add_subdirectory(bootloader/common)
 add_subdirectory(${PROJECT_DIR})
 
+if(TARGET device_codegen)
+    add_dependencies(app device_codegen)
+    add_dependencies(drivers device_codegen)
+endif()
+
 add_executable(${PROJECT_NAME} ${NULL_C})
 set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME ${FIRMWARE_OUTPUT_NAME})
 target_link_libraries(${PROJECT_NAME}

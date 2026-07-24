@@ -11,6 +11,10 @@ properties:
   current-speed:
     type: int
     description: Initial baud rate setting for UART
+  rx-buffer-size:
+    type: int
+    default: 256
+    description: Static receive buffer size in bytes
   hw-flow-control:
     type: boolean
     description: Set to enable RTS/CTS flow control at boot time

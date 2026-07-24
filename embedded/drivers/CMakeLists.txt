@@ -16,6 +16,9 @@ target_link_libraries_ifdef(CONFIG_I2C ${MODULE_NAME} PUBLIC i2c)
 
 add_subdirectory_ifdef(CONFIG_UART uart)
 target_link_libraries_ifdef(CONFIG_UART ${MODULE_NAME} PUBLIC uart)
+if(TARGET uart AND TARGET device_codegen)
+    add_dependencies(uart device_codegen)
+endif()
 
 add_subdirectory_ifdef(CONFIG_CAN can)
 target_link_libraries_ifdef(CONFIG_CAN ${MODULE_NAME} PUBLIC can)
