@@ -10,6 +10,9 @@
 extern "C" {
 #endif
 
+extern void arm_irq_connect(unsigned int irq, void (*handler)(void));
+extern void arm_irq_clear_pending(unsigned int irq);
+
 #if !defined(CONFIG_ARM_CUSTOM_INTERRUPT_CONTROLLER)
 extern void arm_irq_enable(unsigned int irq);
 extern void arm_irq_disable(unsigned int irq);

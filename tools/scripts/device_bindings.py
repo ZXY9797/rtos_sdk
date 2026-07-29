@@ -25,7 +25,7 @@ ADAPTER_DRIVER_KEYS = {
     'adapter',
     'type-name',
     'init',
-    'isr',
+    'interrupts',
     'init-level',
     'init-priority',
     'requires',
@@ -37,6 +37,13 @@ ADAPTER_DRIVER_KEYS = {
 ADAPTER_KEYS = {
     'header',
     'macro',
+}
+
+INTERRUPT_KEYS = {
+    'name',
+    'method',
+    'uses-osal',
+    'shared',
 }
 
 CPP_IDENTIFIER_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
@@ -102,6 +109,57 @@ def parse_requires(raw_requires, filepath):
     return requires
 
 
+def parse_interrupts(raw_interrupts, filepath):
+    if raw_interrupts is None:
+        return []
+    if not isinstance(raw_interrupts, list):
+        raise ValueError(
+            f'cxx-driver.interrupts in {filepath} must be a list')
+
+    interrupts = []
+    names = set()
+    for index, item in enumerate(raw_interrupts):
+        if not isinstance(item, dict):
+            raise ValueError(
+                f'cxx-driver.interrupts[{index}] in {filepath} '
+                f'must be a mapping')
+        unknown = set(item) - INTERRUPT_KEYS
+        if unknown:
+            keys = ', '.join(sorted(unknown))
+            raise ValueError(
+                f'unknown interrupt keys in {filepath}: {keys}')
+
+        name = item.get('name')
+        method = item.get('method')
+        if not isinstance(name, str) or not name:
+            raise ValueError(
+                f'invalid interrupt name in {filepath}: {name!r}')
+        if name in names:
+            raise ValueError(
+                f'duplicate interrupt name in {filepath}: {name!r}')
+        if not isinstance(method, str) or not CPP_IDENTIFIER_RE.fullmatch(method):
+            raise ValueError(
+                f'invalid interrupt method in {filepath}: {method!r}')
+
+        uses_osal = item.get('uses-osal', False)
+        shared = item.get('shared', False)
+        if not isinstance(uses_osal, bool):
+            raise ValueError(
+                f'interrupt uses-osal in {filepath} must be boolean')
+        if not isinstance(shared, bool):
+            raise ValueError(
+                f'interrupt shared in {filepath} must be boolean')
+
+        names.add(name)
+        interrupts.append({
+            'name': name,
+            'method': method,
+            'uses_osal': uses_osal,
+            'shared': shared,
+        })
+    return interrupts
+
+
 def parse_adapter(cxx_driver, filepath, compatible):
     if not isinstance(cxx_driver, dict):
         raise ValueError(
@@ -137,11 +195,11 @@ def parse_adapter(cxx_driver, filepath, compatible):
         raise ValueError(f'invalid type-name in {filepath}')
 
     has_init = cxx_driver.get('init', False)
-    has_isr = cxx_driver.get('isr', False)
+    interrupts = parse_interrupts(
+        cxx_driver.get('interrupts'), filepath)
     device_base = cxx_driver.get('device-base', False)
     for key, value in (
             ('init', has_init),
-            ('isr', has_isr),
             ('device-base', device_base)):
         if not isinstance(value, bool):
             raise ValueError(
@@ -181,7 +239,8 @@ def parse_adapter(cxx_driver, filepath, compatible):
         'type_name': type_name.strip(),
         'compatible': compatible,
         'has_init': has_init,
-        'has_isr': has_isr,
+        'has_isr': bool(interrupts),
+        'interrupts': interrupts,
         'scope': scope,
         'init_level': init_level,
         'init_priority': init_priority,

@@ -19,7 +19,13 @@ namespace hal {
 
 class Irq {
 public:
+    using Handler = void (*)();
+
     Irq() = delete;
+
+    static void connect(int irq, Handler handler) {
+        arm_irq_connect(static_cast<unsigned int>(irq), handler);
+    }
 
     static void enable(int irq) {
         arm_irq_enable(static_cast<unsigned int>(irq));
@@ -35,6 +41,10 @@ public:
 
     static void setPriority(int irq, unsigned int prio, uint32_t flags = 0) {
         arm_irq_priority_set(static_cast<unsigned int>(irq), prio, flags);
+    }
+
+    static void clearPending(int irq) {
+        arm_irq_clear_pending(static_cast<unsigned int>(irq));
     }
 };
 

@@ -142,20 +142,18 @@ size_t UartBase::rx_available() const {
     return m_rx_stream.bytes_available();
 }
 
-void UartBase::isr_handler() {
+void UartBase::isr_handler(osal::IsrContext& context) {
     auto *regs = reinterpret_cast<Gr5525UartRegs *>(m_base);
 
     if (regs->LSR & LSR_DR) {
         uint8_t ch = static_cast<uint8_t>(regs->RBR);
-        int woken = 0;
-        (void)m_rx_stream.send_from_isr(&ch, 1, &woken);
-        (void)woken;
+        (void)m_rx_stream.send_from_isr(&ch, 1, context);
     }
 
     /* ETBEI 中断：发送器排空，释放 send 信号量 */
     if ((regs->IER & IER_ETBEI) && (regs->LSR & LSR_TEMT)) {
         regs->IER &= ~IER_ETBEI;
-        (void)m_tx_sem.release();
+        (void)m_tx_sem.release_from_isr(context);
     }
 }
 

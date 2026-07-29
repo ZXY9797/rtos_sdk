@@ -87,6 +87,10 @@ void osal_interrupt_enter(void) {
 void osal_interrupt_leave(void) {
 }
 
+void osal_yield_from_isr(int reschedule) {
+    (void)reschedule;
+}
+
 void sys_clock_announce(uint32_t ticks) {
     g_ticks += ticks;
 }
@@ -176,6 +180,11 @@ int Semaphore::release() {
     }
     irq_unlock();
     return -1;
+}
+
+int Semaphore::release_from_isr(IsrContext& context) {
+    (void)context;
+    return release();
 }
 
 uint32_t Semaphore::count() const {
@@ -381,11 +390,12 @@ void StreamBuffer::destroy() {
 }
 
 size_t StreamBuffer::send(const uint8_t *data, size_t len, Milliseconds) {
-    return send_from_isr(data, len, nullptr);
+    IsrContext context;
+    return send_from_isr(data, len, context);
 }
 
 size_t StreamBuffer::send_from_isr(const uint8_t *data, size_t len,
-                                   int *higher_prio_woken) {
+                                   IsrContext& context) {
     auto *state = static_cast<StreamState *>(control_block_);
     if (!state || !data || len == 0) return 0;
 
@@ -398,7 +408,7 @@ size_t StreamBuffer::send_from_isr(const uint8_t *data, size_t len,
     }
     irq_unlock();
 
-    if (higher_prio_woken) *higher_prio_woken = 0;
+    (void)context;
     return written;
 }
 
@@ -412,11 +422,12 @@ size_t StreamBuffer::receive(uint8_t *data, size_t len,
         if (wait_expired(start, timeout_ms)) return 0;
     }
 
-    return receive_from_isr(data, len, nullptr);
+    IsrContext context;
+    return receive_from_isr(data, len, context);
 }
 
 size_t StreamBuffer::receive_from_isr(uint8_t *data, size_t len,
-                                      int *higher_prio_woken) {
+                                      IsrContext& context) {
     auto *state = static_cast<StreamState *>(control_block_);
     if (!state || !data || len == 0) return 0;
 
@@ -429,7 +440,7 @@ size_t StreamBuffer::receive_from_isr(uint8_t *data, size_t len,
     }
     irq_unlock();
 
-    if (higher_prio_woken) *higher_prio_woken = 0;
+    (void)context;
     return read;
 }
 

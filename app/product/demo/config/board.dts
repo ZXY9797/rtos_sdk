@@ -105,7 +105,8 @@
         usart0: usart@40013800 {
             compatible = "gd,gd32-usart";
             reg = <0x40013800 0x400>;
-            interrupts = <37 0>;
+            interrupts = <37 6>;
+            interrupt-names = "global";
             status = "okay";
             current-speed = <115200>;
             pinctrl-0 = <&usart0_tx_pa9 &usart0_rx_pa10>;
@@ -116,7 +117,7 @@
         spi0: spi@40013000 {
             compatible = "gd,gd32-spi";
             reg = <0x40013000 0x400>;
-            interrupts = <35 0>;
+            interrupts = <35 6>;
             status = "okay";
             spi-max-frequency = <10000000>;
             label = "SPI0";
@@ -138,7 +139,7 @@
         dma0: dma@40020000 {
             compatible = "gd,gd32-dma";
             reg = <0x40020000 0x400>;
-            interrupts = <11 0>, <12 0>, <13 0>, <14 0>, <15 0>, <16 0>, <17 0>;
+            interrupts = <11 6>, <12 6>, <13 6>, <14 6>, <15 6>, <16 6>, <17 6>;
             label = "DMA0";
             dma-channels = <7>;
             mux-channels = <7>;
@@ -148,7 +149,7 @@
         dma1: dma@40020400 {
             compatible = "gd,gd32-dma";
             reg = <0x40020400 0x400>;
-            interrupts = <56 0>, <57 0>, <58 0>, <59 0>, <68 0>, <69 0>, <70 0>;
+            interrupts = <56 6>, <57 6>, <58 6>, <59 6>, <60 6>, <68 6>, <69 6>;
             label = "DMA1";
             dma-channels = <7>;
             mux-channels = <5>;
@@ -178,7 +179,8 @@
         timer0: pwm@40012C00 {
             compatible = "gd,gd32-timer";
             reg = <0x40012C00 0x400>;
-            interrupts = <25 0>;
+            interrupts = <25 6>;
+            interrupt-names = "update";
             status = "okay";
             label = "TIMER0";
             channel = <0>;
@@ -188,7 +190,8 @@
         timer5: timer@40001000 {
             compatible = "gd,gd32-timer";
             reg = <0x40001000 0x400>;
-            interrupts = <54 0>;
+            interrupts = <54 6>;
+            interrupt-names = "update";
             status = "okay";
             label = "TIMER5";
             channel = <0>;
@@ -200,7 +203,8 @@
         timer6: timer@40001400 {
             compatible = "gd,gd32-timer";
             reg = <0x40001400 0x400>;
-            interrupts = <55 0>;
+            interrupts = <55 6>;
+            interrupt-names = "update";
             status = "okay";
             label = "TIMER6";
             channel = <0>;
@@ -212,7 +216,7 @@
         adc0: adc@40022800 {
             compatible = "gd,gd32-adc";
             reg = <0x40022800 0x400>;
-            interrupts = <18 0>;
+            interrupts = <18 6>;
             status = "okay";
             label = "ADC0";
             #io-channel-cells = <1>;

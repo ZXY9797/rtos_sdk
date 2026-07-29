@@ -169,21 +169,19 @@ size_t UartBase::rx_available() const {
     return m_rx_stream.bytes_available();
 }
 
-void UartBase::isr_handler() {
+void UartBase::isr_handler(osal::IsrContext& context) {
     auto *regs = reinterpret_cast<gd32::UsartRegs *>(m_base);
     uint32_t stat = regs->STAT;
 
     if (stat & STAT_RBNE) {
         uint8_t ch = static_cast<uint8_t>(regs->DATA);
-        int woken = 0;
-        (void)m_rx_stream.send_from_isr(&ch, 1, &woken);
-        (void)woken;
+        (void)m_rx_stream.send_from_isr(&ch, 1, context);
     }
 
     /* TC 中断：传输完成，释放 send 信号量 */
     if ((stat & STAT_TC) && (regs->CTL0 & CTL0_TCIE)) {
         regs->CTL0 &= ~CTL0_TCIE;
-        (void)m_tx_sem.release();
+        (void)m_tx_sem.release_from_isr(context);
     }
 }
 
@@ -191,10 +189,11 @@ void UartBase::isr_handler() {
 
 /* DMA1 Channel 4 中断 — UART0 TX DMA 完成 */
 extern "C" void IRQ60_Handler(void) {
+    osal::IsrContext context;
     auto *dma = reinterpret_cast<gd32::DmaRegs *>(DMA1_BASE);
     dma->INTC = (DMA_INTC_GIFC | DMA_INTC_FTFIFC
                  | DMA_INTC_HTFIFC | DMA_INTC_ERRIFC) << (4U * 4U);
     if (hal::s_uart_tx_sem) {
-        (void)hal::s_uart_tx_sem->release();
+        (void)hal::s_uart_tx_sem->release_from_isr(context);
     }
 }

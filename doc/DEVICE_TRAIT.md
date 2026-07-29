@@ -74,7 +74,7 @@ cxx-driver:
 ```
 
 `type-name` 只用于 `devices.json` 和诊断表，不参与 C++ 代码拼接。
-`init` 和 `isr` 声明 adapter 是否提供对应静态入口。
+`init` 声明 adapter 是否提供初始化入口；`interrupts` 逐项声明 ISR 分发入口。
 
 ### Adapter 示例
 
@@ -112,7 +112,7 @@ cxx-driver:
 | `adapter.macro` | 接收一个 `node_id` 的 C++ 宏 |
 | `type-name` | 诊断报告中的类型名 |
 | `init` | adapter 是否提供 `static int init()` |
-| `isr` | adapter 是否提供 `static void isr()` |
+| `interrupts` | 中断名称、adapter 方法、OSAL 使用和共享属性 |
 | `scope` | `node` 或 `children` |
 | `requires` | parent/phandle 初始化依赖 |
 | `init-level` | initcall 级别 |
@@ -136,9 +136,13 @@ inline auto &device_get() { return DeviceTrait<14>::instance; }
 // 自动生成的 drivers_generated.cc
 DeviceTrait<14>::type DeviceTrait<14>::instance{};
 static int _init_uart0() {
+    Irq::disable(37);
+    Irq::connect(37, IRQ37_Handler);
+    Irq::setPriority(37, 6);
+    Irq::clearPending(37);
     return DeviceTrait<14>::init();
 }
-SYS_INIT(hal::_init_uart0, INITCALL_LEVEL_PRE_KERNEL_2, 25);
+SYS_INIT(hal::_init_uart0, INITCALL_LEVEL_POST_KERNEL, 25);
 ```
 
 ## 设计优势

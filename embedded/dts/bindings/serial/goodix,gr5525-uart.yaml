@@ -10,10 +10,13 @@ cxx-driver:
     macro: HAL_UART_DT_ADAPT
   type-name: Uart
   init: true
-  isr: true
+  interrupts:
+    - name: global
+      method: isr_global
+      uses-osal: true
   readiness: device-base
   device-base: true
-  init-level: pre-kernel-2
+  init-level: post-kernel
   init-priority: 25
 
 properties:

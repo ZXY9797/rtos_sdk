@@ -197,6 +197,19 @@ int Semaphore::release()
     return xSemaphoreGive(handle_) == pdTRUE ? 0 : -1;
 }
 
+int Semaphore::release_from_isr(IsrContext& context)
+{
+    if (handle_ == nullptr) {
+        return -1;
+    }
+
+    BaseType_t higher_priority_woken = pdFALSE;
+    const BaseType_t result =
+        xSemaphoreGiveFromISR(handle_, &higher_priority_woken);
+    context.request_reschedule(higher_priority_woken == pdTRUE);
+    return result == pdTRUE ? 0 : -1;
+}
+
 uint32_t Semaphore::count() const
 {
     return handle_ != nullptr ? static_cast<uint32_t>(uxSemaphoreGetCount(handle_)) : 0U;
@@ -871,7 +884,7 @@ size_t StreamBuffer::send(const uint8_t *data, size_t len,
 }
 
 size_t StreamBuffer::send_from_isr(const uint8_t *data, size_t len,
-                                   int *higher_prio_woken)
+                                   IsrContext& context)
 {
     auto h = static_cast<StreamBufferHandle_t>(handle_);
     if (h == nullptr || data == nullptr || len == 0U) {
@@ -879,9 +892,7 @@ size_t StreamBuffer::send_from_isr(const uint8_t *data, size_t len,
     }
     BaseType_t woken = pdFALSE;
     size_t written = xStreamBufferSendFromISR(h, data, len, &woken);
-    if (higher_prio_woken != nullptr) {
-        *higher_prio_woken = static_cast<int>(woken);
-    }
+    context.request_reschedule(woken == pdTRUE);
     return written;
 }
 
@@ -897,7 +908,7 @@ size_t StreamBuffer::receive(uint8_t *data, size_t len,
 }
 
 size_t StreamBuffer::receive_from_isr(uint8_t *data, size_t len,
-                                      int *higher_prio_woken)
+                                      IsrContext& context)
 {
     auto h = static_cast<StreamBufferHandle_t>(handle_);
     if (h == nullptr || data == nullptr || len == 0U) {
@@ -905,9 +916,7 @@ size_t StreamBuffer::receive_from_isr(uint8_t *data, size_t len,
     }
     BaseType_t woken = pdFALSE;
     size_t read = xStreamBufferReceiveFromISR(h, data, len, &woken);
-    if (higher_prio_woken != nullptr) {
-        *higher_prio_woken = static_cast<int>(woken);
-    }
+    context.request_reschedule(woken == pdTRUE);
     return read;
 }
 

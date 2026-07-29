@@ -13,7 +13,9 @@
  ******************************************************************************/
 
 #include <stdint.h>
+#include <stddef.h>
 #include "gr55xx.h"
+#include "platform/gr_soc.h"
 
 /*
  * Default system clock: 64 MHz (IRC/HF_OSC before PLL is configured).
@@ -33,6 +35,14 @@ uint32_t SystemSlowClock = 32768UL;
  */
 #define VECTOR_TABLE_SIZE  (MAX_NUMS_IRQn + 16)
 __ALIGNED(0x100) uint32_t ram_vector_table[VECTOR_TABLE_SIZE];
+
+void arm_irq_connect(unsigned int irq, void (*handler)(void))
+{
+    if ((irq < MAX_NUMS_IRQn) && (handler != NULL))
+    {
+        soc_register_nvic((IRQn_Type)irq, (uint32_t)(uintptr_t)handler);
+    }
+}
 
 /*----------------------------------------------------------------------------
   SystemInit

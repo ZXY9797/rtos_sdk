@@ -125,6 +125,10 @@ cxx-driver:
     macro: HAL_PWM_DT_ADAPT
   type-name: PwmChannel
   init: true
+  interrupts:
+    - name: update
+      method: isr_update
+      uses-osal: true
   init-level: pre-kernel-2
   init-priority: 25
 ```
@@ -152,7 +156,7 @@ int main() {
 | `adapter.macro` | 接收 `node_id` 的宏名 |
 | `type-name` | 诊断报告类型名 |
 | `init` | 是否生成 initcall |
-| `isr` | 是否生成 IRQ 转发入口 |
+| `interrupts` | IRQ 名称、adapter 分发方法、OSAL 使用和共享属性 |
 | `scope` | 匹配当前节点或其子节点 |
 | `requires` | parent/phandle 初始化依赖 |
 | `init-level` | initcall 级别 |

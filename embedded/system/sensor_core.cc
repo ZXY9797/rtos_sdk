@@ -12,7 +12,7 @@ SensorCore::~SensorCore()
 
 int SensorCore::start()
 {
-    thread_ = osal::PeriodicThread::create(cfg_.name, cfg_.entry, cfg_.param,
+    thread_ = osal::PeriodicThread::create(cfg_.name, thread_entry, this,
                                            cfg_.stack_size, cfg_.priority,
                                            cfg_.frequency_hz,
                                            osal::PeriodicTrigger::External);
@@ -28,10 +28,19 @@ int SensorCore::start()
 void SensorCore::timer_callback(void *arg)
 {
     auto *self = static_cast<SensorCore *>(arg);
+    self->on_sensor_done();
+}
+
+void SensorCore::thread_entry(
+    void *arg, const osal::PeriodicStats& stats)
+{
+    auto *self = static_cast<SensorCore *>(arg);
     if (self->cfg_.read_fn) {
         self->cfg_.read_fn(self->cfg_.sensor_arg);
     }
-    self->on_sensor_done();
+    if (self->cfg_.entry) {
+        self->cfg_.entry(self->cfg_.param, stats);
+    }
 }
 
 void SensorCore::on_sensor_done()

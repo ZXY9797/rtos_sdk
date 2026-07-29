@@ -26,6 +26,9 @@ static inline int osal_thread_yield(void) {
 
 static inline void osal_interrupt_enter(void) {}
 static inline void osal_interrupt_leave(void) {}
+static inline void osal_yield_from_isr(int reschedule) {
+    portYIELD_FROM_ISR(reschedule != 0 ? pdTRUE : pdFALSE);
+}
 static inline void sys_clock_announce(uint32_t ticks) { (void)ticks; }
 
 // ─── 堆封装 ───────────────────────────────────────────────────────
@@ -37,6 +40,8 @@ static inline void  rtos_free(void *ptr) { if (ptr) vPortFree(ptr); }
 
 namespace osal {
 inline constexpr uint32_t kSemaphoreMaxCount = 0xFFFFU;
+inline constexpr uint32_t kMinRtosCallableIrqPriority =
+    configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY;
 inline constexpr uint8_t  kPriorityMax =
     static_cast<uint8_t>((configMAX_PRIORITIES > 0) ? (configMAX_PRIORITIES - 1) : 0);
 inline constexpr size_t   kDefaultThreadStackBytes = 1024U;

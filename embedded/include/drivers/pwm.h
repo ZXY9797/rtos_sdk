@@ -31,6 +31,7 @@ public:
 
     using IrqCallback = void (*)(void *arg);
     [[nodiscard]] Status set_update_callback(IrqCallback cb, void *arg);
+    void isr_handler(osal::IsrContext& context);
 
     /// IrqTimer 接口
     [[nodiscard]] bool enable_update_irq(IrqCallback cb, void *arg) override {
@@ -44,25 +45,28 @@ public:
     [[nodiscard]] constexpr PwmChannel channel() const { return m_channel; }
 
 protected:
-    constexpr PwmBase(uintptr_t base, PwmChannel ch) : m_base(base), m_channel(ch) {}
+    constexpr PwmBase(uintptr_t base, PwmChannel ch, int irq)
+        : m_base(base), m_channel(ch), m_irq(irq) {}
     uintptr_t m_base;
     PwmChannel m_channel;
+    int m_irq;
     bool m_initialized {false};
     IrqCallback m_update_cb {nullptr};
     void *m_update_arg {nullptr};
 };
 
-template <uintptr_t Base, PwmChannel Ch = PwmChannel::Ch1>
+template <uintptr_t Base, PwmChannel Ch = PwmChannel::Ch1, int Irq = -1>
 class Pwm : public PwmBase {
 public:
-    constexpr Pwm() : PwmBase(Base, Ch) {}
+    constexpr Pwm() : PwmBase(Base, Ch, Irq) {}
 };
 
 // 特化：用于区分相同基地址不同通道的实例
-template <uintptr_t Base, int ChannelIdx>
+template <uintptr_t Base, int ChannelIdx, int Irq = -1>
 class PwmCh : public PwmBase {
 public:
-    constexpr PwmCh() : PwmBase(Base, static_cast<PwmChannel>(ChannelIdx)) {}
+    constexpr PwmCh()
+        : PwmBase(Base, static_cast<PwmChannel>(ChannelIdx), Irq) {}
 };
 
 /// ISR 快速路径命名空间 — 提供零开销的寄存器直操作接口

@@ -127,22 +127,20 @@ size_t UartBase::rx_available() const {
     return m_rx_stream.bytes_available();
 }
 
-void UartBase::isr_handler() {
+void UartBase::isr_handler(osal::IsrContext& context) {
     auto *regs = reinterpret_cast<UartRegs *>(m_base);
     uint32_t isr = regs->ISR;
     if (isr & ISR_RXNE) {
         uint8_t ch = static_cast<uint8_t>(regs->RDR);
-        int woken = 0;
-        size_t written = m_rx_stream.send_from_isr(&ch, 1, &woken);
+        size_t written = m_rx_stream.send_from_isr(&ch, 1, context);
         if (written > 0) {
             m_stats.rx_bytes++;
         }
-        (void)woken;
     }
     if ((isr & ISR_TC) && (regs->CR1 & CR1_TCIE)) {
         regs->ICR = ICR_TCCF;
         regs->CR1 &= ~CR1_TCIE;
-        (void)m_tx_sem.release();
+        (void)m_tx_sem.release_from_isr(context);
     }
     if (isr & ISR_ORE) {
         m_stats.overrun_count++;

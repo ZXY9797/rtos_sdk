@@ -2,6 +2,7 @@
 
 #include <drivers/status.h>
 #include <device_base.h>
+#include <irq.h>
 #include <osal.h>
 #include <cstdint>
 #include <cstddef>
@@ -40,12 +41,20 @@ public:
     [[nodiscard]] size_t rx_available() const;
 
     /// 获取运行时统计
-    [[nodiscard]] UartStats get_stats() const { return m_stats; }
+    [[nodiscard]] UartStats get_stats() const
+    {
+        const IrqGuard guard;
+        return m_stats;
+    }
 
     /// 重置统计计数器
-    void reset_stats() { m_stats = {}; }
+    void reset_stats()
+    {
+        const IrqGuard guard;
+        m_stats = {};
+    }
 
-    void isr_handler();
+    void isr_handler(osal::IsrContext& context);
 
 protected:
     explicit UartBase(uintptr_t base, int irq)

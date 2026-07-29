@@ -52,14 +52,14 @@ struct DmaSpiMapping {
 constexpr int MAX_DMA_IRQ = 90;
 static DmaSpiMapping s_dma_spi_map[MAX_DMA_IRQ] = {};
 
-static void dma_channel_isr(int irq_num) {
+static void dma_channel_isr(int irq_num, osal::IsrContext& context) {
     auto &m = s_dma_spi_map[irq_num];
     if (!m.spi) return;
     auto *dma = reinterpret_cast<gd32::DmaRegs *>(m.dma_base);
     /* 清除所有中断标志（通过 INTC 写 1 清除） */
     dma->INTC = (DMA_INTC_GIFC | DMA_INTC_FTFIFC
                  | DMA_INTC_HTFIFC | DMA_INTC_ERRIFC);
-    (void)m.spi->xfer_sem().release();
+    (void)m.spi->xfer_sem().release_from_isr(context);
 }
 
 } // anonymous namespace
@@ -201,9 +201,17 @@ Status SpiBase::sync_send(const uint8_t *tx, uint8_t *rx, size_t len, uint32_t t
 } // namespace hal
 
 /* DMA 中断服务函数 — 直接覆盖向量表弱别名 */
-extern "C" void IRQ14_Handler(void) { hal::dma_channel_isr(14); }  /* DMA0_CH3 */
-extern "C" void IRQ15_Handler(void) { hal::dma_channel_isr(15); }  /* DMA0_CH4 */
-extern "C" void IRQ16_Handler(void) { hal::dma_channel_isr(16); }  /* DMA0_CH5 */
-extern "C" void IRQ17_Handler(void) { hal::dma_channel_isr(17); }  /* DMA0_CH6 */
-extern "C" void IRQ56_Handler(void) { hal::dma_channel_isr(56); }  /* DMA1_CH0 */
-extern "C" void IRQ57_Handler(void) { hal::dma_channel_isr(57); }  /* DMA1_CH1 */
+#define HAL_DMA_ISR(irq_num)                                      \
+    extern "C" void IRQ##irq_num##_Handler(void) {                \
+        osal::IsrContext context;                                  \
+        hal::dma_channel_isr(irq_num, context);                    \
+    }
+
+HAL_DMA_ISR(14)
+HAL_DMA_ISR(15)
+HAL_DMA_ISR(16)
+HAL_DMA_ISR(17)
+HAL_DMA_ISR(56)
+HAL_DMA_ISR(57)
+
+#undef HAL_DMA_ISR

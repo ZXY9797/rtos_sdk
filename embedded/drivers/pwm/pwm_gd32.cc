@@ -1,5 +1,6 @@
 #include <drivers/pwm.h>
 #include <gd32_regs.h>
+#include <irq.h>
 
 namespace hal {
 
@@ -67,54 +68,6 @@ constexpr uint32_t INTF_UPIF = (1U << 0); // 更新中断标志
 constexpr uint32_t SMCFG_MMC_Pos = 4; // 主模式选择
 constexpr uint32_t SMCFG_MMC_Msk = (7U << 4);
 constexpr uint32_t SMCFG_MMC_TRGO = (2U << 4); // 更新事件 → TRGO
-
-// 更新中断号 — 使用 SoC 头文件定义
-#include <irq.h>
-static constexpr int TIMER0_UP_IRQn = 25; // TIMER0_UP_TIMER9_IRQn (from CMSIS)
-static constexpr int TIMER5_IRQn    = 54; // TIMER5_IRQn
-static constexpr int TIMER6_IRQn    = 55; // TIMER6_IRQn
-
-// TIMER0 ISR 回调存储
-static PwmBase::IrqCallback s_timer0_update_cb = nullptr;
-static void *s_timer0_update_arg = nullptr;
-
-extern "C" void TIMER0_UP_TIMER9_IRQHandler() {
-    auto *regs = reinterpret_cast<TimerRegs *>(TIMER0_BASE);
-    if (regs->INTF & INTF_UPIF) {
-        regs->INTF = INTF_UPIF; // 写 1 清除 (GD32 rc_w1)
-        if (s_timer0_update_cb) {
-            s_timer0_update_cb(s_timer0_update_arg);
-        }
-    }
-}
-
-// TIMER5 ISR 回调存储
-static PwmBase::IrqCallback s_timer5_update_cb = nullptr;
-static void *s_timer5_update_arg = nullptr;
-
-extern "C" void TIMER5_IRQHandler() {
-    auto *regs = reinterpret_cast<TimerRegs *>(TIMER5_BASE);
-    if (regs->INTF & INTF_UPIF) {
-        regs->INTF = INTF_UPIF;
-        if (s_timer5_update_cb) {
-            s_timer5_update_cb(s_timer5_update_arg);
-        }
-    }
-}
-
-// TIMER6 ISR 回调存储
-static PwmBase::IrqCallback s_timer6_update_cb = nullptr;
-static void *s_timer6_update_arg = nullptr;
-
-extern "C" void TIMER6_IRQHandler() {
-    auto *regs = reinterpret_cast<TimerRegs *>(TIMER6_BASE);
-    if (regs->INTF & INTF_UPIF) {
-        regs->INTF = INTF_UPIF;
-        if (s_timer6_update_cb) {
-            s_timer6_update_cb(s_timer6_update_arg);
-        }
-    }
-}
 
 // 检测是否为高级定时器(TIMER0/TIMER7) — 有 CCHP 寄存器
 static constexpr bool is_advanced_timer(uintptr_t base) {
@@ -196,7 +149,13 @@ Status PwmBase::init(const PwmConfig &config) {
 Status PwmBase::deinit() {
     if (!m_initialized) return Status::Ok;
     auto *regs = reinterpret_cast<TimerRegs *>(m_base);
+    if (m_irq >= 0) {
+        Irq::disable(m_irq);
+    }
+    regs->DMAINTEN &= ~DMAINTEN_UPIE;
     regs->CTL0 = 0;
+    m_update_cb = nullptr;
+    m_update_arg = nullptr;
     m_initialized = false;
     return Status::Ok;
 }
@@ -256,41 +215,35 @@ Status PwmBase::disable_output() {
 }
 
 Status PwmBase::set_update_callback(IrqCallback cb, void *arg) {
-    m_update_cb = cb;
-    m_update_arg = arg;
-
-    PwmBase::IrqCallback *dst_cb = nullptr;
-    void **dst_arg = nullptr;
-    int irqn = -1;
-
-    if (m_base == TIMER0_BASE) {
-        dst_cb = &s_timer0_update_cb;
-        dst_arg = &s_timer0_update_arg;
-        irqn = TIMER0_UP_IRQn;
-    } else if (m_base == TIMER5_BASE) {
-        dst_cb = &s_timer5_update_cb;
-        dst_arg = &s_timer5_update_arg;
-        irqn = TIMER5_IRQn;
-    } else if (m_base == TIMER6_BASE) {
-        dst_cb = &s_timer6_update_cb;
-        dst_arg = &s_timer6_update_arg;
-        irqn = TIMER6_IRQn;
-    } else {
+    if (m_irq < 0) {
         return Status::NotSupported;
     }
 
-    *dst_cb = cb;
-    *dst_arg = arg;
-
+    Irq::disable(m_irq);
     auto *regs = reinterpret_cast<TimerRegs *>(m_base);
+    regs->DMAINTEN &= ~DMAINTEN_UPIE;
+    m_update_cb = cb;
+    m_update_arg = arg;
     regs->INTF = INTF_UPIF;
     if (cb) {
+        Irq::clearPending(m_irq);
         regs->DMAINTEN |= DMAINTEN_UPIE;
-        hal::Irq::enable(irqn);
-    } else {
-        regs->DMAINTEN &= ~DMAINTEN_UPIE;
+        Irq::enable(m_irq);
     }
     return Status::Ok;
+}
+
+void PwmBase::isr_handler(osal::IsrContext& context) {
+    (void)context;
+    auto *regs = reinterpret_cast<TimerRegs *>(m_base);
+    if ((regs->INTF & INTF_UPIF) == 0U) {
+        return;
+    }
+
+    regs->INTF = INTF_UPIF;
+    if (m_update_cb != nullptr) {
+        m_update_cb(m_update_arg);
+    }
 }
 
 } // namespace hal

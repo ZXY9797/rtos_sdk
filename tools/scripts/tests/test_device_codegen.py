@@ -40,7 +40,7 @@ def fake_node(path='/test'):
     )
 
 
-def fake_spec(has_init=False):
+def fake_spec(has_init=False, interrupts=None):
     node = fake_node()
     return {
         'node': node,
@@ -54,8 +54,8 @@ def fake_spec(has_init=False):
         'init_level': 'pre-kernel-2',
         'init_priority': 25,
         'has_init': has_init,
-        'has_isr': False,
-        'irq': None,
+        'has_isr': bool(interrupts),
+        'interrupts': interrupts or [],
     }
 
 
@@ -79,6 +79,26 @@ class BindingContractTest(unittest.TestCase):
             resolve_dependencies(
                 node, [('phandle', 'controller')])
 
+    def test_interrupt_metadata_is_structured(self):
+        driver = valid_driver()
+        driver['interrupts'] = [{
+            'name': 'global',
+            'method': 'isr_global',
+            'uses-osal': True,
+        }]
+        parsed = parse_adapter(
+            driver, 'test.yaml', 'vendor,test')
+        self.assertEqual(
+            parsed['interrupts'][0]['method'], 'isr_global')
+        self.assertTrue(
+            parsed['interrupts'][0]['uses_osal'])
+
+    def test_legacy_isr_flag_is_rejected(self):
+        driver = valid_driver()
+        driver['isr'] = True
+        with self.assertRaisesRegex(ValueError, 'unknown cxx-driver'):
+            parse_adapter(driver, 'test.yaml', 'vendor,test')
+
 
 class GeneratedCodeTest(unittest.TestCase):
     def test_no_init_device_still_has_instance_definition(self):
@@ -93,6 +113,24 @@ class GeneratedCodeTest(unittest.TestCase):
             [fake_spec(has_init=False)],
             {'device_adapters/test_dt.h'})
         self.assertNotIn('template class', header)
+
+    def test_interrupt_only_device_gets_irq_init_and_wrapper(self):
+        interrupt = {
+            'name': 'global',
+            'method': 'isr_global',
+            'uses_osal': True,
+            'shared': False,
+            'irq': 37,
+            'priority': 6,
+            'controller': '/nvic',
+            'index': 0,
+        }
+        source = render_source([
+            fake_spec(has_init=False, interrupts=[interrupt])])
+        self.assertIn('Irq::connect(37, IRQ37_Handler);', source)
+        self.assertIn(
+            'hal::DeviceTrait<1>::isr_global(context);', source)
+        self.assertIn('SYS_INIT(hal::_init_test0', source)
 
 
 if __name__ == '__main__':

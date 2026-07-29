@@ -31,7 +31,8 @@ aliases {
 usart0: usart@40013800 {
     compatible = "gd,gd32-usart";
     reg = <0x40013800 0x400>;
-    interrupts = <37 0>;
+    interrupts = <37 6>;
+    interrupt-names = "global";
     status = "okay";            // okay → 自动初始化
     current-speed = <115200>;   // init 参数从 DTS 解析
 };

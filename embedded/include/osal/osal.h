@@ -47,6 +47,36 @@ public:
     static bool resume_scheduler();
 };
 
+class IsrContext {
+public:
+    IsrContext()
+    {
+        osal_interrupt_enter();
+    }
+
+    ~IsrContext()
+    {
+        osal_interrupt_leave();
+        osal_yield_from_isr(reschedule_ ? 1 : 0);
+    }
+
+    IsrContext(const IsrContext&) = delete;
+    IsrContext& operator=(const IsrContext&) = delete;
+
+    void request_reschedule(bool required = true)
+    {
+        reschedule_ = reschedule_ || required;
+    }
+
+    [[nodiscard]] bool reschedule_requested() const
+    {
+        return reschedule_;
+    }
+
+private:
+    bool reschedule_ {false};
+};
+
 class Semaphore {
 public:
     explicit Semaphore(uint32_t initial = 0U, uint32_t max_count = kSemaphoreMaxCount);
@@ -57,6 +87,7 @@ public:
 
     [[nodiscard]] int take(Milliseconds timeout_ms = kWaitForever);
     [[nodiscard]] int release();
+    [[nodiscard]] int release_from_isr(IsrContext& context);
     [[nodiscard]] uint32_t count() const;
     [[nodiscard]] uint32_t max_count() const { return max_count_; }
     [[nodiscard]] bool is_valid() const { return handle_ != nullptr; }
@@ -332,14 +363,14 @@ public:
                               Milliseconds timeout_ms = kWaitForever);
     /// ISR 安全发送
     [[nodiscard]] size_t send_from_isr(const uint8_t *data, size_t len,
-                                       int *higher_prio_woken);
+                                       IsrContext& context);
 
     /// 接收数据（阻塞直到 trigger_level 字节可用或超时）
     [[nodiscard]] size_t receive(uint8_t *data, size_t len,
                                  Milliseconds timeout_ms = kWaitForever);
     /// ISR 安全接收
     [[nodiscard]] size_t receive_from_isr(uint8_t *data, size_t len,
-                                          int *higher_prio_woken);
+                                          IsrContext& context);
 
     [[nodiscard]] size_t bytes_available() const;
     [[nodiscard]] size_t space_available() const;

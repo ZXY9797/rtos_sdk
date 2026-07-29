@@ -13,7 +13,8 @@
                                                                    \
         using type = Pwm<                                         \
             DT_REG_ADDR(node_id),                                 \
-            static_cast<PwmChannel>(kChannel)>;                    \
+            static_cast<PwmChannel>(kChannel),                     \
+            DT_IRQN(node_id)>;                                    \
         static type instance;                                      \
                                                                    \
         static int init()                                          \
@@ -23,6 +24,11 @@
                 DT_PROP_OR(node_id, prescaler, 0U);                \
             config.period = DT_PROP_OR(node_id, period, 0U);       \
             return static_cast<int>(instance.init(config));        \
+        }                                                          \
+                                                                   \
+        static void isr_update(osal::IsrContext& context)          \
+        {                                                          \
+            instance.isr_handler(context);                         \
         }                                                          \
     };
 

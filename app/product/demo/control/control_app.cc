@@ -99,12 +99,12 @@ static uint8_t g_motor_count = 0;
 static uint8_t g_active_motor = 0;  // Currently selected CLI motor.
 static osal::PeriodicThread *g_led_thread = nullptr;
 
-// IMU data updated from SensorCore ISR
+// IMU data updated by the SensorCore worker thread.
 #ifdef CONFIG_IMU_ICM40609D
 #include <imu/icm40609d.h>
 static imu::ImuData g_imu_data;
 
-static bool imu_read_in_isr(void *) {
+static bool imu_read_sample(void *) {
     return app::board::imu().read(g_imu_data);
 }
 #endif
@@ -968,9 +968,9 @@ static int init_motor(MotorContext &ctx, uint8_t motor_idx) {
         sc_cfg.priority = CTRL_LOOP_PRIO;
         sc_cfg.frequency_hz = CTRL_LOOP_HZ;
         sc_cfg.timer = &imu_tim;
-// IMU data updated from SensorCore ISR
+// IMU data updated by the SensorCore worker thread.
 #ifdef CONFIG_IMU_ICM40609D
-        sc_cfg.read_fn = imu_read_in_isr;
+        sc_cfg.read_fn = imu_read_sample;
         sc_cfg.divider = 8;
 #endif
         ctx.imu_core = new SensorCore(sc_cfg);

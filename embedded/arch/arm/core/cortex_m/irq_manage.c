@@ -9,6 +9,17 @@
 #define REG_FROM_IRQ(irq) (irq / NUM_IRQS_PER_REG)
 #define BIT_FROM_IRQ(irq) (irq % NUM_IRQS_PER_REG)
 
+__weak void arm_irq_connect(unsigned int irq, void (*handler)(void))
+{
+	ARG_UNUSED(irq);
+	ARG_UNUSED(handler);
+}
+
+__weak void arm_irq_clear_pending(unsigned int irq)
+{
+	NVIC_ClearPendingIRQ((IRQn_Type)irq);
+}
+
 #if !defined(CONFIG_ARM_CUSTOM_INTERRUPT_CONTROLLER)
 void arm_irq_enable(unsigned int irq)
 {

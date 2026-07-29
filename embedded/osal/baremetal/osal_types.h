@@ -19,6 +19,7 @@ int osal_sleep(int ms);
 int osal_thread_yield(void);
 void osal_interrupt_enter(void);
 void osal_interrupt_leave(void);
+void osal_yield_from_isr(int reschedule);
 void sys_clock_announce(uint32_t ticks);
 
 void *rtos_malloc(size_t size);
@@ -26,7 +27,7 @@ void rtos_free(void *ptr);
 
 namespace osal {
 inline constexpr uint32_t kSemaphoreMaxCount = 0xFFFFU;
+inline constexpr uint32_t kMinRtosCallableIrqPriority = 0U;
 inline constexpr uint8_t kPriorityMax = 31U;
 inline constexpr size_t kDefaultThreadStackBytes = 1024U;
 } // namespace osal
-

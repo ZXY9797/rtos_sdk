@@ -10,6 +10,10 @@ cxx-driver:
     macro: HAL_GD32_PWM_DT_ADAPT
   type-name: Pwm
   init: true
+  interrupts:
+    - name: update
+      method: isr_update
+      uses-osal: true
   readiness: is-initialized
   init-level: pre-kernel-2
   init-priority: 25

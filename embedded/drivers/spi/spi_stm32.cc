@@ -99,7 +99,7 @@ Status SpiBase::deinit() {
     return Status::Ok;
 }
 
-static void spi_stm32_isr(int irq_num) {
+static void spi_stm32_isr(int irq_num, osal::IsrContext& context) {
     auto *spi = s_spi_by_irq[irq_num];
     if (!spi) return;
     auto *regs = reinterpret_cast<SpiRegs *>(spi->base());
@@ -107,7 +107,7 @@ static void spi_stm32_isr(int irq_num) {
     if (sr & SR_EOT) {
         regs->IFCR = IFCR_EOTC;
         regs->IER &= ~IER_EOTIE;
-        (void)spi->xfer_sem().release();
+        (void)spi->xfer_sem().release_from_isr(context);
     }
 }
 
@@ -147,5 +147,11 @@ Status SpiBase::sync_send(const uint8_t *tx, uint8_t *rx, size_t len, uint32_t t
 } // namespace hal
 
 /* SPI 中断服务函数 — 直接覆盖向量表弱别名 */
-extern "C" void IRQ35_Handler(void) { hal::spi_stm32_isr(35); }  /* SPI1 */
-extern "C" void IRQ36_Handler(void) { hal::spi_stm32_isr(36); }  /* SPI2 */
+extern "C" void IRQ35_Handler(void) {
+    osal::IsrContext context;
+    hal::spi_stm32_isr(35, context);
+}
+extern "C" void IRQ36_Handler(void) {
+    osal::IsrContext context;
+    hal::spi_stm32_isr(36, context);
+}

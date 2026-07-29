@@ -213,6 +213,12 @@ int Semaphore::release()
     return rt_sem_release(handle_) == RT_EOK ? 0 : -1;
 }
 
+int Semaphore::release_from_isr(IsrContext& context)
+{
+    (void)context;
+    return release();
+}
+
 uint32_t Semaphore::count() const
 {
     if (handle_ == nullptr) {
@@ -971,20 +977,18 @@ size_t StreamBuffer::send(const uint8_t *data, size_t len,
 }
 
 size_t StreamBuffer::send_from_isr(const uint8_t *data, size_t len,
-                                   int *higher_prio_woken)
+                                   IsrContext& context)
 {
     auto *sb = static_cast<StreamBufferInternal*>(handle_);
     if (sb == nullptr || data == nullptr || len == 0U) return 0U;
 
     size_t written = sb_write(sb, data, len);
-    rt_err_t woken = RT_EOK;
+    bool released = false;
     for (size_t i = 0; i < written; i++) {
         rt_err_t r = rt_sem_release(sb->sem);
-        if (r == RT_EOK) woken = RT_EOK; // 简化处理
+        released = (r == RT_EOK);
     }
-    if (higher_prio_woken != nullptr) {
-        *higher_prio_woken = (woken == RT_EOK) ? 1 : 0;
-    }
+    context.request_reschedule(released);
     return written;
 }
 
@@ -1015,14 +1019,13 @@ size_t StreamBuffer::receive(uint8_t *data, size_t len,
 }
 
 size_t StreamBuffer::receive_from_isr(uint8_t *data, size_t len,
-                                      int *higher_prio_woken)
+                                      IsrContext& context)
 {
     auto *sb = static_cast<StreamBufferInternal*>(handle_);
     if (sb == nullptr || data == nullptr || len == 0U) return 0U;
 
     // 非阻塞尝试获取信号量
     if (rt_sem_take(sb->sem, 0) != RT_EOK) {
-        if (higher_prio_woken != nullptr) *higher_prio_woken = 0;
         return 0U;
     }
 
@@ -1034,7 +1037,7 @@ size_t StreamBuffer::receive_from_isr(uint8_t *data, size_t len,
         if (rt_sem_take(sb->sem, 0) != RT_EOK) break;
     }
 
-    if (higher_prio_woken != nullptr) *higher_prio_woken = 0;
+    (void)context;
     return read;
 }
 
