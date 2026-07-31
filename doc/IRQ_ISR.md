@@ -27,6 +27,7 @@ cxx-driver:
     - name: global
       method: isr_global
       uses-osal: true
+      enable-on-init: true
   init-level: post-kernel
   init-priority: 25
 ```
@@ -39,9 +40,45 @@ cxx-driver:
 | `method` | `DeviceTrait<Ord>` 中的静态分发方法 |
 | `uses-osal` | ISR 是否调用 OSAL ISR API |
 | `shared` | 是否允许多个设备共享同一 IRQ，默认 false |
+| `enable-on-init` | 设备初始化成功后是否由生成器使能 IRQ，默认 false |
+| `source` | 可选的间接 IRQ 来源，例如通过 `dmas` 定位 DMA 通道 IRQ |
 
 单中断节点缺少 `interrupt-names` 时，生成器允许唯一声明匹配唯一 IRQ。多中断节点必须使用
 名称明确匹配，名称缺失、IRQ cell 缺失、priority cell 缺失和非共享 IRQ 冲突都会使构建失败。
+
+## DMA 间接中断
+
+SPI、UART 等外设的 DMA 完成中断属于 DMA 控制器，不属于外设节点本身。binding 用
+`source` 描述从外设节点到中断源的解析路径：
+
+```yaml
+cxx-driver:
+  interrupts:
+    - name: dma-tx
+      method: isr_dma_tx
+      uses-osal: true
+      enable-on-init: true
+      source:
+        phandle-array: dmas
+        entry: tx
+        interrupt-index-cell: channel
+  requires:
+    - phandle-array: dmas
+```
+
+板级 DTS 只描述硬件连接：
+
+```dts
+spi0: spi@40013000 {
+    dmas = <&dma0 3 GD32_DMA_REQUEST_SPI0_TX>,
+           <&dma0 4 GD32_DMA_REQUEST_SPI0_RX>;
+    dma-names = "tx", "rx";
+};
+```
+
+生成器从 `dmas` 中按 `dma-names` 找到 `tx`/`rx` 项，读取 `channel` cell，再选择 DMA
+控制器对应索引的 `interrupts` 项。IRQ 编号和优先级仍来自 EDT，binding 和 C++ 驱动都
+不保存 IRQ 常量。属性缺失、名称不匹配、通道不是整数或索引越界都会立即终止构建。
 
 ## DTS 示例
 
@@ -78,7 +115,9 @@ static int _init_uart0()
     const int result = hal::DeviceTrait<30>::init();
     if (result != 0) {
         hal::Irq::disable(37);
+        return result;
     }
+    hal::Irq::enable(37);
     return result;
 }
 
@@ -114,6 +153,10 @@ void UartBase::isr_handler(osal::IsrContext& context)
     (void)m_tx_sem.release_from_isr(context);
 }
 ```
+
+驱动目录不得定义 `IRQn_Handler` 或芯片厂商命名的 `*_IRQHandler`。生成器测试会扫描
+`embedded/drivers` 并拒绝这类入口；驱动仅实现 `isr_handler()`、`dma_tx_isr()` 等实例
+方法。DMA controller、channel、request 和 DMAMUX channel 由 adapter 从 DTS 注入配置。
 
 `osal::IsrContext` 负责 RTOS 中断进入/退出记账，并聚合 ISR API 的唤醒请求。包装器返回前只进行
 一次调度判断。

@@ -1,5 +1,4 @@
 #include <drivers/uart.h>
-#include <irq.h>
 
 namespace hal {
 namespace {
@@ -89,8 +88,6 @@ Status UartBase::init(const UartConfig &config) {
     /* Enable RX data available interrupt */
     regs->IER = IER_ERBFI;
 
-    hal::Irq::enable(m_irq);
-
     set_state(DeviceState::Initialized);
     return Status::Ok;
 }
@@ -107,6 +104,7 @@ Status UartBase::deinit() {
 Status UartBase::send(const uint8_t *data, size_t len, size_t *bytes_sent, uint32_t timeout_ms) {
     if (!is_initialized() || !data || len == 0) return Status::InvalidArgument;
 
+    osal::LockGuard lock(m_tx_mutex);
     auto *regs = reinterpret_cast<Gr5525UartRegs *>(m_base);
 
     for (size_t i = 0; i < len; i++) {

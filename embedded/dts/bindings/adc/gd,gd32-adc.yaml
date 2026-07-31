@@ -10,6 +10,11 @@ cxx-driver:
     macro: HAL_ADC_DT_ADAPT
   type-name: Adc
   init: true
+  interrupts:
+    - name: global
+      method: isr_global
+      uses-osal: true
+      enable-on-init: true
   readiness: is-initialized
   init-level: pre-kernel-2
   init-priority: 30

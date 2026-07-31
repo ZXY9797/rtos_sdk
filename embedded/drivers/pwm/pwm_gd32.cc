@@ -1,6 +1,5 @@
 #include <drivers/pwm.h>
 #include <gd32_regs.h>
-#include <irq.h>
 
 namespace hal {
 
@@ -149,9 +148,6 @@ Status PwmBase::init(const PwmConfig &config) {
 Status PwmBase::deinit() {
     if (!m_initialized) return Status::Ok;
     auto *regs = reinterpret_cast<TimerRegs *>(m_base);
-    if (m_irq >= 0) {
-        Irq::disable(m_irq);
-    }
     regs->DMAINTEN &= ~DMAINTEN_UPIE;
     regs->CTL0 = 0;
     m_update_cb = nullptr;
@@ -215,20 +211,13 @@ Status PwmBase::disable_output() {
 }
 
 Status PwmBase::set_update_callback(IrqCallback cb, void *arg) {
-    if (m_irq < 0) {
-        return Status::NotSupported;
-    }
-
-    Irq::disable(m_irq);
     auto *regs = reinterpret_cast<TimerRegs *>(m_base);
     regs->DMAINTEN &= ~DMAINTEN_UPIE;
     m_update_cb = cb;
     m_update_arg = arg;
     regs->INTF = INTF_UPIF;
     if (cb) {
-        Irq::clearPending(m_irq);
         regs->DMAINTEN |= DMAINTEN_UPIE;
-        Irq::enable(m_irq);
     }
     return Status::Ok;
 }

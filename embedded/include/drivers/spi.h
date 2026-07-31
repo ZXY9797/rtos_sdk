@@ -1,6 +1,7 @@
 #pragma once
 
 #include <device.h>
+#include <drivers/dma.h>
 #include <drivers/status.h>
 #include <osal.h>
 #include <cstdint>
@@ -14,6 +15,8 @@ struct SpiConfig {
     SpiMode mode {SpiMode::Mode0};
     uint32_t clock_hz {1000000U};
     uint8_t data_bits {8};
+    DmaChannelConfig dma_tx {};
+    DmaChannelConfig dma_rx {};
 };
 
 /// SPI 运行时统计
@@ -30,6 +33,9 @@ public:
     [[nodiscard]] Status deinit();
 
     [[nodiscard]] Status sync_send(const uint8_t *tx, uint8_t *rx, size_t len, uint32_t timeout_ms);
+    void isr_handler(osal::IsrContext& context);
+    void dma_tx_isr(osal::IsrContext& context);
+    void dma_rx_isr(osal::IsrContext& context);
 
     /// 获取运行时统计
     [[nodiscard]] SpiStats get_stats() const { return m_stats; }
@@ -52,6 +58,8 @@ protected:
     osal::Mutex m_bus_mutex;
     osal::Semaphore m_xfer_sem {0};
     SpiStats m_stats {};
+    DmaChannelConfig m_dma_tx {};
+    DmaChannelConfig m_dma_rx {};
 };
 
 template <uintptr_t Base>

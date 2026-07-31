@@ -73,6 +73,15 @@ cxx-driver:
     header: device_adapters/i2c_dt.h
     macro: HAL_I2C_DT_ADAPT
   type-name: I2c
+  interrupts:
+    - name: event
+      method: isr_event
+      uses-osal: true
+      enable-on-init: true
+    - name: error
+      method: isr_error
+      uses-osal: true
+      enable-on-init: true
   readiness: device-base
   device-base: true
   init-level: pre-kernel-2

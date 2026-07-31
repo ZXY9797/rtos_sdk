@@ -1,8 +1,6 @@
 #include <drivers/spi.h>
 #include <assert.h>
-#include <irq.h>
 #include <osal.h>
-#include <system_stm32h7xx.h>
 
 namespace hal {
 
@@ -46,23 +44,6 @@ constexpr uint32_t IFCR_EOTC  = (1U << 3);
 constexpr uint32_t IFCR_TXTFC = (1U << 4);
 constexpr uint32_t IFCR_OVRC  = (1U << 6);
 
-namespace {
-
-int spi_irq_from_base(uintptr_t base) {
-    switch (base) {
-        case 0x40013000U: return SPI1_IRQn;   /* SPI1 */
-        case 0x40003800U: return SPI2_IRQn;   /* SPI2 */
-        case 0x40013400U: return SPI3_IRQn;   /* SPI3 */
-        default: return -1;
-    }
-}
-
-/* SPI 实例 → IRQ 映射（用于 ISR 分发） */
-constexpr int MAX_SPI_IRQ = 90;
-static SpiBase *s_spi_by_irq[MAX_SPI_IRQ] = {};
-
-} // anonymous namespace
-
 Status SpiBase::init(const SpiConfig &config) {
     HAL_ASSERT(m_base != 0);
     auto *regs = reinterpret_cast<SpiRegs *>(m_base);
@@ -80,13 +61,6 @@ Status SpiBase::init(const SpiConfig &config) {
     regs->CFG1 = ((config.data_bits - 1) & 0x1FU) << CFG1_DSIZE_Pos;
     regs->CR1 = CR1_SPE;
 
-    /* 注册 ISR 映射并使能 SPI 中断 */
-    int irq = spi_irq_from_base(m_base);
-    if (irq >= 0 && irq < MAX_SPI_IRQ) {
-        s_spi_by_irq[irq] = this;
-        hal::Irq::enable(irq);
-    }
-
     set_state(DeviceState::Initialized);
     return Status::Ok;
 }
@@ -99,15 +73,14 @@ Status SpiBase::deinit() {
     return Status::Ok;
 }
 
-static void spi_stm32_isr(int irq_num, osal::IsrContext& context) {
-    auto *spi = s_spi_by_irq[irq_num];
-    if (!spi) return;
-    auto *regs = reinterpret_cast<SpiRegs *>(spi->base());
+void SpiBase::isr_handler(osal::IsrContext& context)
+{
+    auto *regs = reinterpret_cast<SpiRegs *>(m_base);
     uint32_t sr = regs->SR;
     if (sr & SR_EOT) {
         regs->IFCR = IFCR_EOTC;
         regs->IER &= ~IER_EOTIE;
-        (void)spi->xfer_sem().release_from_isr(context);
+        (void)m_xfer_sem.release_from_isr(context);
     }
 }
 
@@ -145,13 +118,3 @@ Status SpiBase::sync_send(const uint8_t *tx, uint8_t *rx, size_t len, uint32_t t
 }
 
 } // namespace hal
-
-/* SPI 中断服务函数 — 直接覆盖向量表弱别名 */
-extern "C" void IRQ35_Handler(void) {
-    osal::IsrContext context;
-    hal::spi_stm32_isr(35, context);
-}
-extern "C" void IRQ36_Handler(void) {
-    osal::IsrContext context;
-    hal::spi_stm32_isr(36, context);
-}

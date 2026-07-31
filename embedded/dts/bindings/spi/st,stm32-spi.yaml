@@ -13,6 +13,11 @@ cxx-driver:
     macro: HAL_SPI_DT_ADAPT
   type-name: Spi
   init: true
+  interrupts:
+    - name: global
+      method: isr_global
+      uses-osal: true
+      enable-on-init: true
   readiness: device-base
   device-base: true
   init-level: pre-kernel-2

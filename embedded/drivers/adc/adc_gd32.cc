@@ -31,25 +31,21 @@ constexpr uint32_t RSQ_CH_Msk = 0x1F;
 constexpr uint32_t SAMPT_BITS = 3;
 // STAT
 constexpr uint32_t STAT_EOC   = (1U << 1);
-constexpr uint32_t STAT_EOIC  = (1U << 3); // 注入转换结束
+constexpr uint32_t STAT_EOIC  = (1U << 2); // 注入转换结束
 constexpr uint32_t STAT_STRC  = (1U << 4); // 常规通道开始
 constexpr uint32_t STAT_STIC  = (1U << 5); // 注入通道开始
+constexpr uint32_t CTL0_EOICIE = (1U << 7);
 // OVSMOD
 constexpr uint32_t OVSMOD_OVSEN = (1U << 9); // 过采样使能
 
-// ADC0 中断号 (GD32F503)
-static constexpr int ADC0_1_IRQn = 18; // ADC0_1_IRQn
-
-static AdcBase::IrqCallback s_adc0_eoc_cb = nullptr;
-static void *s_adc0_eoc_arg = nullptr;
-
-extern "C" void ADC0_1_IRQHandler() {
-    auto *regs = reinterpret_cast<AdcRegs *>(ADC0_BASE);
-    if (regs->CTL0 & (1U << 3)) { // EOIC flag
-        // 清除注入完成标志
-        regs->CTL0 &= ~(1U << 3);
-        if (s_adc0_eoc_cb) {
-            s_adc0_eoc_cb(s_adc0_eoc_arg);
+void AdcBase::isr_handler(osal::IsrContext& context)
+{
+    (void)context;
+    auto &status = *reinterpret_cast<volatile uint32_t *>(m_base);
+    if ((status & STAT_EOIC) != 0U) {
+        status = ~STAT_EOIC;
+        if (m_eoc_cb != nullptr) {
+            m_eoc_cb(m_eoc_arg);
         }
     }
 }
@@ -196,13 +192,12 @@ Status AdcBase::set_eoc_callback(IrqCallback cb, void *arg) {
 
     if (m_base != ADC0_BASE) return Status::NotSupported;
 
-    s_adc0_eoc_cb = cb;
-    s_adc0_eoc_arg = arg;
-
-    if (cb) {
-        // 使能注入完成中断
-        auto *regs = reinterpret_cast<AdcRegs *>(m_base);
-        regs->CTL0 |= (1U << 8); // EOICIE
+    auto &control0 =
+        *reinterpret_cast<volatile uint32_t *>(m_base + 0x04U);
+    if (cb != nullptr) {
+        control0 |= CTL0_EOICIE;
+    } else {
+        control0 &= ~CTL0_EOICIE;
     }
     return Status::Ok;
 }

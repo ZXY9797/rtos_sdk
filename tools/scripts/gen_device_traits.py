@@ -110,9 +110,7 @@ def resolve_dependencies(node, requires):
     return dependencies
 
 
-def resolve_interrupts(node, declarations):
-    if not declarations:
-        return []
+def direct_interrupt(node, declaration, declaration_count):
     if not node.interrupts:
         raise ValueError(
             f'{node.path}: interrupt metadata requires interrupts')
@@ -122,19 +120,63 @@ def resolve_interrupts(node, declarations):
         for index, interrupt in enumerate(node.interrupts)
         if interrupt.name is not None
     }
+    match = named.get(declaration['name'])
+    if match is not None:
+        return match
+    if declaration_count == 1 and len(node.interrupts) == 1:
+        return 0, node.interrupts[0]
+    raise ValueError(
+        f'{node.path}: interrupt {declaration["name"]!r} '
+        f'is not present in EDT')
+
+
+def phandle_array_interrupt(node, declaration):
+    source = declaration['source']
+    property_name = source['phandle-array']
+    prop = node.props.get(property_name)
+    if prop is None or not isinstance(prop.val, list):
+        raise ValueError(
+            f'{node.path}: interrupt source {property_name!r} '
+            f'is missing or is not a phandle-array')
+
+    source_entry = next(
+        (entry for entry in prop.val
+         if entry.name == source['entry']),
+        None)
+    if source_entry is None:
+        raise ValueError(
+            f'{node.path}: {property_name!r} has no entry '
+            f'{source["entry"]!r}')
+
+    index_cell = source['interrupt-index-cell']
+    interrupt_index = source_entry.data.get(index_cell)
+    if not isinstance(interrupt_index, int):
+        raise ValueError(
+            f'{node.path}: {property_name!r} entry '
+            f'{source["entry"]!r} has no integer '
+            f'{index_cell!r} cell')
+
+    controller = source_entry.controller
+    if not 0 <= interrupt_index < len(controller.interrupts):
+        raise ValueError(
+            f'{node.path}: interrupt index {interrupt_index} '
+            f'from {property_name!r} is out of range for '
+            f'{controller.path}')
+    return interrupt_index, controller.interrupts[interrupt_index]
+
+
+def resolve_interrupts(node, declarations):
     resolved = []
+    direct_count = sum(
+        declaration['source'] is None
+        for declaration in declarations)
     for declaration in declarations:
-        match = named.get(declaration['name'])
-        if match is None:
-            if len(declarations) == 1 and len(node.interrupts) == 1:
-                index = 0
-                interrupt = node.interrupts[0]
-            else:
-                raise ValueError(
-                    f'{node.path}: interrupt '
-                    f'{declaration["name"]!r} is not present in EDT')
+        if declaration['source'] is None:
+            index, interrupt = direct_interrupt(
+                node, declaration, direct_count)
         else:
-            index, interrupt = match
+            index, interrupt = phandle_array_interrupt(
+                node, declaration)
 
         irq = interrupt.data.get('irq')
         priority = interrupt.data.get('priority')
@@ -147,10 +189,21 @@ def resolve_interrupts(node, declarations):
                 f'{node.path}: interrupt {declaration["name"]!r} '
                 f'has no priority cell')
 
+        irq = int(irq)
+        priority = int(priority)
+        if irq < 0:
+            raise ValueError(
+                f'{node.path}: interrupt {declaration["name"]!r} '
+                f'has invalid irq {irq}')
+        if not 0 <= priority <= 255:
+            raise ValueError(
+                f'{node.path}: interrupt {declaration["name"]!r} '
+                f'has invalid priority {priority}')
+
         resolved.append({
             **declaration,
-            'irq': int(irq),
-            'priority': int(priority),
+            'irq': irq,
+            'priority': priority,
             'controller': interrupt.controller.path,
             'index': index,
         })
@@ -456,13 +509,22 @@ def render_source(specs):
                         lines.append(
                             f'        Irq::disable({interrupt["irq"]});')
                     lines.extend([
+                        '        return result;',
                         '    }',
-                        '    return result;',
                     ])
+                    for interrupt in spec['interrupts']:
+                        if interrupt['enable_on_init']:
+                            lines.append(
+                                f'    Irq::enable({interrupt["irq"]});')
+                    lines.append('    return result;')
                 else:
                     lines.append(
                         f'    return DeviceTrait<{ordinal}>::init();')
             else:
+                for interrupt in spec['interrupts']:
+                    if interrupt['enable_on_init']:
+                        lines.append(
+                            f'    Irq::enable({interrupt["irq"]});')
                 lines.append('    return 0;')
             lines.extend([
                 '}',
@@ -549,7 +611,7 @@ def render_report(specs):
         })
 
     report = {
-        'schema': 'rtos-sdk.devices.v3',
+        'schema': 'rtos-sdk.devices.v4',
         'device_count': len(devices),
         'enabled_count': sum(
             1 for device in devices if device['enabled']),

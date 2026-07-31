@@ -1,6 +1,5 @@
 #include <drivers/i2c.h>
 #include <assert.h>
-#include <irq.h>
 #include <osal.h>
 
 namespace hal {
@@ -48,46 +47,28 @@ constexpr uint32_t ICR_NACKCF    = (1U << 4);
 constexpr uint32_t ICR_STOPCF    = (1U << 5);
 constexpr uint32_t ICR_BERRCF    = (1U << 8);
 
-namespace {
-
-/* I2C 实例 → I2cBase* 映射（用于 ISR 分发） */
-constexpr int MAX_I2C_IRQ = 90;
-static I2cBase *s_i2c_by_irq[MAX_I2C_IRQ] = {};
-
-int i2c_irq_from_base(uintptr_t base) {
-    switch (base) {
-        case 0x40005400U: return I2C1_EV_IRQn;   /* I2C1 */
-        case 0x40005800U: return I2C2_EV_IRQn;   /* I2C2 */
-        case 0x40005C00U: return I2C3_EV_IRQn;   /* I2C3 */
-        default: return -1;
-    }
-}
-
-static void i2c_stm32_isr(int irq_num, osal::IsrContext& context) {
-    auto *i2c = s_i2c_by_irq[irq_num];
-    if (!i2c) return;
-    auto *regs = reinterpret_cast<I2cRegs *>(i2c->base());
+void I2cBase::isr_handler(osal::IsrContext& context)
+{
+    auto *regs = reinterpret_cast<I2cRegs *>(m_base);
     uint32_t isr = regs->ISR;
     uint32_t cr1 = regs->CR1;
 
     if (isr & ISR_NACKF) {
         regs->ICR = ICR_NACKCF | ICR_STOPCF;
         regs->CR1 = cr1 & ~(CR1_TCIE | CR1_STOPIE | CR1_NACKIE);
-        i2c->stats().nack_addr_count++;
-        (void)i2c->xfer_sem().release_from_isr(context);
+        m_stats.nack_addr_count++;
+        (void)m_xfer_sem.release_from_isr(context);
     } else if (isr & ISR_BERR) {
         regs->ICR = ICR_BERRCF;
         regs->CR1 = cr1 & ~(CR1_TCIE | CR1_STOPIE | CR1_NACKIE);
-        i2c->stats().bus_error_count++;
-        (void)i2c->xfer_sem().release_from_isr(context);
+        m_stats.bus_error_count++;
+        (void)m_xfer_sem.release_from_isr(context);
     } else if ((isr & ISR_STOPF) || (isr & ISR_TC)) {
         regs->ICR = ICR_STOPCF;
         regs->CR1 = cr1 & ~(CR1_TCIE | CR1_STOPIE | CR1_NACKIE);
-        (void)i2c->xfer_sem().release_from_isr(context);
+        (void)m_xfer_sem.release_from_isr(context);
     }
 }
-
-} // anonymous namespace
 
 Status I2cBase::init(uint32_t timing) {
     HAL_ASSERT(m_base != 0);
@@ -95,13 +76,6 @@ Status I2cBase::init(uint32_t timing) {
     regs->CR1 = 0;
     regs->TIMINGR = timing;
     regs->CR1 = CR1_PE;
-
-    /* 注册 ISR 映射并使能 I2C 事件中断 */
-    int irq = i2c_irq_from_base(m_base);
-    if (irq >= 0 && irq < MAX_I2C_IRQ) {
-        s_i2c_by_irq[irq] = this;
-        hal::Irq::enable(irq);
-    }
 
     set_state(DeviceState::Initialized);
     return Status::Ok;
@@ -333,13 +307,3 @@ Status I2cBase::probe(uint16_t addr, uint32_t retries, uint32_t timeout_ms) {
 }
 
 } // namespace hal
-
-/* I2C 事件中断服务函数 */
-extern "C" void IRQ31_Handler(void) {
-    osal::IsrContext context;
-    hal::i2c_stm32_isr(31, context);
-}
-extern "C" void IRQ33_Handler(void) {
-    osal::IsrContext context;
-    hal::i2c_stm32_isr(33, context);
-}

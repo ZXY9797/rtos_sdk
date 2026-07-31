@@ -45,28 +45,27 @@ public:
     [[nodiscard]] constexpr PwmChannel channel() const { return m_channel; }
 
 protected:
-    constexpr PwmBase(uintptr_t base, PwmChannel ch, int irq)
-        : m_base(base), m_channel(ch), m_irq(irq) {}
+    constexpr PwmBase(uintptr_t base, PwmChannel ch)
+        : m_base(base), m_channel(ch) {}
     uintptr_t m_base;
     PwmChannel m_channel;
-    int m_irq;
     bool m_initialized {false};
     IrqCallback m_update_cb {nullptr};
     void *m_update_arg {nullptr};
 };
 
-template <uintptr_t Base, PwmChannel Ch = PwmChannel::Ch1, int Irq = -1>
+template <uintptr_t Base, PwmChannel Ch = PwmChannel::Ch1>
 class Pwm : public PwmBase {
 public:
-    constexpr Pwm() : PwmBase(Base, Ch, Irq) {}
+    constexpr Pwm() : PwmBase(Base, Ch) {}
 };
 
 // 特化：用于区分相同基地址不同通道的实例
-template <uintptr_t Base, int ChannelIdx, int Irq = -1>
+template <uintptr_t Base, int ChannelIdx>
 class PwmCh : public PwmBase {
 public:
     constexpr PwmCh()
-        : PwmBase(Base, static_cast<PwmChannel>(ChannelIdx), Irq) {}
+        : PwmBase(Base, static_cast<PwmChannel>(ChannelIdx)) {}
 };
 
 /// ISR 快速路径命名空间 — 提供零开销的寄存器直操作接口

@@ -14,6 +14,7 @@ cxx-driver:
     - name: global
       method: isr_global
       uses-osal: true
+      enable-on-init: true
   readiness: device-base
   device-base: true
   init-level: post-kernel

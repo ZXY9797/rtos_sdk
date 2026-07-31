@@ -13,8 +13,7 @@
                                                                    \
         using type = Pwm<                                         \
             DT_REG_ADDR(node_id),                                 \
-            static_cast<PwmChannel>(kChannel),                     \
-            DT_IRQN(node_id)>;                                    \
+            static_cast<PwmChannel>(kChannel)>;                    \
         static type instance;                                      \
                                                                    \
         static int init()                                          \

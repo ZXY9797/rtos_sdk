@@ -1,7 +1,6 @@
 #include <drivers/spi.h>
 #include <drivers/dma.h>
 #include <assert.h>
-#include <irq.h>
 #include <osal.h>
 
 #include "gd32_regs.h"
@@ -27,10 +26,6 @@ constexpr uint32_t CTL1_DMATEN = (1U << 1);
 /* STAT bits */
 constexpr uint32_t STAT_TRANS = (1U << 7);
 
-/* DMA 中断标志位偏移（每个通道占 4 位） */
-constexpr uint32_t DMA_FLAG_SHIFT = 4U;
-constexpr uint32_t DMA_FTF_FLAG   = (1U << 1);  /* FTFIF 在 INTF 中的位置 */
-
 void spi_clock_enable(uintptr_t base) {
     auto &apb1 = gd32::rcu_apb1en();
     auto &apb2 = gd32::rcu_apb2en();
@@ -42,30 +37,35 @@ void spi_clock_enable(uintptr_t base) {
     }
 }
 
-/* DMA 通道 → SPI 实例 映射（用于 ISR 分发） */
-struct DmaSpiMapping {
-    SpiBase *spi;
-    uint32_t dma_base;
-};
+void dma_channel_isr(const DmaChannelConfig &config,
+                     osal::Semaphore &semaphore,
+                     osal::IsrContext& context)
+{
+    if (!config.is_valid() || config.channel > 6U) {
+        return;
+    }
 
-/* 最大支持的 DMA IRQ 号 + 1（GD32F503 最大 IRQ 85） */
-constexpr int MAX_DMA_IRQ = 90;
-static DmaSpiMapping s_dma_spi_map[MAX_DMA_IRQ] = {};
-
-static void dma_channel_isr(int irq_num, osal::IsrContext& context) {
-    auto &m = s_dma_spi_map[irq_num];
-    if (!m.spi) return;
-    auto *dma = reinterpret_cast<gd32::DmaRegs *>(m.dma_base);
-    /* 清除所有中断标志（通过 INTC 写 1 清除） */
+    auto *dma = reinterpret_cast<gd32::DmaRegs *>(config.controller);
     dma->INTC = (DMA_INTC_GIFC | DMA_INTC_FTFIFC
-                 | DMA_INTC_HTFIFC | DMA_INTC_ERRIFC);
-    (void)m.spi->xfer_sem().release_from_isr(context);
+                 | DMA_INTC_HTFIFC | DMA_INTC_ERRIFC)
+                << (config.channel * 4U);
+    (void)semaphore.release_from_isr(context);
 }
 
 } // anonymous namespace
 
 Status SpiBase::init(const SpiConfig &config) {
     HAL_ASSERT(m_base != 0);
+    if (!config.dma_tx.is_valid() || !config.dma_rx.is_valid() ||
+        config.dma_tx.channel > 6U || config.dma_rx.channel > 6U ||
+        (config.dma_tx.controller == config.dma_rx.controller &&
+         config.dma_tx.channel == config.dma_rx.channel)) {
+        return Status::InvalidArgument;
+    }
+
+    m_dma_tx = config.dma_tx;
+    m_dma_rx = config.dma_rx;
+
     auto *regs = reinterpret_cast<gd32::SpiRegs *>(m_base);
     spi_clock_enable(m_base);
 
@@ -88,29 +88,6 @@ Status SpiBase::init(const SpiConfig &config) {
     regs->CTL1 |= CTL1_DMATEN | CTL1_DMAREN;
     regs->CTL0 |= CTL0_SPIEN;
 
-    /* 注册 DMA 通道中断映射并使能中断 */
-    switch (static_cast<uint32_t>(m_base)) {
-        case SPI0_BASE:
-            s_dma_spi_map[DMA0_Channel3_IRQn] = {this, DMA0_BASE};
-            s_dma_spi_map[DMA0_Channel4_IRQn] = {this, DMA0_BASE};
-            hal::Irq::enable(DMA0_Channel3_IRQn);
-            hal::Irq::enable(DMA0_Channel4_IRQn);
-            break;
-        case SPI1_BASE:
-            s_dma_spi_map[DMA0_Channel5_IRQn] = {this, DMA0_BASE};
-            s_dma_spi_map[DMA0_Channel6_IRQn] = {this, DMA0_BASE};
-            hal::Irq::enable(DMA0_Channel5_IRQn);
-            hal::Irq::enable(DMA0_Channel6_IRQn);
-            break;
-        case SPI2_BASE:
-            s_dma_spi_map[DMA1_Channel0_IRQn] = {this, DMA1_BASE};
-            s_dma_spi_map[DMA1_Channel1_IRQn] = {this, DMA1_BASE};
-            hal::Irq::enable(DMA1_Channel0_IRQn);
-            hal::Irq::enable(DMA1_Channel1_IRQn);
-            break;
-        default: break;
-    }
-
     set_state(DeviceState::Initialized);
     return Status::Ok;
 }
@@ -125,49 +102,65 @@ Status SpiBase::deinit() {
 
 Status SpiBase::sync_send(const uint8_t *tx, uint8_t *rx, size_t len, uint32_t timeout_ms) {
     HAL_ASSERT_MSG(is_initialized(), "SPI not initialized");
-    if (!is_initialized() || len == 0) return Status::InvalidArgument;
+    if (!is_initialized() || len == 0 || len > 0xFFFFU) {
+        return Status::InvalidArgument;
+    }
 
     osal::LockGuard lock(m_bus_mutex);
 
     auto *regs = reinterpret_cast<gd32::SpiRegs *>(m_base);
 
-    /* DMA channel mapping per SPI peripheral */
-    struct DmaMapping { uint32_t tx_req, rx_req, tx_dma, rx_dma; uint8_t tx_ch, rx_ch, tx_mux, rx_mux; };
-    DmaMapping m;
-    switch (static_cast<uint32_t>(m_base)) {
-        case SPI0_BASE: m = {DMA_REQUEST_SPI0_TX, DMA_REQUEST_SPI0_RX, DMA0_BASE, DMA0_BASE, 3, 4, 3, 4}; break;
-        case SPI1_BASE: m = {DMA_REQUEST_SPI1_TX, DMA_REQUEST_SPI1_RX, DMA0_BASE, DMA0_BASE, 5, 6, 5, 6}; break;
-        case SPI2_BASE: m = {DMA_REQUEST_SPI2_TX, DMA_REQUEST_SPI2_RX, DMA1_BASE, DMA1_BASE, 0, 1, 0, 1}; break;
-        default: return Status::InvalidArgument;
-    }
-
-    DmaChannel tx_dma(m.tx_dma, m.tx_ch, m.tx_mux);
-    DmaChannel rx_dma(m.rx_dma, m.rx_ch, m.rx_mux);
+    DmaChannel tx_dma(static_cast<uint32_t>(m_dma_tx.controller),
+                      m_dma_tx.channel, m_dma_tx.mux_channel);
+    DmaChannel rx_dma(static_cast<uint32_t>(m_dma_rx.controller),
+                      m_dma_rx.channel, m_dma_rx.mux_channel);
     tx_dma.clear_flags();
     rx_dma.clear_flags();
 
-    static const uint8_t dummy_tx = 0xFF;
+    const uint8_t dummy_tx = 0xFF;
+    uint8_t dummy_rx = 0U;
     const uint8_t *tx_buf = tx ? tx : &dummy_tx;
+    uint8_t *rx_buf = rx ? rx : &dummy_rx;
 
     DmaConfig rx_cfg = {
-        .request_id = m.rx_req, .periph_addr = reinterpret_cast<uint32_t>(&regs->DATA),
-        .memory_addr = reinterpret_cast<uint32_t>(rx), .count = static_cast<uint16_t>(len),
+        .request_id = m_dma_rx.request_id,
+        .periph_addr = reinterpret_cast<uint32_t>(&regs->DATA),
+        .memory_addr = reinterpret_cast<uint32_t>(rx_buf),
+        .count = static_cast<uint16_t>(len),
         .direction = DmaDirection::PeriphToMemory, .periph_width = DmaWidth::Byte,
         .memory_width = DmaWidth::Byte, .priority = DmaPriority::High,
         .periph_inc = false, .memory_inc = rx != nullptr, .circular = false,
     };
     DmaConfig tx_cfg = {
-        .request_id = m.tx_req, .periph_addr = reinterpret_cast<uint32_t>(&regs->DATA),
+        .request_id = m_dma_tx.request_id,
+        .periph_addr = reinterpret_cast<uint32_t>(&regs->DATA),
         .memory_addr = reinterpret_cast<uint32_t>(tx_buf), .count = static_cast<uint16_t>(len),
         .direction = DmaDirection::MemoryToPeriph, .periph_width = DmaWidth::Byte,
         .memory_width = DmaWidth::Byte, .priority = DmaPriority::High,
-        .periph_inc = tx != nullptr, .memory_inc = true, .circular = false,
+        .periph_inc = false, .memory_inc = tx != nullptr, .circular = false,
     };
 
-    (void)rx_dma.config(rx_cfg);
-    (void)tx_dma.config(tx_cfg);
-    (void)rx_dma.start();
-    (void)tx_dma.start();
+    Status dma_status = rx_dma.config(rx_cfg);
+    if (dma_status != Status::Ok) {
+        m_stats.error_count++;
+        return dma_status;
+    }
+    dma_status = tx_dma.config(tx_cfg);
+    if (dma_status != Status::Ok) {
+        m_stats.error_count++;
+        return dma_status;
+    }
+    dma_status = rx_dma.start();
+    if (dma_status != Status::Ok) {
+        m_stats.error_count++;
+        return dma_status;
+    }
+    dma_status = tx_dma.start();
+    if (dma_status != Status::Ok) {
+        (void)rx_dma.stop();
+        m_stats.error_count++;
+        return dma_status;
+    }
 
     /* 等待 TX DMA 完成（ISR 释放信号量） */
     if (m_xfer_sem.take(timeout_ms) != 0) {
@@ -198,20 +191,14 @@ Status SpiBase::sync_send(const uint8_t *tx, uint8_t *rx, size_t len, uint32_t t
     return Status::Ok;
 }
 
+void SpiBase::dma_tx_isr(osal::IsrContext& context)
+{
+    dma_channel_isr(m_dma_tx, m_xfer_sem, context);
+}
+
+void SpiBase::dma_rx_isr(osal::IsrContext& context)
+{
+    dma_channel_isr(m_dma_rx, m_xfer_sem, context);
+}
+
 } // namespace hal
-
-/* DMA 中断服务函数 — 直接覆盖向量表弱别名 */
-#define HAL_DMA_ISR(irq_num)                                      \
-    extern "C" void IRQ##irq_num##_Handler(void) {                \
-        osal::IsrContext context;                                  \
-        hal::dma_channel_isr(irq_num, context);                    \
-    }
-
-HAL_DMA_ISR(14)
-HAL_DMA_ISR(15)
-HAL_DMA_ISR(16)
-HAL_DMA_ISR(17)
-HAL_DMA_ISR(56)
-HAL_DMA_ISR(57)
-
-#undef HAL_DMA_ISR

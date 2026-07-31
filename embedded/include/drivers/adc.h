@@ -3,6 +3,10 @@
 #include <drivers/status.h>
 #include <cstdint>
 
+namespace osal {
+class IsrContext;
+}
+
 namespace hal {
 
 enum class AdcChannel : uint8_t {
@@ -59,6 +63,7 @@ public:
 
     using IrqCallback = void (*)(void *arg);
     [[nodiscard]] Status set_eoc_callback(IrqCallback cb, void *arg);
+    void isr_handler(osal::IsrContext& context);
 
 protected:
     constexpr AdcBase(uintptr_t base) : m_base(base) {}

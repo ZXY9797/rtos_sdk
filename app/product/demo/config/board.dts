@@ -1,6 +1,7 @@
 /dts-v1/;
 
 #include <arm/gd/gd32f50x.dtsi>
+#include <dt-bindings/dma/gd32_dma.h>
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/pinctrl/gd32-pinctrl.h>
 
@@ -107,6 +108,8 @@
             reg = <0x40013800 0x400>;
             interrupts = <37 6>;
             interrupt-names = "global";
+            dmas = <&dma1 4 GD32_DMA_REQUEST_USART0_TX>;
+            dma-names = "tx";
             status = "okay";
             current-speed = <115200>;
             pinctrl-0 = <&usart0_tx_pa9 &usart0_rx_pa10>;
@@ -117,7 +120,9 @@
         spi0: spi@40013000 {
             compatible = "gd,gd32-spi";
             reg = <0x40013000 0x400>;
-            interrupts = <35 6>;
+            dmas = <&dma0 3 GD32_DMA_REQUEST_SPI0_TX>,
+                   <&dma0 4 GD32_DMA_REQUEST_SPI0_RX>;
+            dma-names = "tx", "rx";
             status = "okay";
             spi-max-frequency = <10000000>;
             label = "SPI0";
@@ -143,6 +148,7 @@
             label = "DMA0";
             dma-channels = <7>;
             mux-channels = <7>;
+            dma-offset = <0>;
             #dma-cells = <2>;
         };
 
@@ -153,6 +159,7 @@
             label = "DMA1";
             dma-channels = <7>;
             mux-channels = <5>;
+            dma-offset = <7>;
             #dma-cells = <2>;
         };
 

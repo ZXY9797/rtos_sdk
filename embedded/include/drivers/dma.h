@@ -39,6 +39,19 @@ struct DmaConfig {
     bool circular;
 };
 
+struct DmaChannelConfig {
+    uintptr_t controller {0U};
+    uint32_t request_id {0U};
+    uint8_t channel {0xFFU};
+    uint8_t mux_channel {0xFFU};
+
+    [[nodiscard]] constexpr bool is_valid() const
+    {
+        return controller != 0U && channel != 0xFFU &&
+               mux_channel != 0xFFU;
+    }
+};
+
 /// DMA 通道资源跟踪（用于 RAII 管理）
 class DmaChannelPool {
 public:

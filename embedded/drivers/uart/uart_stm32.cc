@@ -1,6 +1,5 @@
 #include <drivers/uart.h>
-#include <drivers_generated.h>
-#include <irq.h>
+#include <system_stm32h7xx.h>
 
 namespace hal {
 
@@ -75,8 +74,6 @@ Status UartBase::init(const UartConfig &config) {
     regs->ICR = ICR_PECF | ICR_FECF | ICR_NCF | ICR_ORECF | ICR_IDLECF | ICR_TCCF;
     regs->CR1 |= CR1_RXNEIE | CR1_TE | CR1_RE | CR1_UE;
 
-    hal::Irq::enable(m_irq);
-
     set_state(DeviceState::Initialized);
     return Status::Ok;
 }
@@ -92,6 +89,7 @@ Status UartBase::deinit() {
 
 Status UartBase::send(const uint8_t *data, size_t len, size_t *bytes_sent, uint32_t timeout_ms) {
     if (!is_initialized() || !data || len == 0) return Status::InvalidArgument;
+    osal::LockGuard lock(m_tx_mutex);
     auto *regs = reinterpret_cast<UartRegs *>(m_base);
 
     for (size_t i = 0; i < len; i++) {

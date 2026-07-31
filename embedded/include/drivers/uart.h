@@ -1,6 +1,7 @@
 #pragma once
 
 #include <drivers/status.h>
+#include <drivers/dma.h>
 #include <device_base.h>
 #include <irq.h>
 #include <osal.h>
@@ -20,6 +21,7 @@ struct UartConfig {
     Parity parity {Parity::None};
     uint8_t *rx_buffer {nullptr};
     size_t rx_buffer_size {0};
+    DmaChannelConfig dma_tx {};
 };
 
 /// UART 运行时统计
@@ -55,21 +57,22 @@ public:
     }
 
     void isr_handler(osal::IsrContext& context);
+    void dma_tx_isr(osal::IsrContext& context);
 
 protected:
-    explicit UartBase(uintptr_t base, int irq)
-        : m_base(base), m_irq(irq) {}
+    explicit UartBase(uintptr_t base) : m_base(base) {}
     uintptr_t m_base;
-    int m_irq;
     osal::StreamBuffer m_rx_stream;
+    osal::Mutex m_tx_mutex;
     osal::Semaphore m_tx_sem {0};
     UartStats m_stats {};
+    DmaChannelConfig m_dma_tx {};
 };
 
-template <uintptr_t Base, int Irq>
+template <uintptr_t Base>
 class Uart : public UartBase {
 public:
-    constexpr Uart() : UartBase(Base, Irq) {}
+    constexpr Uart() : UartBase(Base) {}
 };
 
 } // namespace hal

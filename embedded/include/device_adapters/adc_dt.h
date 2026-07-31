@@ -22,4 +22,9 @@
             config.resolution = kResolution;                       \
             return static_cast<int>(instance.init(config));        \
         }                                                          \
+                                                                   \
+        static void isr_global(osal::IsrContext& context)          \
+        {                                                          \
+            instance.isr_handler(context);                         \
+        }                                                          \
     };

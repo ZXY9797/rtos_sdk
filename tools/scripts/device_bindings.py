@@ -44,6 +44,14 @@ INTERRUPT_KEYS = {
     'method',
     'uses-osal',
     'shared',
+    'enable-on-init',
+    'source',
+}
+
+INTERRUPT_SOURCE_KEYS = {
+    'phandle-array',
+    'entry',
+    'interrupt-index-cell',
 }
 
 CPP_IDENTIFIER_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
@@ -141,21 +149,41 @@ def parse_interrupts(raw_interrupts, filepath):
             raise ValueError(
                 f'invalid interrupt method in {filepath}: {method!r}')
 
-        uses_osal = item.get('uses-osal', False)
-        shared = item.get('shared', False)
-        if not isinstance(uses_osal, bool):
-            raise ValueError(
-                f'interrupt uses-osal in {filepath} must be boolean')
-        if not isinstance(shared, bool):
-            raise ValueError(
-                f'interrupt shared in {filepath} must be boolean')
+        bool_fields = {
+            'uses_osal': item.get('uses-osal', False),
+            'shared': item.get('shared', False),
+            'enable_on_init': item.get('enable-on-init', False),
+        }
+        for key, value in bool_fields.items():
+            if not isinstance(value, bool):
+                raise ValueError(
+                    f'interrupt {key.replace("_", "-")} in '
+                    f'{filepath} must be boolean')
+
+        source = item.get('source')
+        if source is not None:
+            if not isinstance(source, dict):
+                raise ValueError(
+                    f'interrupt source in {filepath} must be a mapping')
+            unknown_source = set(source) - INTERRUPT_SOURCE_KEYS
+            if unknown_source:
+                keys = ', '.join(sorted(unknown_source))
+                raise ValueError(
+                    f'unknown interrupt source keys in '
+                    f'{filepath}: {keys}')
+            for key in INTERRUPT_SOURCE_KEYS:
+                value = source.get(key)
+                if not isinstance(value, str) or not value:
+                    raise ValueError(
+                        f'invalid interrupt source {key} in '
+                        f'{filepath}: {value!r}')
 
         names.add(name)
         interrupts.append({
             'name': name,
             'method': method,
-            'uses_osal': uses_osal,
-            'shared': shared,
+            **bool_fields,
+            'source': source,
         })
     return interrupts
 

@@ -34,6 +34,7 @@ public:
                                   uint8_t *data, size_t len, uint32_t timeout_ms);
     [[nodiscard]] Status probe(uint16_t addr, uint32_t retries,
                                uint32_t timeout_ms);
+    void isr_handler(osal::IsrContext& context);
 
     /// 获取运行时统计
     [[nodiscard]] I2cStats get_stats() const { return m_stats; }

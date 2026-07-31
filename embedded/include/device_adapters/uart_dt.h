@@ -1,6 +1,7 @@
 #pragma once
 
 #include <device.h>
+#include <devicetree/dma.h>
 #include <drivers/uart.h>
 #include <cstddef>
 #include <cstdint>
@@ -19,7 +20,21 @@ constexpr Parity uart_parity(uint32_t enum_index)
 
 } // namespace hal::device_adapter
 
-#define HAL_UART_DT_ADAPT(node_id)                                 \
+#define HAL_UART_NO_EXTRA_CONFIG(node_id, config)
+
+#define HAL_GD32_UART_DMA_CONFIG(node_id, config)                  \
+    do {                                                           \
+        (config).dma_tx = {                                        \
+            DT_REG_ADDR(DT_DMAS_CTLR_BY_NAME(node_id, tx)),        \
+            DT_DMAS_CELL_BY_NAME(node_id, tx, request_id),         \
+            DT_DMAS_CELL_BY_NAME(node_id, tx, channel),            \
+            DT_PROP(DT_DMAS_CTLR_BY_NAME(node_id, tx),             \
+                    dma_offset) +                                  \
+                DT_DMAS_CELL_BY_NAME(node_id, tx, channel),        \
+        };                                                         \
+    } while (false)
+
+#define HAL_UART_DT_ADAPT_IMPL(node_id, config_hook)               \
     template <>                                                    \
     struct DeviceTrait<DT_ORD(node_id)> {                          \
         static constexpr uint32_t kDataBits =                      \
@@ -41,7 +56,7 @@ constexpr Parity uart_parity(uint32_t enum_index)
         static_assert(kRxBufferSize > 0U,                          \
                       "UART RX buffer must be nonzero");           \
                                                                    \
-        using type = Uart<DT_REG_ADDR(node_id), DT_IRQN(node_id)>; \
+        using type = Uart<DT_REG_ADDR(node_id)>;                   \
         static type instance;                                      \
         inline static uint8_t rx_buffer[kRxBufferSize]{};          \
                                                                    \
@@ -57,6 +72,7 @@ constexpr Parity uart_parity(uint32_t enum_index)
                 kParityIndex);                                     \
             config.rx_buffer = rx_buffer;                          \
             config.rx_buffer_size = sizeof(rx_buffer);             \
+            config_hook(node_id, config);                          \
             return static_cast<int>(instance.init(config));        \
         }                                                          \
                                                                    \
@@ -64,4 +80,15 @@ constexpr Parity uart_parity(uint32_t enum_index)
         {                                                          \
             instance.isr_handler(context);                         \
         }                                                          \
+                                                                   \
+        static void isr_dma_tx(osal::IsrContext& context)          \
+        {                                                          \
+            instance.dma_tx_isr(context);                          \
+        }                                                          \
     };
+
+#define HAL_UART_DT_ADAPT(node_id)                                 \
+    HAL_UART_DT_ADAPT_IMPL(node_id, HAL_UART_NO_EXTRA_CONFIG)
+
+#define HAL_GD32_UART_DT_ADAPT(node_id)                            \
+    HAL_UART_DT_ADAPT_IMPL(node_id, HAL_GD32_UART_DMA_CONFIG)

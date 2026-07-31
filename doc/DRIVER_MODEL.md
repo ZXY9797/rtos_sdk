@@ -86,6 +86,7 @@ C++ adapter 使用 devicetree 宏取得依赖对象：
 - readiness 策略
 - 解析到的依赖列表
 - 每个中断的名称、索引、IRQ、优先级、控制器和分发方法
+- 间接中断的 `source` 路径以及初始化后是否使能
 
 该文件是生成产物，不提交到仓库。它用于 review 设备模型、定位初始化顺序
 问题和支持后续 CLI/测试工具扩展。报告不再混入 pinctrl 数据；pinctrl 由
@@ -111,9 +112,13 @@ decltype(device_get(led0)) status_led();
 - `gen_device_traits.py` 会把初始化依赖顺序问题视为构建错误，避免问题推迟到运行期。
 - 中断必须通过 `cxx-driver.interrupts` 声明。IRQ 和优先级来自 EDT，不允许 adapter
   或生成器硬编码。
+- 外设使用 DMA 中断时，binding 通过 `source.phandle-array`、`entry` 和
+  `interrupt-index-cell` 跟随 `dmas` 到 DMA 控制器；驱动只接收解析后的 DMA
+  controller/channel/request 配置。
 - 使用 OSAL ISR API 的中断会对
   `osal::kMinRtosCallableIrqPriority` 做编译期优先级检查。
 - 生成器统一负责 IRQ 包装器、平台连接和失败回滚，驱动只实现实例 ISR 方法。
+- 驱动源码禁止声明 `IRQn_Handler`/`*_IRQHandler`，该约束由生成器单元测试扫描。
 - 总线子设备通过 `DT_ORD(DT_PARENT(node_id))` 和
   `device_get<BusOrd>()` 访问父总线实例。
 - `DT_REG_ADDR(DT_PARENT(node_id))` 只表示父节点寄存器基地址，不能替代

@@ -1,6 +1,5 @@
 #include <drivers/uart.h>
 #include <drivers/dma.h>
-#include <irq.h>
 #include <osal.h>
 
 #include "gd32_regs.h"
@@ -48,15 +47,16 @@ void usart_clock_enable(uintptr_t base) {
 
 } // anonymous namespace
 
-/* UART TX DMA 完成信号量指针（用于 DMA ISR → send 线程通知） */
-static osal::Semaphore *s_uart_tx_sem = nullptr;
-
 Status UartBase::init(const UartConfig &config) {
-    if (!config.rx_buffer || config.rx_buffer_size == 0) return Status::InvalidArgument;
+    if (!config.rx_buffer || config.rx_buffer_size == 0 ||
+        !config.dma_tx.is_valid() || config.dma_tx.channel > 6U) {
+        return Status::InvalidArgument;
+    }
 
     if (!m_rx_stream.create(config.rx_buffer, config.rx_buffer_size, 1)) {
         return Status::NoMemory;
     }
+    m_dma_tx = config.dma_tx;
     auto *regs = reinterpret_cast<gd32::UsartRegs *>(m_base);
 
     usart_clock_enable(m_base);
@@ -87,8 +87,6 @@ Status UartBase::init(const UartConfig &config) {
     regs->CTL2 |= CTL2_DENT | CTL2_DENR;
     regs->CTL0 |= CTL0_UEN;
 
-    hal::Irq::enable(m_irq);
-
     set_state(DeviceState::Initialized);
     return Status::Ok;
 }
@@ -103,15 +101,17 @@ Status UartBase::deinit() {
 }
 
 Status UartBase::send(const uint8_t *data, size_t len, size_t *bytes_sent, uint32_t timeout_ms) {
-    if (!is_initialized() || !data || len == 0) return Status::InvalidArgument;
+    if (!is_initialized() || !data || len == 0 || len > 0xFFFFU) {
+        return Status::InvalidArgument;
+    }
 
-    s_uart_tx_sem = &m_tx_sem;
-
-    DmaChannel tx_dma(DMA1_BASE, 4, 10);
+    osal::LockGuard lock(m_tx_mutex);
+    DmaChannel tx_dma(static_cast<uint32_t>(m_dma_tx.controller),
+                      m_dma_tx.channel, m_dma_tx.mux_channel);
     tx_dma.clear_flags();
 
     DmaConfig dma_cfg = {
-        .request_id   = DMA_REQUEST_USART0_TX,
+        .request_id   = m_dma_tx.request_id,
         .periph_addr  = m_base + 0x04U,
         .memory_addr  = reinterpret_cast<uint32_t>(data),
         .count        = static_cast<uint16_t>(len),
@@ -124,8 +124,14 @@ Status UartBase::send(const uint8_t *data, size_t len, size_t *bytes_sent, uint3
         .circular     = false,
     };
 
-    (void)tx_dma.config(dma_cfg);
-    (void)tx_dma.start();
+    Status dma_status = tx_dma.config(dma_cfg);
+    if (dma_status != Status::Ok) {
+        return dma_status;
+    }
+    dma_status = tx_dma.start();
+    if (dma_status != Status::Ok) {
+        return dma_status;
+    }
 
     /* 等待 DMA 完成（ISR 释放信号量，让出 CPU） */
     if (m_tx_sem.take(timeout_ms) != 0) {
@@ -185,15 +191,17 @@ void UartBase::isr_handler(osal::IsrContext& context) {
     }
 }
 
-} // namespace hal
-
-/* DMA1 Channel 4 中断 — UART0 TX DMA 完成 */
-extern "C" void IRQ60_Handler(void) {
-    osal::IsrContext context;
-    auto *dma = reinterpret_cast<gd32::DmaRegs *>(DMA1_BASE);
-    dma->INTC = (DMA_INTC_GIFC | DMA_INTC_FTFIFC
-                 | DMA_INTC_HTFIFC | DMA_INTC_ERRIFC) << (4U * 4U);
-    if (hal::s_uart_tx_sem) {
-        (void)hal::s_uart_tx_sem->release_from_isr(context);
+void UartBase::dma_tx_isr(osal::IsrContext& context)
+{
+    if (!m_dma_tx.is_valid() || m_dma_tx.channel > 6U) {
+        return;
     }
+
+    auto *dma = reinterpret_cast<gd32::DmaRegs *>(m_dma_tx.controller);
+    dma->INTC = (DMA_INTC_GIFC | DMA_INTC_FTFIFC
+                 | DMA_INTC_HTFIFC | DMA_INTC_ERRIFC)
+                << (m_dma_tx.channel * 4U);
+    (void)m_tx_sem.release_from_isr(context);
 }
+
+} // namespace hal

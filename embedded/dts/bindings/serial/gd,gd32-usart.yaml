@@ -7,13 +7,24 @@ include: [uart-controller.yaml, base.yaml, pinctrl-device.yaml]
 cxx-driver:
   adapter:
     header: device_adapters/uart_dt.h
-    macro: HAL_UART_DT_ADAPT
+    macro: HAL_GD32_UART_DT_ADAPT
   type-name: Uart
   init: true
   interrupts:
     - name: global
       method: isr_global
       uses-osal: true
+      enable-on-init: true
+    - name: dma-tx
+      method: isr_dma_tx
+      uses-osal: true
+      enable-on-init: true
+      source:
+        phandle-array: dmas
+        entry: tx
+        interrupt-index-cell: channel
+  requires:
+    - phandle-array: dmas
   readiness: device-base
   device-base: true
   init-level: post-kernel
