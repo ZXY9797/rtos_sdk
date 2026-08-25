@@ -107,7 +107,8 @@ set(_BLE_SDK_SHA256
     9f3a6feb733d691962aa44039d26187adc28ed6877fda599208eb0ee7b450e5b)
 if(NOT EXISTS ${_BLE_SDK_ORIG})
     message(FATAL_ERROR
-        "Missing Goodix SDK v1.0.3_patch_2 library: ${_BLE_SDK_ORIG}")
+        "Missing tracked Goodix SDK v1.0.3_patch_2 library: "
+        "${_BLE_SDK_ORIG}")
 endif()
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_BLE_SDK_ORIG})
 file(SHA256 ${_BLE_SDK_ORIG} _ble_sdk_sha256)

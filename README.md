@@ -263,9 +263,3 @@ python bootloader/scripts/build_3in1.py demo --out out/demo_3in1
 ```
 
 详见 [doc/QUICKSTART.md](doc/QUICKSTART.md)
-
----
-
-## 许可证
-
-Apache-2.0

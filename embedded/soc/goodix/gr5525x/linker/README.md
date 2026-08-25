@@ -18,6 +18,15 @@ The matching soft-float `libble_sdk.a` SHA-256 is:
 
 `9F3A6FEB733D691962AA44039D26187ADC28ED6877FDA599208EB0EE7B450E5B`
 
+The library is imported from the same commit at:
+
+`platform/soc/linker/gcc/libble_sdk.a`
+
+The exact upstream binary is tracked at
+`component/ble/goodix/lib/libble_sdk.a` so clean and offline checkouts are
+reproducible. See the adjacent `README.md` for provenance and redistribution
+scope.
+
 All GR5525 images require GNU Arm C and C++ compiler version 9.3.1. CMake
 rejects other compiler versions even if they can link the precompiled library.
 
