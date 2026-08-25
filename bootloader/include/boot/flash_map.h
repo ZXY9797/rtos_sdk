@@ -15,6 +15,7 @@ enum FlashAreaId : uint8_t {
     FLASH_AREA_SLOT0,
     FLASH_AREA_UPGRADE,
     FLASH_AREA_STORAGE,
+    FLASH_AREA_BOOT_CTRL,
     FLASH_AREA_COUNT,
 };
 

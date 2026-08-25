@@ -1,0 +1,31 @@
+menu "Boot Security Policy"
+
+config BOOT_PRODUCTION
+    bool "Production secure-boot policy"
+    default n
+    select BOOT_REQUIRE_SIGNATURE
+    help
+      Enable the fail-closed production policy for every image in the boot
+      chain. The product loader must provide common/boot_security.cc with an
+      audited P-256 verifier and an OTP-backed monotonic security-version
+      provider. The preloader also consumes this symbol so that it cannot
+      execute an unauthenticated field-upgrade loader in production.
+
+config BOOT_MIN_SECURITY_VERSION
+    int "Development minimum firmware security version"
+    default 0
+    range 0 2147483647
+    depends on !BOOT_PRODUCTION
+    help
+      Development-only compile-time rollback floor. Production builds must
+      read the floor from one-time-programmable or equivalently protected
+      monotonic storage.
+
+config BOOT_REQUIRE_SIGNATURE
+    bool "Require ECDSA-P256 image signature"
+    default n
+    help
+      Fail closed unless the product supplies verify_image_signature(). A
+      production build selects this option automatically.
+
+endmenu

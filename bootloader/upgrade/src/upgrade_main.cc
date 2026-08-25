@@ -1,144 +1,152 @@
 #include <boot/boot_ctrl.h>
 #include <boot/flash_map.h>
 #include <boot/flash_ops.h>
-#include <boot/image.h>
+#include <boot/sha256.h>
+#include <boot_layout.h>
 #include <upgrade/upgrade_pkg.h>
 
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 
 namespace upgrade {
+namespace {
 
-constexpr uint32_t kMaxCopySectorSize = 4096;
+struct VerifiedLoader {
+    const uint8_t *data;
+    uint32_t size;
+    uint8_t digest[32];
+};
 
-int flash_erase_sector(uint32_t addr, uint32_t size);
-int flash_write(uint32_t addr, const uint8_t *data, uint32_t len);
-
-static bool verify_new_loader(const uint8_t *data, uint32_t size) {
-    if (!data || size < sizeof(boot::ImageHeader)) return false;
-
-    auto *hdr = reinterpret_cast<const boot::ImageHeader *>(data);
-    if (hdr->magic != boot::IMAGE_MAGIC) return false;
-    if (hdr->hdr_size != sizeof(boot::ImageHeader)) return false;
-    if (hdr->img_size == 0 ||
-        hdr->img_size > size - sizeof(boot::ImageHeader)) {
-        return false;
+[[noreturn]] void halt() {
+    asm volatile("cpsid i" ::: "memory");
+    while (1) {
     }
-
-    return true;
 }
 
-[[noreturn]] static void halt_with_led() {
-    while (1) {}
-}
-
-[[noreturn]] static void system_reset() {
+[[noreturn]] void system_reset() {
     auto *aircr = reinterpret_cast<volatile uint32_t *>(0xE000ED0CU);
     *aircr = 0x05FA0004U;
-    while (1) {}
+    while (1) {
+    }
 }
 
-static bool loader_upgrade_pending() {
-    uint8_t flag = 0;
-    (void)boot::loader_upgrade_read(flag);
-    return flag != 0;
+bool valid_loader_vectors(const uint8_t *data, uint32_t size,
+                          uint32_t destination) {
+    if (data == nullptr || size < 2U * sizeof(uint32_t)) return false;
+
+    uint32_t stack_pointer = 0U;
+    uint32_t entry = 0U;
+    std::memcpy(&stack_pointer, data, sizeof(stack_pointer));
+    std::memcpy(&entry, data + sizeof(stack_pointer), sizeof(entry));
+    const uint64_t ram_end = static_cast<uint64_t>(boot::layout::kRamBase)
+        + boot::layout::kRamSize;
+    const uint64_t image_end = static_cast<uint64_t>(destination) + size;
+    const uint32_t entry_address = entry & ~1U;
+    return stack_pointer >= boot::layout::kRamBase
+        && stack_pointer <= ram_end
+        && (stack_pointer & 0x7U) == 0U
+        && (entry & 1U) != 0U
+        && entry_address >= destination
+        && entry_address < image_end;
 }
 
-static bool image_size_in_flash(boot::FlashAreaId area_id,
-                                uint32_t &image_size) {
-    const auto &area = boot::flash_area_get(area_id);
-    const uint32_t base = boot::flash_area_addr(area_id);
-
-    boot::ImageHeader hdr{};
-    if (!boot::flash_read(base, &hdr, sizeof(hdr))) return false;
-    if (hdr.magic != boot::IMAGE_MAGIC ||
-        hdr.hdr_size != sizeof(boot::ImageHeader) ||
-        hdr.img_size == 0) {
+bool verify_manifest(const LoaderPayload &payload,
+                     uint32_t destination, VerifiedLoader &verified) {
+    if (payload.blob == nullptr
+        || payload.blob_size < sizeof(LoaderPayloadHeader)) {
         return false;
     }
 
-    const uint64_t copy_len64 =
-        static_cast<uint64_t>(hdr.hdr_size) + hdr.img_size;
-    if (copy_len64 > area.size || copy_len64 > UINT32_MAX) {
+    LoaderPayloadHeader header {};
+    std::memcpy(&header, payload.blob, sizeof(header));
+    if (header.magic != LOADER_PAYLOAD_MAGIC
+        || header.header_size != sizeof(header)
+        || header.version != LOADER_PAYLOAD_VERSION
+        || header.payload_size == 0U
+        || header.payload_size
+            != payload.blob_size - sizeof(LoaderPayloadHeader)) {
         return false;
     }
 
-    image_size = static_cast<uint32_t>(copy_len64);
+    const uint8_t *data = payload.blob + sizeof(LoaderPayloadHeader);
+    if (!valid_loader_vectors(data, header.payload_size, destination)) {
+        return false;
+    }
+
+    uint8_t digest[32];
+    boot::sha256(data, header.payload_size, digest);
+    if (std::memcmp(digest, header.sha256, sizeof(digest)) != 0) {
+        return false;
+    }
+
+    verified.data = data;
+    verified.size = header.payload_size;
+    std::memcpy(verified.digest, digest, sizeof(verified.digest));
     return true;
 }
 
-static bool copy_upgrade_image_to_slot0() {
-    const auto &src_area = boot::flash_area_get(boot::FLASH_AREA_UPGRADE);
-    const auto &dst_area = boot::flash_area_get(boot::FLASH_AREA_SLOT0);
-    const uint32_t sector_size = boot::flash_erase_sector_size();
-
-    uint32_t copy_len = 0;
-    if (!image_size_in_flash(boot::FLASH_AREA_UPGRADE, copy_len)) return false;
-    if (sector_size == 0 || sector_size > kMaxCopySectorSize ||
-        copy_len > src_area.size || copy_len > dst_area.size) {
-        return false;
-    }
-
-    const uint32_t src_base = boot::flash_area_addr(boot::FLASH_AREA_UPGRADE);
-    const uint32_t dst_base = boot::flash_area_addr(boot::FLASH_AREA_SLOT0);
-    if (src_base > UINT32_MAX - copy_len ||
-        dst_base > UINT32_MAX - copy_len) {
-        return false;
-    }
-
-    static uint8_t sector[kMaxCopySectorSize];
-    for (uint32_t offset = 0; offset < copy_len; offset += sector_size) {
-        const uint32_t chunk =
-            std::min<uint32_t>(sector_size, copy_len - offset);
-        if (!boot::flash_read(src_base + offset, sector, chunk)) return false;
-        if (!boot::flash_erase(dst_base + offset, sector_size)) return false;
-        if (!boot::flash_write(dst_base + offset, sector, chunk)) return false;
-    }
-
-    return true;
-}
-
-} // namespace upgrade
-
-extern "C" int main() {
-    if (upgrade::loader_upgrade_pending()) {
-        if (!upgrade::copy_upgrade_image_to_slot0()) {
-            upgrade::halt_with_led();
-        }
-    }
-
-    auto payload = upgrade::get_loader_payload();
-
-    if (!upgrade::verify_new_loader(payload.data, payload.size)) {
-        upgrade::halt_with_led();
-    }
-
-    const uint32_t boot_addr =
-        boot::flash_area_addr(boot::FLASH_AREA_BOOTLOADER);
-    const uint32_t boot_size =
-        boot::flash_area_get(boot::FLASH_AREA_BOOTLOADER).size;
-    const uint32_t sector_size = boot::flash_erase_sector_size();
-
-    if (sector_size == 0 || payload.size > boot_size) {
-        upgrade::halt_with_led();
-    }
-
-    for (uint32_t offset = 0; offset < boot_size; offset += sector_size) {
-        if (upgrade::flash_erase_sector(boot_addr + offset, sector_size) != 0) {
-            upgrade::halt_with_led();
-        }
-    }
-
-    for (uint32_t offset = 0; offset < payload.size;) {
-        const uint32_t chunk =
-            std::min<uint32_t>(sector_size, payload.size - offset);
-        if (upgrade::flash_write(boot_addr + offset,
-                                 payload.data + offset, chunk) != 0) {
-            upgrade::halt_with_led();
-        }
+bool verify_written_loader(uint32_t address, uint32_t size,
+                           const uint8_t expected[32]) {
+    boot::Sha256Ctx context {};
+    boot::sha256_init(context);
+    uint8_t buffer[256];
+    uint32_t offset = 0U;
+    while (offset < size) {
+        const uint32_t chunk = std::min<uint32_t>(
+            sizeof(buffer), size - offset);
+        if (!boot::flash_read(address + offset, buffer, chunk)) return false;
+        boot::sha256_update(context, buffer, chunk);
         offset += chunk;
     }
 
-    (void)boot::loader_upgrade_clear();
+    uint8_t digest[32];
+    boot::sha256_final(context, digest);
+    return std::memcmp(digest, expected, sizeof(digest)) == 0;
+}
+
+bool install_loader(const VerifiedLoader &payload) {
+    const uint32_t address =
+        boot::flash_area_addr(boot::FLASH_AREA_BOOTLOADER);
+    const uint32_t capacity =
+        boot::flash_area_get(boot::FLASH_AREA_BOOTLOADER).size;
+    const uint32_t sector_size = boot::flash_erase_sector_size();
+    if (sector_size == 0U || payload.size > capacity
+        || (capacity % sector_size) != 0U) {
+        return false;
+    }
+
+    if (!boot::flash_erase(address, capacity)) return false;
+    for (uint32_t offset = 0U; offset < payload.size;) {
+        const uint32_t chunk = std::min<uint32_t>(
+            sector_size, payload.size - offset);
+        if (!boot::flash_write(address + offset,
+                               payload.data + offset, chunk)) {
+            return false;
+        }
+        offset += chunk;
+    }
+    return verify_written_loader(
+        address, payload.size, payload.digest);
+}
+
+} // namespace
+} // namespace upgrade
+
+extern "C" int main() {
+    uint8_t pending = 0U;
+    if (!boot::loader_upgrade_read(pending) || pending == 0U) {
+        upgrade::halt();
+    }
+
+    const upgrade::LoaderPayload blob = upgrade::get_loader_payload();
+    upgrade::VerifiedLoader payload {};
+    const uint32_t destination =
+        boot::flash_area_addr(boot::FLASH_AREA_BOOTLOADER);
+    if (!upgrade::verify_manifest(blob, destination, payload)
+        || !upgrade::install_loader(payload)
+        || !boot::loader_upgrade_clear()) {
+        upgrade::halt();
+    }
     upgrade::system_reset();
 }

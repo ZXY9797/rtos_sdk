@@ -1,0 +1,29 @@
+#include <boot/flash_map.h>
+
+namespace boot {
+namespace {
+
+constexpr uint32_t kFlashBaseAddr = @BOOT_FLASH_BASE@U;
+
+const FlashArea kFlashAreas[FLASH_AREA_COUNT] = {
+    [FLASH_AREA_PRELOADER] = { @BOOT_PRELOADER_OFFSET@U, @BOOT_PRELOADER_SIZE@U },
+    [FLASH_AREA_BOOTLOADER]= { @BOOT_LOADER_OFFSET@U, @BOOT_LOADER_SIZE@U },
+    [FLASH_AREA_SLOT0]     = { @BOOT_SLOT0_OFFSET@U, @BOOT_SLOT0_SIZE@U },
+    [FLASH_AREA_UPGRADE]   = { @BOOT_UPGRADE_OFFSET@U, @BOOT_UPGRADE_SIZE@U },
+    [FLASH_AREA_STORAGE]   = { @BOOT_STORAGE_OFFSET@U, @BOOT_STORAGE_SIZE@U },
+    [FLASH_AREA_BOOT_CTRL] = { @BOOT_BOOT_CTRL_OFFSET@U, @BOOT_BOOT_CTRL_SIZE@U },
+};
+
+} // namespace
+
+uint32_t flash_base_addr()
+{
+    return kFlashBaseAddr;
+}
+
+const FlashArea& flash_area_get(FlashAreaId id)
+{
+    return kFlashAreas[id];
+}
+
+} // namespace boot

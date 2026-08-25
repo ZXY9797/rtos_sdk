@@ -7,43 +7,29 @@ import argparse
 from pathlib import Path
 import sys
 
+from boot_layout import all_layouts
+from pack_image import validate_image
+
 
 KB = 1024
 
-LAYOUTS = {
-    "demo": {
-        "flash_base": 0x08000000,
-        "partitions": {
-            "preloader": {"offset": 0x00000000, "size": 16 * KB},
-            "loader": {"offset": 0x00004000, "size": 24 * KB},
-            "app": {"offset": 0x0000A000, "size": 160 * KB},
-        },
-    },
-    "gd32f503": {
-        "flash_base": 0x08000000,
-        "partitions": {
-            "preloader": {"offset": 0x00000000, "size": 16 * KB},
-            "loader": {"offset": 0x00004000, "size": 24 * KB},
-            "app": {"offset": 0x0000A000, "size": 160 * KB},
-        },
-    },
-    "demo_ble": {
-        "flash_base": 0x00200000,
-        "partitions": {
-            "preloader": {"offset": 0x00002000, "size": 16 * KB},
-            "loader": {"offset": 0x00006000, "size": 24 * KB},
-            "app": {"offset": 0x0000C000, "size": 160 * KB},
-        },
-    },
-    "gr5525": {
-        "flash_base": 0x00200000,
-        "partitions": {
-            "preloader": {"offset": 0x00002000, "size": 16 * KB},
-            "loader": {"offset": 0x00006000, "size": 24 * KB},
-            "app": {"offset": 0x0000C000, "size": 160 * KB},
-        },
-    },
-}
+def _merge_layouts() -> dict[str, dict[str, object]]:
+    result: dict[str, dict[str, object]] = {}
+    for name, source in all_layouts().items():
+        source_partitions = source["partitions"]
+        result[name] = {
+            "canonical_name": source["name"],
+            "flash_base": source["flash_base"],
+            "partitions": {
+                "preloader": source_partitions["preloader"],
+                "loader": source_partitions["loader"],
+                "app": source_partitions["slot0"],
+            },
+        }
+    return result
+
+
+LAYOUTS = _merge_layouts()
 
 
 def read_bin(path: Path, name: str) -> bytes:
@@ -77,6 +63,10 @@ def merge(args: argparse.Namespace) -> None:
     }
     if args.app:
         images["app"] = read_bin(Path(args.app), "app")
+        try:
+            validate_image(images["app"], str(layout["canonical_name"]))
+        except ValueError as exc:
+            raise SystemExit(f"error: invalid app image: {exc}") from exc
 
     for name, data in images.items():
         part = partitions[name]
@@ -112,7 +102,7 @@ def main() -> None:
     )
     parser.add_argument("--preloader", required=True, help="preloader.bin path")
     parser.add_argument("--loader", required=True, help="loader.bin path")
-    parser.add_argument("--app", help="app .bin path")
+    parser.add_argument("--app", help="packaged application image path")
     parser.add_argument("--output", default="firmware.bin", help="output path")
     args = parser.parse_args()
     merge(args)

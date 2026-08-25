@@ -1,11 +1,11 @@
 /*
- * Demo preloader: 16KB @ 0x08000000.
+ * Demo preloader. Address and size come from product layout.json.
  */
 
 MEMORY
 {
-    FLASH (rx) : ORIGIN = 0x08000000, LENGTH = 16K
-    RAM   (rw) : ORIGIN = 0x20000000, LENGTH = 128K
+    FLASH (rx) : ORIGIN = BOOT_PRELOADER_ORIGIN, LENGTH = BOOT_PRELOADER_SIZE
+    RAM   (rw) : ORIGIN = BOOT_RAM_BASE, LENGTH = BOOT_RAM_SIZE
 }
 
 __flash_size__ = LENGTH(FLASH);

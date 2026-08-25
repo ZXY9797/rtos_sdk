@@ -6,6 +6,7 @@ target_sources(${MODULE_NAME}
         src/boot_ctrl.cc
         src/boot_confirm.cc
         src/boot_flash.cc
+        src/boot_handoff.cc
         src/dfu_crc.cc
         src/sha256.cc
 )

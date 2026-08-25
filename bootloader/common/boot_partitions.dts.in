@@ -1,0 +1,39 @@
+/ {
+    flash0: flash@@BOOT_FLASH_UNIT_ADDRESS@ {
+        compatible = "soc-nv-flash";
+        reg = <@BOOT_FLASH_BASE@ @BOOT_FLASH_SIZE@>;
+        erase-block-size = <@BOOT_ERASE_BLOCK_SIZE@>;
+        write-block-size = <@BOOT_WRITE_BLOCK_SIZE@>;
+
+        partitions {
+            compatible = "fixed-partitions";
+            #address-cells = <1>;
+            #size-cells = <1>;
+
+            preloader_partition: partition@@BOOT_PRELOADER_UNIT_ADDRESS@ {
+                label = "preloader";
+                reg = <@BOOT_PRELOADER_OFFSET@ @BOOT_PRELOADER_SIZE@>;
+            };
+            loader_partition: partition@@BOOT_LOADER_UNIT_ADDRESS@ {
+                label = "loader";
+                reg = <@BOOT_LOADER_OFFSET@ @BOOT_LOADER_SIZE@>;
+            };
+            slot0_partition: partition@@BOOT_SLOT0_UNIT_ADDRESS@ {
+                label = "slot0";
+                reg = <@BOOT_SLOT0_OFFSET@ @BOOT_SLOT0_SIZE@>;
+            };
+            upgrade_partition: partition@@BOOT_UPGRADE_UNIT_ADDRESS@ {
+                label = "upgrade";
+                reg = <@BOOT_UPGRADE_OFFSET@ @BOOT_UPGRADE_SIZE@>;
+            };
+            storage_partition: partition@@BOOT_STORAGE_UNIT_ADDRESS@ {
+                label = "storage";
+                reg = <@BOOT_STORAGE_OFFSET@ @BOOT_STORAGE_SIZE@>;
+            };
+            boot_ctrl_partition: partition@@BOOT_BOOT_CTRL_UNIT_ADDRESS@ {
+                label = "boot_ctrl";
+                reg = <@BOOT_BOOT_CTRL_OFFSET@ @BOOT_BOOT_CTRL_SIZE@>;
+            };
+        };
+    };
+};

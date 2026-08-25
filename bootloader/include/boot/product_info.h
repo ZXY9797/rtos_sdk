@@ -6,7 +6,6 @@
 namespace boot {
 
 static constexpr uint32_t PRODUCT_INFO_MAGIC  = 0x50524F44; // "PROD"
-static constexpr uint32_t PRODUCT_INFO_OFFSET = 1024;       // app 偏移 1KB
 
 struct ProductInfo {
     uint32_t     magic;            // PRODUCT_INFO_MAGIC
@@ -17,10 +16,6 @@ struct ProductInfo {
     uint32_t     crc32;            // CRC-32 of 前 48 bytes
 };
 static_assert(sizeof(ProductInfo) == 64);
-
-// 预定义产品 ID
-static constexpr uint32_t PRODUCT_ID_DEMO     = 0x0001;
-static constexpr uint32_t PRODUCT_ID_DEMO_BLE = 0x0002;
 
 constexpr uint32_t product_info_crc32_byte(uint32_t crc, uint8_t byte) {
     crc ^= byte;

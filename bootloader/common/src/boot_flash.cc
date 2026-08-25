@@ -114,6 +114,7 @@ bool flash_update(uint32_t addr, const void *data, size_t len) {
     const auto *src = static_cast<const uint8_t *>(data);
     size_t done = 0;
     static uint8_t sector[kMaxBootSectorSize];
+    uint8_t verify[256];
 
     while (done < len) {
         const uint32_t cur_offset = start_offset + static_cast<uint32_t>(done);
@@ -126,6 +127,18 @@ bool flash_update(uint32_t addr, const void *data, size_t len) {
         std::memcpy(sector + in_sector, src + done, chunk);
         if (!flash_erase(sector_base, sector_size)) return false;
         if (!flash_write(sector_base, sector, sector_size)) return false;
+        for (uint32_t verify_offset = 0U;
+             verify_offset < sector_size;
+             verify_offset += sizeof(verify)) {
+            const size_t verify_len = std::min<size_t>(
+                sizeof(verify), sector_size - verify_offset);
+            if (!flash_read(sector_base + verify_offset,
+                            verify, verify_len)
+                || std::memcmp(verify, sector + verify_offset,
+                               verify_len) != 0) {
+                return false;
+            }
+        }
 
         done += chunk;
     }

@@ -45,7 +45,7 @@ struct __attribute__((packed)) VerifyAck {
 
 struct __attribute__((packed)) StatusAck {
     uint8_t in_loader;
-    uint8_t boot_mode;      // 0=AB, 1=Direct
+    uint8_t boot_mode;      // 0=staged copy, 1=direct overwrite
     uint8_t slot0_valid;
     uint8_t upgrade_valid;
     boot::ImageVersion slot0_ver;
@@ -58,11 +58,13 @@ uint16_t crc16_ccitt(const uint8_t *data, size_t len);
 
 namespace boot {
 
+// len is input capacity and output byte count. Providers must not write more
+// than the input capacity.
 using ProtocolRxCallback = bool (*)(uint8_t *buf, size_t &len);
 using ProtocolTxCallback = bool (*)(const uint8_t *buf, size_t len);
 
 void protocol_register_transport(ProtocolRxCallback rx,
                                  ProtocolTxCallback tx);
-void protocol_process();
+[[nodiscard]] bool protocol_process();
 
 } // namespace boot

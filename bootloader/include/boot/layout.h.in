@@ -1,0 +1,27 @@
+#pragma once
+
+#include <cstdint>
+
+namespace boot::layout {
+
+inline constexpr uint32_t kProductId = @BOOT_PRODUCT_ID@U;
+inline constexpr uint32_t kFlashBase = @BOOT_FLASH_BASE@U;
+inline constexpr uint32_t kFlashSize = @BOOT_FLASH_SIZE@U;
+inline constexpr uint32_t kProductInfoOffset = @BOOT_PRODUCT_INFO_OFFSET@U;
+inline constexpr uint32_t kImageHeaderSize = @BOOT_IMAGE_HEADER_SIZE@U;
+inline constexpr uint32_t kRamBase = @BOOT_RAM_BASE@U;
+inline constexpr uint32_t kRamSize = @BOOT_RAM_SIZE@U;
+inline constexpr uint32_t kPreloaderOffset = @BOOT_PRELOADER_OFFSET@U;
+inline constexpr uint32_t kPreloaderSize = @BOOT_PRELOADER_SIZE@U;
+inline constexpr uint32_t kLoaderOffset = @BOOT_LOADER_OFFSET@U;
+inline constexpr uint32_t kLoaderSize = @BOOT_LOADER_SIZE@U;
+inline constexpr uint32_t kSlot0Offset = @BOOT_SLOT0_OFFSET@U;
+inline constexpr uint32_t kSlot0Size = @BOOT_SLOT0_SIZE@U;
+inline constexpr uint32_t kUpgradeOffset = @BOOT_UPGRADE_OFFSET@U;
+inline constexpr uint32_t kUpgradeSize = @BOOT_UPGRADE_SIZE@U;
+inline constexpr uint32_t kStorageOffset = @BOOT_STORAGE_OFFSET@U;
+inline constexpr uint32_t kStorageSize = @BOOT_STORAGE_SIZE@U;
+inline constexpr uint32_t kBootCtrlOffset = @BOOT_BOOT_CTRL_OFFSET@U;
+inline constexpr uint32_t kBootCtrlSize = @BOOT_BOOT_CTRL_SIZE@U;
+
+} // namespace boot::layout

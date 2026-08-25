@@ -4,8 +4,8 @@
 
 MEMORY
 {
-    FLASH (rx) : ORIGIN = 0x08032000, LENGTH = 152K
-    RAM   (rw) : ORIGIN = 0x20000000, LENGTH = 128K
+    FLASH (rx) : ORIGIN = BOOT_UPGRADE_ORIGIN, LENGTH = BOOT_UPGRADE_SIZE
+    RAM   (rw) : ORIGIN = BOOT_RAM_BASE, LENGTH = BOOT_RAM_SIZE
 }
 
 __flash_size__ = LENGTH(FLASH);
@@ -41,20 +41,31 @@ SECTIONS
     {
         __init_start = .;
         __init_EARLY_start = .;
-        KEEP(*(.z_init_EARLY*))
+        KEEP(*(SORT(.z_init_EARLY_P_?_*)))
+        KEEP(*(SORT(.z_init_EARLY_P_??_*)))
+        KEEP(*(SORT(.z_init_EARLY_P_???_*)))
         __init_PRE_KERNEL_1_start = .;
-        KEEP(*(.z_init_PRE_KERNEL_1*))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_1_P_?_*)))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_1_P_??_*)))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_1_P_???_*)))
         __init_PRE_KERNEL_2_start = .;
-        KEEP(*(.z_init_PRE_KERNEL_2*))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_2_P_?_*)))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_2_P_??_*)))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_2_P_???_*)))
         __init_PRE_KERNEL_3_start = .;
-        KEEP(*(.z_init_PRE_KERNEL_3*))
-        __init_POST_KERNEL_start = .;
-        KEEP(*(.z_init_POST_KERNEL*))
-        __init_APPLICATION_start = .;
-        KEEP(*(.z_init_APPLICATION*))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_3_P_?_*)))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_3_P_??_*)))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_3_P_???_*)))
         __init_end = .;
         . = ALIGN(4);
     } > FLASH
+
+    initlevel_error :
+    {
+        KEEP(*(SORT(.z_init_*)))
+    }
+    ASSERT(SIZEOF(initlevel_error) == 0,
+           "Upgrade image cannot use post-kernel or undefined init levels.")
 
     rodata : ALIGN(4)
     {

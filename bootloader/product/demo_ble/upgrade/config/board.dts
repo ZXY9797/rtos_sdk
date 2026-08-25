@@ -5,4 +5,5 @@
 / {
     compatible = "goodix,gr5525";
     model = "GR5525 BLE Upgrade";
+
 };
