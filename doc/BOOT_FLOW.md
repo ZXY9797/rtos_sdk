@@ -1,211 +1,112 @@
-# Boot 启动与升级关系
+# Boot 启动与升级流程
 
-本文档描述当前代码中 `preloader`、`loader`、`upgrade`、`app` 四类固件的职责边界和运行关系。
+## 固件职责
 
-说明以当前实现为准，不把后续计划当成现状。
-
-## 总体职责
-
-| 固件 | 主要职责 | 不负责的事情 |
-| --- | --- | --- |
-| `preloader` | 第一阶段启动选择，只读 `boot_ctrl` 并跳转到一个目标分区 | 不做 flash 拷贝、不跑 DFU、不升级 loader、不做镜像 SHA 校验 |
-| `loader` | 第二阶段启动与 DFU，校验 app，接收升级包，必要时处理 app AB 拷贝 | 不执行 loader 自升级写入 |
-| `upgrade` | loader 自升级执行固件，处理 `loader_upgrade` 路径 | 不跑通用 DFU 协议，不负责正常 app 启动 |
-| `app` | 产品业务固件，发布产品元数据，必要时调用公开 boot API 设置启动标记 | 不直接编译 bootloader 私有源码 |
-
-相关源码：
-
-- `bootloader/preloader/src/preloader_main.cc`
-- `bootloader/loader/src/boot_logic.cc`
-- `bootloader/loader/protocol/protocol.cc`
-- `bootloader/loader/upgrade_logic/upgrade_state.cc`
-- `bootloader/loader/upgrade_logic/flash_copy.cc`
-- `bootloader/upgrade/src/upgrade_main.cc`
-- `bootloader/common/src/boot_ctrl.cc`
-
-## preloader
-
-`preloader` 是最小第一阶段。它当前只做三件事：
-
-1. 从 `FLASH_AREA_STORAGE` 读取 `boot_ctrl`。
-2. 根据标记选择一个目标分区。
-3. 设置 MSP/VTOR 并跳转。
-
-当前跳转表：
-
-| `boot_ctrl` | 跳转目标 |
+| 固件 | 职责 |
 | --- | --- |
-| `BOOT_CTRL_UPGRADE_LOADER` | `FLASH_AREA_UPGRADE` |
-| `BOOT_CTRL_ENTER_DFU` | `FLASH_AREA_BOOTLOADER` |
-| `BOOT_CTRL_UPGRADE_APP` | `FLASH_AREA_BOOTLOADER` |
-| `BOOT_CTRL_NORMAL` | `FLASH_AREA_SLOT0` |
-| 其他值 | `FLASH_AREA_BOOTLOADER` |
+| preloader | 最小信任根；生产模式认证固定 loader 后跳转 |
+| loader | 校验/安装/启动应用，提供恢复 DFU 和防降级策略 |
+| upgrade | 开发/工厂场景的 loader 自升级执行固件 |
+| app | 产品业务；健康启动后确认 pending 镜像 |
 
-preloader 不再包含 `upgrade_copy` 逻辑。`FLASH_AREA_UPGRADE` 到 `FLASH_AREA_SLOT0` 的拷贝不属于 preloader。
+Flash 分区由 `bootloader/product/<product>/layout.json` 唯一定义。启动控制记录位于
+独立 `boot_ctrl` 分区，采用双 sector 追加日志、CRC、递增 sequence 和最后写 magic
+的提交顺序。回收目标 sector 前，另一个 sector 仍保留最近一次有效记录。
 
-## loader
-
-`loader` 是第二阶段启动与 DFU 固件。它负责：
-
-- 读取 `boot_ctrl` 并处理进入 DFU 的请求。
-- 校验 `FLASH_AREA_SLOT0` 中的 app。
-- 在 AB 模式下，必要时校验 `FLASH_AREA_UPGRADE` 并拷贝到 `FLASH_AREA_SLOT0`。
-- 运行 DFU 协议，接收、写入、校验升级数据。
-- 跳转到有效 app。
-
-当前启动决策：
-
-1. 读取 `boot_ctrl`。
-2. `BOOT_CTRL_ENTER_DFU`：清除 `boot_ctrl`，进入 DFU。
-3. `BOOT_CTRL_UPGRADE_LOADER`：清除 `boot_ctrl` 和 `loader_upgrade`，进入 DFU。这是兜底路径；正常情况下 preloader 应先跳到 `upgrade`。
-4. 校验 `FLASH_AREA_SLOT0`，有效则跳 app。
-5. `CONFIG_BOOT_MODE_AB` 下，校验 `FLASH_AREA_UPGRADE`，有效则拷贝到 `FLASH_AREA_SLOT0`，再校验 slot0 并跳 app。
-6. 无有效 app 时进入 DFU。
-
-DFU 写入目标：
-
-| 模式 | 写入目标 |
-| --- | --- |
-| `CONFIG_BOOT_MODE_AB` | `FLASH_AREA_UPGRADE` |
-| direct 模式 | `FLASH_AREA_SLOT0` |
-
-当前需要注意：`BOOT_CTRL_UPGRADE_APP` 目前只让 preloader 跳到 loader，loader 内部还没有专门消费该标记的强制 app 升级分支。因此在 AB 模式下，如果 `FLASH_AREA_SLOT0` 仍然有效，loader 会先跳 slot0，不会强制把 `FLASH_AREA_UPGRADE` 覆盖到 slot0。
-
-## upgrade
-
-`upgrade` 是 loader 自升级执行固件，链接到 `FLASH_AREA_UPGRADE`。当 `boot_ctrl == BOOT_CTRL_UPGRADE_LOADER` 时，preloader 会跳到该分区运行它。
-
-当前职责：
-
-1. 读取 `loader_upgrade` 标记。
-2. 如果 `loader_upgrade` 已设置，将 `FLASH_AREA_UPGRADE` 中的镜像按镜像头长度拷贝到 `FLASH_AREA_SLOT0`。
-3. 校验内嵌的新 loader payload。
-4. 擦除 `FLASH_AREA_BOOTLOADER`。
-5. 写入新的 loader payload。
-6. 清除 `loader_upgrade`。
-7. 系统复位。
-
-也就是说，`loader_upgrade` 标记下的 `FLASH_AREA_UPGRADE -> FLASH_AREA_SLOT0` 拷贝逻辑属于 `upgrade`，不属于 `preloader`。
-
-## app
-
-`app` 是正常产品固件，位于 `FLASH_AREA_SLOT0`。
-
-app 侧当前职责：
-
-- 发布 `boot::ProductInfo` 到 `.product_info` 段。
-- 成功启动后可调用 `boot::confirm_image()`。
-- 可通过公开 boot API 设置启动控制标记，例如 `boot_ctrl_write(...)` 或 `loader_upgrade_write(...)`。
-
-`loader_upgrade_write(nonzero)` 会同时把 `boot_ctrl` 设置为 `BOOT_CTRL_UPGRADE_LOADER`。
-
-## boot_ctrl 与 loader_upgrade
-
-boot 控制记录位于 `FLASH_AREA_STORAGE`，当前由 `bootloader/common/src/boot_ctrl.cc` 管理。
-
-记录中主要字段：
-
-- `boot_ctrl`
-- `loader_upgrade`
-- `copy_progress`
-- `crc32`
-
-标记含义：
-
-| 标记 | 含义 |
-| --- | --- |
-| `BOOT_CTRL_NORMAL` | 正常启动 |
-| `BOOT_CTRL_ENTER_DFU` | 进入 loader DFU |
-| `BOOT_CTRL_UPGRADE_APP` | 让 preloader 进入 loader，预期用于 app 升级处理 |
-| `BOOT_CTRL_UPGRADE_LOADER` | 让 preloader 进入 upgrade，执行 loader 自升级 |
-
-`loader_upgrade_clear()` 会清除 `loader_upgrade`；如果 `boot_ctrl` 当前是 `BOOT_CTRL_UPGRADE_LOADER`，也会把 `boot_ctrl` 恢复为 `BOOT_CTRL_NORMAL`。
-
-## 主要流程
-
-### 正常启动
+## 正常启动
 
 ```text
 reset
   -> preloader
-  -> boot_ctrl == BOOT_CTRL_NORMAL
-  -> jump FLASH_AREA_SLOT0
-  -> app
+       production: verify_loader_image(loader)
+       development: validate loader vectors
+  -> loader
+       read boot_ctrl
+       check_image(slot0)
+       commit security_version if image is confirmed
+       quiesce transport/watchdog
+       sanitize Cortex-M handoff state
+  -> app Reset_Handler
 ```
 
-### 进入 DFU
+镜像、控制状态、版本提交或 handoff 前置检查任一失败时，loader 进入恢复 DFU，不带病
+跳转。首次没有 boot_ctrl 日志时使用 NORMAL 默认状态；损坏记录不会被当作升级命令。
+
+## DFU 接收状态机
 
 ```text
-reset
-  -> preloader
-  -> boot_ctrl == BOOT_CTRL_ENTER_DFU
-  -> jump FLASH_AREA_BOOTLOADER
-  -> loader 清除 boot_ctrl
-  -> loader DFU loop
+IDLE
+  -> ENTER_LOADER: sector-by-sector erase target
+  -> ERASED
+  -> FW_TRANSFER: only exact next offset or identical retry
+  -> RECEIVING
+  -> FW_VERIFY: exact image length + whole-file hash + check_image
+  -> RECEIVED
+  -> REBOOT
 ```
 
-### app AB 升级
+收到完整 header 后锁定 `hdr_size + img_size`，后续数据不能越界或带尾随字节。重传只
+接受已经写入且 Flash 回读完全一致的数据。所有长 Flash/hash 循环都会周期服务
+watchdog；单次 sector 操作和产品签名校验必须小于 watchdog 窗口。
+
+## Staged-copy 安装与掉电恢复
+
+默认模式使用一个执行槽和一个暂存区：
 
 ```text
-loader DFU
-  -> 擦除 / 写入 / 校验 FLASH_AREA_UPGRADE
-  -> reboot
-  -> preloader 按 boot_ctrl 选择目标
-  -> loader 在当前 fallback 路径下可能拷贝 FLASH_AREA_UPGRADE 到 FLASH_AREA_SLOT0
-  -> loader 从 FLASH_AREA_SLOT0 跳 app
-```
-
-当前限制：`BOOT_CTRL_UPGRADE_APP` 还没有在 loader 中实现“无论 slot0 是否有效都强制拷贝”的逻辑。
-
-### loader 自升级
-
-```text
-请求 loader 升级
-  -> loader_upgrade_write(nonzero)
-  -> boot_ctrl = BOOT_CTRL_UPGRADE_LOADER
+DFU writes upgrade
+  -> validate upgrade image
+  -> boot_ctrl = UPGRADE_APP, progress = 0
   -> reset
-  -> preloader 跳 FLASH_AREA_UPGRADE
-  -> upgrade 运行
-  -> loader_upgrade 已设置时：
-       拷贝 FLASH_AREA_UPGRADE 到 FLASH_AREA_SLOT0
-  -> 校验内嵌 loader payload
-  -> 擦除 / 写入 FLASH_AREA_BOOTLOADER
-  -> 清除 loader_upgrade
-  -> reset
+  -> validate upgrade again
+  -> erase/copy/readback slot0 sector by sector
+  -> persist checkpoint every 32 KiB and at image end
+  -> validate slot0 again
+  -> commit confirmed security version
+  -> clear boot_ctrl
+  -> mark staging non-bootable
+  -> handoff to slot0
 ```
 
-如果没有进入 `upgrade`，loader 中对 `BOOT_CTRL_UPGRADE_LOADER` 有兜底处理：清除标记并进入 DFU。
+断电后 loader 读取 checkpoint，并比较该位置之前的 source/destination。前缀一致时从
+checkpoint 继续；不一致或记录非法时从 0 重新复制。最后一个不足 sector 的镜像块也
+会先擦除完整 sector，再只写有效数据并回读有效范围。
 
-## Flash 分区
+这不是 A/B 回滚：安装时旧 slot0 被覆盖。staging 只保存新镜像，不能在新应用启动失败
+后恢复旧版本。如果产品要求启动次数、健康判定和自动回滚，必须增加第二个可执行槽和
+独立的 trial/confirmed 状态机，不能复用当前名称假装具备该能力。
 
-### demo
+## Pending、Confirmed 和防降级
 
-Flash base：`0x08000000`
+镜像状态位只执行 Flash 1->0 转换：
 
-| 分区 | 偏移 | 绝对地址 | 大小 |
-| --- | ---: | ---: | ---: |
-| `FLASH_AREA_PRELOADER` | `0x00000000` | `0x08000000` | 16 KB |
-| `FLASH_AREA_BOOTLOADER` | `0x00004000` | `0x08004000` | 24 KB |
-| `FLASH_AREA_SLOT0` | `0x0000A000` | `0x0800A000` | 160 KB |
-| `FLASH_AREA_UPGRADE` | `0x00032000` | `0x08032000` | 152 KB |
-| `FLASH_AREA_STORAGE` | `0x00058000` | `0x08058000` | 32 KB |
+```text
+PENDING -> CONFIRMED -> NON_BOOTABLE
+```
 
-### demo_ble
+pending 镜像可启动，但不会立即推进 monotonic security version。应用完成硬件和业务
+健康检查后调用 `boot::confirm_image()`。下一次启动 loader 看到 confirmed 镜像，才把
+security version 提交到 OTP 或等价受保护存储。提交失败时不跳转。
 
-Flash base：`0x00200000`
+生产 provider 的最低版本读取失败必须返回拒绝值，提交必须幂等、只增且可验证。镜像
+签名绑定 canonical header；header 中包含 payload SHA-256，因此签名间接绑定完整
+payload。可变状态位、签名字段和 header CRC 在认证摘要中按协议规范化。
 
-| 分区 | 偏移 | 绝对地址 | 大小 |
-| --- | ---: | ---: | ---: |
-| `FLASH_AREA_PRELOADER` | `0x00002000` | `0x00202000` | 16 KB |
-| `FLASH_AREA_BOOTLOADER` | `0x00006000` | `0x00206000` | 24 KB |
-| `FLASH_AREA_SLOT0` | `0x0000C000` | `0x0020C000` | 160 KB |
-| `FLASH_AREA_UPGRADE` | `0x00034000` | `0x00234000` | 784 KB |
-| `FLASH_AREA_STORAGE` | `0x000F8000` | `0x002F8000` | 32 KB |
+## Loader 自升级边界
 
-## 维护规则
+开发用 upgrade 固件包含 loader payload 的长度和 SHA-256 manifest，写前后都校验。
+生产 preloader 不进入这条未签名的开发路径。若产品需要现场更新 loader，必须另行定义：
 
-- preloader 只保留跳转选择逻辑。
-- loader 保留 DFU、app 校验、app 启动和 app AB 拷贝逻辑。
-- upgrade 保留 loader 自升级执行逻辑。
-- app 只使用公开 boot API，不直接编译 bootloader 私有源码。
-- boot 控制记录统一由 `bootloader/common` 管理。
+- 签名的 upgrade 容器和 loader manifest；
+- loader 自身 monotonic version；
+- 固定信任根和硬件写保护切换策略；
+- 写 loader 分区时的掉电恢复副本或 ROM 恢复通道。
+
+在这些机制完成前，打开开发自升级路径不等于产品级 loader 更新。
+
+## 板级验收矩阵
+
+至少覆盖：正常启动、空片、header/payload/signature/ProductInfo 篡改、低版本镜像、
+boot_ctrl 两阶段提交断电、每个 copy sector 随机断电、Flash 读写失败、重复 DFU 包、
+越界/乱序包、UART 丢包、watchdog 窗口、pending 未确认、OTP 提交失败、handoff 后首个
+中断、MSP watermark 和连续多次升级。

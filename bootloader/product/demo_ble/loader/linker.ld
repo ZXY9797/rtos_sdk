@@ -4,8 +4,8 @@
 
 MEMORY
 {
-    FLASH (rx) : ORIGIN = 0x00206000, LENGTH = 24K + 256K
-    RAM   (rw) : ORIGIN = 0x20000000, LENGTH = 256K
+    FLASH (rx) : ORIGIN = BOOT_LOADER_ORIGIN, LENGTH = BOOT_LOADER_SIZE
+    RAM   (rw) : ORIGIN = BOOT_RAM_BASE, LENGTH = BOOT_RAM_SIZE
 }
 
 __flash_size__ = LENGTH(FLASH);
@@ -38,22 +38,51 @@ SECTIONS
         *(.gnu.linkonce.t.*)
         *(.init)
         *(.fini)
-        KEEP(*(.ctors))
-        KEEP(*(.dtors))
         . = ALIGN(4);
+    } > FLASH
+
+    preinit_array : ALIGN(4)
+    {
+        PROVIDE_HIDDEN(__preinit_array_start = .);
+        KEEP(*(.preinit_array))
+        PROVIDE_HIDDEN(__preinit_array_end = .);
+    } > FLASH
+
+    init_array : ALIGN(4)
+    {
+        PROVIDE_HIDDEN(__init_array_start = .);
+        KEEP(*(SORT_BY_INIT_PRIORITY(.init_array.*)))
+        KEEP(*(.init_array))
+        PROVIDE_HIDDEN(__init_array_end = .);
     } > FLASH
 
     initlevel : ALIGN(4)
     {
         __init_start = .;
         __init_EARLY_start = .;
-        KEEP(*(.z_init_EARLY*))
+        KEEP(*(SORT(.z_init_EARLY_P_?_*)))
+        KEEP(*(SORT(.z_init_EARLY_P_??_*)))
+        KEEP(*(SORT(.z_init_EARLY_P_???_*)))
         __init_PRE_KERNEL_1_start = .;
-        KEEP(*(.z_init_PRE_KERNEL_1*))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_1_P_?_*)))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_1_P_??_*)))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_1_P_???_*)))
         __init_PRE_KERNEL_2_start = .;
-        KEEP(*(.z_init_PRE_KERNEL_2*))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_2_P_?_*)))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_2_P_??_*)))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_2_P_???_*)))
         __init_PRE_KERNEL_3_start = .;
-        KEEP(*(.z_init_PRE_KERNEL_3*))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_3_P_?_*)))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_3_P_??_*)))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_3_P_???_*)))
+        __init_POST_KERNEL_start = .;
+        KEEP(*(SORT(.z_init_POST_KERNEL_P_?_*)))
+        KEEP(*(SORT(.z_init_POST_KERNEL_P_??_*)))
+        KEEP(*(SORT(.z_init_POST_KERNEL_P_???_*)))
+        __init_APPLICATION_start = .;
+        KEEP(*(SORT(.z_init_APPLICATION_P_?_*)))
+        KEEP(*(SORT(.z_init_APPLICATION_P_??_*)))
+        KEEP(*(SORT(.z_init_APPLICATION_P_???_*)))
         __init_end = .;
         . = ALIGN(4);
     } > FLASH
@@ -77,6 +106,9 @@ SECTIONS
     } > RAM AT > FLASH
 
     __data_load_start = LOADADDR(datas);
+    ASSERT((LOADADDR(datas) + SIZEOF(datas))
+               <= (ORIGIN(FLASH) + LENGTH(FLASH)),
+           "Loader image exceeds its physical partition")
 
     bss (NOLOAD) : ALIGN(4)
     {
@@ -95,7 +127,7 @@ SECTIONS
     .stack (NOLOAD) : ALIGN(8)
     {
         _stack_end = .;
-        . += 0x800;
+        . += BOOT_STACK_SIZE;
         _estack = .;
     } > RAM
 }

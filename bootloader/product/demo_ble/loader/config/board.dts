@@ -6,6 +6,10 @@
     compatible = "goodix,gr5525";
     model = "GR5525 BLE Loader";
 
+    chosen {
+        zephyr,flash = &flash0;
+    };
+
     aliases {
         uart0 = &uart0;
     };

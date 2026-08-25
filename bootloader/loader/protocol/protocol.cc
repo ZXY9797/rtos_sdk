@@ -25,6 +25,19 @@ static ProtocolTxCallback g_tx_fn = nullptr;
 static link::FrameCodec g_codec;
 
 constexpr uint8_t kDefaultBootAddr = 0x20;
+constexpr size_t kAckDataCapacity = CONFIG_LINK_MAX_FRAME_SIZE
+    - link::HEADER_SIZE - link::CRC_SIZE;
+
+static_assert(kAckDataCapacity > 0U,
+              "Link frame size cannot hold a boot acknowledgement");
+
+struct ProtocolBuffers {
+    uint8_t rx[CONFIG_LINK_MAX_FRAME_SIZE];
+    uint8_t ack_data[kAckDataCapacity];
+    uint8_t tx[CONFIG_LINK_MAX_FRAME_SIZE];
+};
+
+static ProtocolBuffers g_buffers {};
 
 uint32_t load_u32_le(const uint8_t *p) {
     return static_cast<uint32_t>(p[0]) |
@@ -48,23 +61,23 @@ void system_reset() {
 
 void send_ack(const link::Frame &req, uint8_t status,
               const uint8_t *data = nullptr, size_t data_len = 0) {
-    if (!g_tx_fn) return;
+    if (g_tx_fn == nullptr) {
+        return;
+    }
 
-    uint8_t ack_data[CONFIG_LINK_MAX_FRAME_SIZE -
-                     link::HEADER_SIZE - link::CRC_SIZE];
-    if (sizeof(ack_data) == 0) return;
-
-    size_t ack_len = 1 + data_len;
-    if (ack_len > sizeof(ack_data) || ack_len > UINT8_MAX) {
+    size_t ack_len = 1U;
+    if (data_len >= sizeof(g_buffers.ack_data)
+        || data_len >= UINT8_MAX) {
         status = boot_proto::ACK_ERR_STATE;
         data = nullptr;
         data_len = 0;
-        ack_len = 1;
+    } else {
+        ack_len += data_len;
     }
 
-    ack_data[0] = status;
-    if (data && data_len > 0) {
-        std::memcpy(ack_data + 1, data, data_len);
+    g_buffers.ack_data[0] = status;
+    if (data != nullptr && data_len > 0U) {
+        std::memcpy(g_buffers.ack_data + 1, data, data_len);
     }
 
     link::PackArgs args{};
@@ -78,12 +91,11 @@ void send_ack(const link::Frame &req, uint8_t status,
     args.is_ack = true;
     args.seq = req.seq;
 
-    uint8_t frame_buf[CONFIG_LINK_MAX_FRAME_SIZE];
     const size_t frame_len = link::FrameCodec::pack(
-        frame_buf, sizeof(frame_buf), args, ack_data,
-        static_cast<uint8_t>(ack_len));
-    if (frame_len > 0) {
-        (void)g_tx_fn(frame_buf, frame_len);
+        g_buffers.tx, sizeof(g_buffers.tx), args,
+        g_buffers.ack_data, ack_len);
+    if (frame_len > 0U) {
+        (void)g_tx_fn(g_buffers.tx, frame_len);
     }
 }
 
@@ -113,7 +125,7 @@ void handle_enter_loader(const link::Frame &req) {
 void handle_query_status(const link::Frame &req) {
     boot_proto::StatusAck ack{};
     ack.in_loader = 1;
-#if defined(CONFIG_BOOT_MODE_AB)
+#if defined(CONFIG_BOOT_MODE_STAGED_COPY)
     ack.boot_mode = 0;
 #else
     ack.boot_mode = 1;
@@ -125,7 +137,7 @@ void handle_query_status(const link::Frame &req) {
     std::memcpy(reinterpret_cast<uint8_t *>(&ack) +
                     offsetof(boot_proto::StatusAck, slot0_ver),
                 &slot0_ver, sizeof(slot0_ver));
-#if defined(CONFIG_BOOT_MODE_AB)
+#if defined(CONFIG_BOOT_MODE_STAGED_COPY)
     const ImageVersion upgrade_ver = fill_image_status(
         flash_area_addr(FLASH_AREA_UPGRADE), product_id, ack.upgrade_valid);
     std::memcpy(reinterpret_cast<uint8_t *>(&ack) +
@@ -158,7 +170,7 @@ void handle_fw_transfer(const link::Frame &req) {
 }
 
 void handle_fw_verify(const link::Frame &req) {
-    if (req.data_len < sizeof(boot_proto::VerifyReq) || !req.data) {
+    if (req.data_len != sizeof(boot_proto::VerifyReq) || !req.data) {
         send_ack(req, boot_proto::ACK_ERR_HASH);
         return;
     }
@@ -208,20 +220,25 @@ void protocol_register_transport(ProtocolRxCallback rx,
     g_codec.reset();
 }
 
-void protocol_process() {
-    if (!g_rx_fn) return;
+bool protocol_process() {
+    if (g_rx_fn == nullptr) {
+        return false;
+    }
 
-    uint8_t buf[CONFIG_LINK_MAX_FRAME_SIZE];
-    size_t len = 0;
-    if (!g_rx_fn(buf, len) || len == 0) return;
+    size_t len = sizeof(g_buffers.rx);
+    if (!g_rx_fn(g_buffers.rx, len) || len == 0U
+        || len > sizeof(g_buffers.rx)) {
+        return false;
+    }
 
     for (size_t i = 0; i < len; ++i) {
-        const int ret = g_codec.feed(buf[i]);
+        const int ret = g_codec.feed(g_buffers.rx[i]);
         if (ret > 0) {
             dispatch_frame(g_codec.frame());
             g_codec.reset();
         }
     }
+    return true;
 }
 
 } // namespace boot

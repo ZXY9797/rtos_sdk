@@ -1,258 +1,123 @@
-# Bootloader 构建与目录约定
+# 产品级 Loader 设计与构建
 
-本文档描述当前 bootloader 目录职责、产品配置位置、CMake 构建参数、产物命名和三合一固件生成方式。
+## 定位
 
-## 目录职责
+当前 loader 是单线程裸机固件，不启动 FreeRTOS 或 RT-Thread 调度器。它使用
+baremetal OSAL 提供的 SysTick、互斥量、信号量、静态 StreamBuffer、ISR 上下文
+和低功耗等待，并复用统一设备模型、DTS 生成设备、UART/DMA 驱动和 initcall。
 
-`bootloader/loader`、`bootloader/preloader`、`bootloader/upgrade` 只放所有项目共用的源码、Kconfig 和 CMake 入口。
+loader 明确禁止动态分配：
+`CONFIG_OSAL_BAREMETAL_HEAP_SIZE=0`。构建系统同时强制
+`CONFIG_RTOS_BAREMETAL=y`，避免误把线程或调度器能力带入恢复固件。
 
-项目相关文件全部放在 `bootloader/product/<product>/` 下，包括：
-
-- `config/board.dts`
-- `config/prj.conf`
-- `linker.ld`
-- flash 分区表实现
-
-当前结构：
+## 启动顺序
 
 ```text
-bootloader/
-  include/boot/                 公共头文件
-  loader/                       公共 loader 源码
-    protocol/
-    src/
-    upgrade_logic/
-  preloader/                    公共 preloader 源码
-    src/
-  upgrade/                      公共 loader-upgrade app 源码
-    include/upgrade/
-    src/
-  product/
-    demo/
-      common/flash_map.cc
-      preloader/config/
-      preloader/linker.ld
-      loader/config/
-      loader/linker.ld
-      upgrade/config/
-      upgrade/linker.ld
-    demo_ble/
-      common/flash_map.cc
-      preloader/config/
-      preloader/linker.ld
-      loader/config/
-      loader/linker.ld
-      upgrade/config/
-      upgrade/linker.ld
-  scripts/
-    build_3in1.py
-    merge_firmware.py
+Reset_Handler
+  -> soc_reset_hook()
+  -> z_prep_c()：VTOR、data/bss、cache/FPU 基础准备
+  -> soc_early_init_hook()：产品 SoC 初始化
+  -> C/C++ preinit_array、init_array
+  -> EARLY/PRE_KERNEL_1..3 initcall
+  -> osal_init()：启动裸机 SysTick
+  -> POST_KERNEL initcall
+       25：DTS 生成的 UART 设备
+       80：DFU transport 注册
+  -> APPLICATION initcall
+  -> boot_logic()
 ```
 
-app 的项目 linker 也放在 app product 目录：
+loader 源码使用 object library，确保只包含 initcall 或静态构造的翻译单元也会进入
+最终 ELF。链接脚本显式保留构造数组以及全部 initcall level；任何初始化失败都会倒序
+执行 rollback，记录失败项并停机，生产 watchdog 可随后复位系统。
+
+## DFU 与设备驱动
+
+默认 `CONFIG_BOOT_DFU_UART=y`，DTS 必须提供 `uart0` alias。UART 设备先完成构造和
+POST_KERNEL 初始化，transport 后注册协议回调。回调的接收长度参数是输入容量和输出
+实际长度，协议层会再次校验边界。
+
+可配置 `CONFIG_BOOT_DFU_CUSTOM=y`，此时产品必须提供：
 
 ```text
-app/product/demo/linker.ld
-app/product/demo_ble/linker.ld
+bootloader/product/<product>/common/boot_transport.cc
 ```
 
-## 固件职责
+该文件需要注册 transport，并实现 `boot::transport_shutdown()`。应用跳转前 loader 会
+先关闭 transport，防止 UART、DMA 或中断继续访问应用接管后的内存。
 
-boot 固件的运行职责见 [BOOT_FLOW.md](BOOT_FLOW.md)。当前分工是：
+## 升级模式
 
-- `preloader`：第一阶段跳转选择，只读取 `boot_ctrl` 并跳转目标分区，不做 flash 拷贝、不跑 DFU、不升级 loader。
-- `loader`：第二阶段启动与 DFU，负责 app 校验、app AB 拷贝、DFU 协议处理和跳转 app。
-- `upgrade`：loader 自升级执行固件，负责 `loader_upgrade` 路径下的 `FLASH_AREA_UPGRADE -> FLASH_AREA_SLOT0` 拷贝，以及写入新的 `FLASH_AREA_BOOTLOADER`。
-- `app`：产品业务固件，发布 `ProductInfo`，必要时通过公开 boot API 设置启动控制标记。
+当前默认模式是 staged-copy，不是真正的双执行槽 A/B：
 
-## CMake 构建入口
+- `slot0` 是唯一执行分区；
+- `upgrade` 是下载和恢复暂存区；
+- 暂存镜像完整校验后，按 Flash sector 擦写到 slot0；
+- 每 32 KiB 写入持久化 checkpoint，复位后校验前缀并继续；
+- 每个 sector 写后回读比较，最终再次执行完整镜像校验；
+- 没有保留旧应用，因此新应用启动后的自动回滚不在当前能力范围内。
 
-统一使用产品名 `-Dp=<product>`，用 `-DFIRMWARE_TYPE=<type>` 决定构建哪个固件类型。
+`CONFIG_BOOT_MODE_AB` 仅为兼容旧配置名，代码使用语义正确的
+`CONFIG_BOOT_MODE_STAGED_COPY`。直接覆盖模式只允许开发使用，生产配置会在 CMake
+阶段拒绝。
 
-支持的固件类型：
+## 镜像校验和安全策略
+
+镜像校验依次覆盖：
+
+1. magic、128-byte header、长度、load address 和状态位；
+2. 分区边界和 uint32 地址溢出；
+3. payload SHA-256；
+4. 可选 ECDSA-P256 签名；
+5. MSP 范围/8-byte 对齐、Thumb reset handler 和入口范围；
+6. ProductInfo magic、CRC 和 product ID；
+7. monotonic security version。
+
+`CONFIG_BOOT_PRODUCTION=y` 自动要求签名、staged-copy、watchdog 和产品安全 provider。
+产品必须提供：
 
 ```text
-app
-preloader
-loader
-upgrade
+bootloader/product/<product>/common/boot_security.cc
+bootloader/product/<product>/common/boot_watchdog.cc
 ```
 
-示例：
+安全 provider 必须实现受保护公钥验签、OTP 或等价的只增版本存储，以及 preloader 对
+固定 loader 的信任根校验。watchdog provider 必须实现
+`watchdog_service()` 和 `watchdog_prepare_handoff()`。仓库不提供量产私钥、默认公钥或
+伪 OTP；示例产品缺少 provider 时生产构建会按设计失败关闭。
+
+## 应用跳转
+
+跳转前重新读取并检查向量，关闭 transport，交接 watchdog，然后清理 SysTick、NVIC
+enable/pending、PendSV 和 SysTick pending，更新 VTOR。最终 handoff 使用 naked 汇编
+恢复 CONTROL/BASEPRI/FAULTMASK/PRIMASK、切换 MSP 并直接 `bx` 到应用入口，不会在
+应用栈上执行 loader 的 C++ 函数尾声。
+
+## 尺寸约束
+
+loader 链接区域就是物理 `loader` 分区，不再把 RAM 或其他 Flash 分区计入可用容量。
+生成 BIN 后还会执行独立的物理分区检查。当前完整驱动和 DFU 已链接后的结果为：
+
+| 产品 | loader BIN | 分区 | 占用 | 余量 |
+| --- | ---: | ---: | ---: | ---: |
+| demo / GD32F503 | 15,020 B | 24,576 B | 61.12% | 9,556 B |
+| demo_ble / GR5525 | 13,328 B | 24,576 B | 54.23% | 11,248 B |
+
+loader 使用 `-Os`、`-nostartfiles`、无异常/RTTI/thread-safe statics，主栈默认 2 KiB。
+loader 自有函数若静态栈帧超过 768 B，编译会失败。最终栈大小仍须结合中断嵌套和
+目标板 stack watermark 验证。
+
+## 构建和验收
 
 ```powershell
-cmake -S . -B out\demo_3in1\preloader -GNinja -Dp=demo -DFIRMWARE_TYPE=preloader
-ninja -C out\demo_3in1\preloader
-
-cmake -S . -B out\demo_3in1\loader -GNinja -Dp=demo -DFIRMWARE_TYPE=loader
-ninja -C out\demo_3in1\loader
-
-cmake -S . -B out\demo_3in1\upgrade -GNinja -Dp=demo -DFIRMWARE_TYPE=upgrade
-ninja -C out\demo_3in1\upgrade
-
-cmake -S . -B out\demo_3in1\app -GNinja -Dp=demo -DFIRMWARE_TYPE=app
-ninja -C out\demo_3in1\app
+python bootloader\scripts\build_3in1.py demo `
+  --out out\demo_3in1
+python bootloader\scripts\build_3in1.py demo_ble `
+  --out out\demo_ble_3in1
+python -m unittest discover -s bootloader\scripts\tests `
+  -p "test_*.py" -v
 ```
 
-`-DFIRMWARE_TYPE` 未传时默认是 `app`。
-
-## 产物命名
-
-boot 固件产物带产品名前缀：
-
-```text
-demo_preloader.bin
-demo_loader.bin
-demo_upgrade.bin
-
-demo_ble_preloader.bin
-demo_ble_loader.bin
-demo_ble_upgrade.bin
-```
-
-app 固件产物保持产品名：
-
-```text
-demo.bin
-demo_ble.bin
-```
-
-对应 `.elf`、`.hex`、`.map` 也使用同样的输出名。
-
-## 三合一固件构建
-
-推荐使用：
-
-```powershell
-python bootloader\scripts\build_3in1.py demo --out out\demo_3in1
-python bootloader\scripts\build_3in1.py demo_ble --out out\demo_ble_3in1
-```
-
-脚本会在同一个 out 根目录下构建全部产物：
-
-```text
-out/<product>_3in1/
-  preloader/
-  loader/
-  app/
-  <product>_3in1.bin
-```
-
-`upgrade` 不参与三合一合并，但可以按相同规则单独构建：
-
-```powershell
-cmake -S . -B out\demo_ble_3in1\upgrade -GNinja -Dp=demo_ble -DFIRMWARE_TYPE=upgrade
-ninja -C out\demo_ble_3in1\upgrade
-```
-
-## 手动合并三合一
-
-也可以直接调用合并脚本：
-
-```powershell
-python bootloader\scripts\merge_firmware.py `
-  --layout demo `
-  --preloader out\demo_3in1\preloader\demo_preloader.bin `
-  --loader out\demo_3in1\loader\demo_loader.bin `
-  --app out\demo_3in1\app\demo.bin `
-  --output out\demo_3in1\demo_3in1.bin
-```
-
-```powershell
-python bootloader\scripts\merge_firmware.py `
-  --layout demo_ble `
-  --preloader out\demo_ble_3in1\preloader\demo_ble_preloader.bin `
-  --loader out\demo_ble_3in1\loader\demo_ble_loader.bin `
-  --app out\demo_ble_3in1\app\demo_ble.bin `
-  --output out\demo_ble_3in1\demo_ble_3in1.bin
-```
-
-## Flash 布局
-
-### demo, GD32F503
-
-flash 起始地址：`0x08000000`
-
-| 分区 | 偏移 | 绝对地址 | 大小 |
-| --- | ---: | ---: | ---: |
-| preloader | `0x00000000` | `0x08000000` | 16KB |
-| loader | `0x00004000` | `0x08004000` | 24KB |
-| app slot0 | `0x0000A000` | `0x0800A000` | 160KB |
-| upgrade | `0x00032000` | `0x08032000` | 152KB |
-| storage | `0x00058000` | `0x08058000` | 32KB |
-
-### demo_ble, GR5525
-
-flash 起始地址：`0x00200000`
-
-| 分区 | 偏移 | 绝对地址 | 大小 |
-| --- | ---: | ---: | ---: |
-| reserved | `0x00000000` | `0x00200000` | 8KB |
-| preloader | `0x00002000` | `0x00202000` | 16KB |
-| loader | `0x00006000` | `0x00206000` | 24KB |
-| app slot0 | `0x0000C000` | `0x0020C000` | 160KB |
-| upgrade | `0x00034000` | `0x00234000` | 784KB |
-| storage | `0x000F8000` | `0x002F8000` | 32KB |
-
-## Flash 驱动对接
-
-bootloader 通过 `boot_common` 的 flash 分区接口访问 flash，产品侧只提供分区布局；具体芯片读写由 `embedded/drivers/flash` 适配。
-
-- GD32 使用 `flash_gd32.cc` 对接 GD32 FMC 擦写接口。
-- STM32 使用 `flash_stm32.cc` 对接 STM32 HAL flash 接口。
-- Goodix GR5525 使用 `flash_goodix.cc` 直接调用 ROM/SDK 提供的 `hal_exflash_init/read/write/erase` 符号，不在仓库内重复实现 `gr55xx_hal_exflash.*`。
-
-GR5525 的 exflash 符号由 CMake 通过 linker `--defsym` 绑定到 ROM 地址；这些符号只覆盖外部 flash 基础读写擦除。完整 BLE app 链接还依赖 Goodix BLE SDK 里的 ROM symbol 处理和工具链兼容性。
-
-## DFU 通信协议
-
-loader 的升级通信使用实际 Link 帧格式，不发送裸 ACK。应答帧遵循：
-
-```text
-CMD_SET, cmd_id, len_lo, len_hi, payload..., crc_hi, crc_lo
-```
-
-ACK payload 当前为 1 字节 `status`，CRC 使用 `boot_proto::crc16_ccitt()` 覆盖 `CMD_SET` 到 payload 的全部字节，最后按高字节在前写入。
-
-## demo_ble bin 空洞修复
-
-GR5525 app 链接脚本里把 `FPB` 和 `KE_MSG_TABLE` 等 RAM 区域放在 `NOLOAD` section，避免 `objcopy -Obinary` 把 FLASH 到 RAM 的地址空洞展开成几百 MB 的 `.bin`。
-
-当前已验证的 `demo_ble` app bin 大小：
-
-```text
-out\build_matrix_gcc9b\demo_ble_freertos\demo_ble.bin  96701 bytes
-out\build_matrix_gcc9b\demo_ble_rtthread\demo_ble.bin  90356 bytes
-```
-
-## 已验证命令
-
-```powershell
-ninja -C out\build_boot_fix\demo_preloader
-ninja -C out\build_boot_fix\demo_loader
-ninja -C out\build_boot_fix\demo_upgrade
-ninja -C out\build_boot_fix\demo_ble_preloader
-ninja -C out\build_boot_fix\demo_ble_loader
-ninja -C out\build_boot_fix\demo_ble_upgrade
-
-ninja -C out\build_matrix_fix\demo_freertos
-ninja -C out\build_matrix_fix\demo_rtthread
-ninja -C out\build_matrix_gcc9b\demo_ble_freertos
-ninja -C out\build_matrix_gcc9b\demo_ble_rtthread
-```
-
-验证产物：
-
-```text
-out\build_boot_fix\demo_preloader\demo_preloader.bin             2396 bytes
-out\build_boot_fix\demo_loader\demo_loader.bin                   7200 bytes
-out\build_boot_fix\demo_upgrade\demo_upgrade.bin                 3768 bytes
-out\build_boot_fix\demo_ble_preloader\demo_ble_preloader.bin     1592 bytes
-out\build_boot_fix\demo_ble_loader\demo_ble_loader.bin           6416 bytes
-out\build_boot_fix\demo_ble_upgrade\demo_ble_upgrade.bin         2968 bytes
-
-out\build_matrix_fix\demo_freertos\demo.bin                     81368 bytes
-out\build_matrix_fix\demo_rtthread\demo.bin                     77156 bytes
-out\build_matrix_gcc9b\demo_ble_freertos\demo_ble.bin           96701 bytes
-out\build_matrix_gcc9b\demo_ble_rtthread\demo_ble.bin           90356 bytes
-```
+编译、map、BIN 和主机掉电模型通过，只证明软件静态路径。量产放行仍必须在两类实际
+芯片上验证 UART/自定义 DFU、Flash 最坏擦写时间、随机断电恢复、损坏镜像、降级攻击、
+OTP 提交失败、watchdog 复位、应用 handoff 和 stack watermark。

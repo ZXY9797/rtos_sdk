@@ -15,17 +15,17 @@
 
 | 特性 | Zephyr | RTOS SDK |
 |:---|:---:|:---:|
-| 构建系统 | CMake + 自定义 Python 脚本 + DTS 编译器 | **原生 CMake** |
+| 构建系统 | CMake + Python + DTS/Kconfig | **CMake + 可测试的 Python 生成器 + DTS/Kconfig** |
 | 设备树层级 | 5+ 级 `.dtsi` 继承 | **2 级**（SoC + Board） |
 | 链接脚本 | 片段拼接 | **单一 `.ld` 文件** |
 | 环境搭建 | West + Python + CMake + Ninja + DTC | **CMake + GCC + Ninja** |
 | 驱动模型 | 运行时 `struct device` + vtable | **编译期模板 + initcall + 依赖校验** |
-| 内存管理 | 动态分配 + Slab + Heap | **全部静态分配** |
+| 内存管理 | 动态分配 + Slab + Heap | **实时/故障路径固定容量，初始化分配显式检查** |
 | RTOS 绑定 | 仅支持 Zephyr 内核 | **OSAL 多内核**（FreeRTOS、RT-Thread） |
 | SoC 支持 | 内置 400+ | **STM32、GD32、Goodix GR5525** |
 | BLE 支持 | 内置 | **GR5525 BLE（HID + UART 透传）** |
 | 启动升级 | MCUboot + Zephyr 配置体系 | **preloader/loader/upgrade + 三合一固件** |
-| 代码规模 | ~500K 行 | **~5K 行**（不含 SOC HAL） |
+| 代码规模 | 大型通用生态 | **面向项目裁剪，按 target 选择性链接** |
 
 ---
 
@@ -45,9 +45,9 @@
 ├─────────────────────────────────────────────────────────────┤
 │                      OSAL (OS 抽象层)                        │
 │  Thread · Mutex · Semaphore · StreamBuffer                  │
-│  ┌──────────┬──────────┐                                    │
-│  │ FreeRTOS │ RT-Thread│                                    │
-│  └──────────┴──────────┘                                    │
+│  ┌──────────┬───────────┬──────────┐                         │
+│  │ FreeRTOS │ RT-Thread │ Baremetal│                         │
+│  └──────────┴───────────┴──────────┘                         │
 ├─────────────────────────────────────────────────────────────┤
 │                    HAL (硬件抽象层)                           │
 │  GpioPort<Base,Pin,Flags> · ClockCtrl<Base>                 │
@@ -135,7 +135,7 @@ SDK 提供厂商无关的 BLE API（`ble::` 命名空间），当前实现基于
 
 ### 9. Bootloader — 分阶段启动 + DFU + loader 自升级
 
-当前 boot 链路分为 `preloader`、`loader`、`upgrade` 和 `app`。`preloader` 只负责按 `boot_ctrl` 选择跳转目标；`loader` 负责 DFU、app 校验和 app AB 拷贝；`upgrade` 负责 loader 自升级执行；`app` 只通过公开 boot API 发布产品元数据和设置启动标记。
+当前 boot 链路分为 `preloader`、`loader`、`upgrade` 和 `app`。`preloader` 是最小信任根，生产配置认证固定 loader；`loader` 负责 DFU、签名/防降级校验和可掉电恢复的 staged-copy 安装；`upgrade` 仅保留开发配置下的 loader 自升级执行；`app` 只通过公开 boot API 发布产品元数据和确认镜像。boot 控制日志使用独立分区，不与 NVS storage 复用。当前只有一个 app 执行槽，不具备新应用启动失败后的 A/B 自动回滚能力。
 
 `boot_common` 提供 app、loader、preloader、upgrade 共享的镜像元数据、产品元数据、Flash 分区接口、镜像确认、SHA-256 和 DFU CRC。产品相关配置放在 `app/product/<product>` 和 `bootloader/product/<product>`，公共 bootloader 目录只保留跨产品源码。
 
@@ -187,8 +187,8 @@ rtos_sdk/
 ├── bootloader/                   # 启动与升级固件
 │   ├── include/boot/             # 公开 boot API
 │   ├── common/                   # app/loader/preloader/upgrade 共享实现
-│   ├── loader/                   # 启动决策、DFU、app 校验与 app AB 拷贝
-│   ├── preloader/                # 第一阶段跳转选择，不做拷贝和 DFU
+│   ├── loader/                   # 启动决策、DFU、app 校验与 staged-copy
+│   ├── preloader/                # 第一阶段信任根与 loader 认证
 │   ├── upgrade/                  # loader 自升级执行固件
 │   ├── product/                  # 产品 boot 配置、linker 和分区实现
 │   └── scripts/                  # 三合一固件构建与合并脚本
@@ -212,6 +212,7 @@ rtos_sdk/
 ├── doc/                          # 文档
 │   ├── APP_LAYOUT.md             # app/product 产品目录约定
 │   ├── ARCHITECTURE.md           # 架构边界说明
+│   ├── BUILD_SYSTEM.md           # DTS/Kconfig/CMake 与严格链接约定
 │   ├── BOOT_FLOW.md              # Boot 启动与升级关系
 │   ├── BOOTLOADER.md             # Bootloader 构建与目录约定
 │   ├── INITCALL.md               # initcall 自动初始化

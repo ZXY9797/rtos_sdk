@@ -1,41 +1,67 @@
-menu "Bootloader Configuration"
+menu "Loader Configuration"
 
 choice BOOT_MODE
-    prompt "Boot upgrade mode"
+    prompt "Application installation mode"
     default BOOT_MODE_AB
 
 config BOOT_MODE_AB
-    bool "AB backup mode"
+    bool "Staged copy mode (single execution slot)"
     help
-      slot0 + upgrade 区互备。
-      升级时先写入 upgrade 区，校验后拷贝到 slot0。
-      支持回滚。
+      Download into the upgrade staging area, validate it, then copy it into
+      slot0 with readback and persistent checkpoints. The current layout has
+      one execution slot, so it cannot automatically roll back to the previous
+      application after the new application starts.
 
 config BOOT_MODE_DIRECT
-    bool "Direct overwrite mode"
+    bool "Development-only direct overwrite mode"
     help
-      直接写入 slot0，不备份。
-      升级速度快，但不支持回滚。
+      Download directly into slot0. This uses less Flash but cannot recover an
+      old application after erase or an interrupted download. Production
+      builds reject this mode.
 
 endchoice
 
-config BOOT_FORCE_GPIO
-    bool "Enable GPIO force-enter-DFU"
-    default y
+config BOOT_MODE_STAGED_COPY
+    bool
+    default y if BOOT_MODE_AB
     help
-      启动时检测 GPIO 拉低，强制进入 DFU 模式。
+      Internal semantic name for the legacy CONFIG_BOOT_MODE_AB option.
+      New code must use this symbol because the layout is staged-copy, not two
+      bootable A/B slots.
 
-config BOOT_SHA256_HW
-    bool "Use hardware SHA-256 (HAU)"
-    default n
-    help
-      使用 GD32 硬件 HAU 加速 SHA-256 计算。
-      不支持则自动回退到软件实现。
+choice BOOT_DFU_TRANSPORT
+    prompt "DFU recovery transport"
+    default BOOT_DFU_UART
 
 config BOOT_DFU_UART
-    bool "Enable UART DFU transport"
-    default y
+    bool "UART DFU transport"
     help
-      bootloader 中启用 UART 传输层用于 DFU。
+      Use the generated uart0 device for loader recovery and DFU.
+
+config BOOT_DFU_CUSTOM
+    bool "Product-provided DFU transport"
+    help
+      Require product/<name>/common/boot_transport.cc to register a custom
+      recovery transport at POST_KERNEL level and implement
+      boot::transport_shutdown().
+
+endchoice
+
+config BOOT_WATCHDOG
+    bool "Require product watchdog integration"
+    default y if BOOT_PRODUCTION
+    help
+      Require product/<name>/common/boot_watchdog.cc. The provider must
+      implement watchdog_service() and watchdog_prepare_handoff(). Its timeout
+      must exceed one worst-case Flash-sector operation and signature check.
+
+config BOOT_STACK_SIZE
+    int "Loader main/interrupt stack size in bytes"
+    default 2048
+    range 1024 8192
+    help
+      Shared MSP size for loader code and interrupts. Builds reject a
+      loader-owned C/C++ function with a static frame larger than 768 bytes;
+      final sizing still requires call-chain and interrupt-nesting analysis.
 
 endmenu
