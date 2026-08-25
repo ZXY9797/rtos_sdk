@@ -17,13 +17,19 @@ def _merge_layouts() -> dict[str, dict[str, object]]:
     result: dict[str, dict[str, object]] = {}
     for name, source in all_layouts().items():
         source_partitions = source["partitions"]
+        slot = source_partitions["slot0"]
+        upgrade = source_partitions["upgrade"]
         result[name] = {
             "canonical_name": source["name"],
             "flash_base": source["flash_base"],
             "partitions": {
                 "preloader": source_partitions["preloader"],
                 "loader": source_partitions["loader"],
-                "app": source_partitions["slot0"],
+                "app": {
+                    "offset": slot["offset"],
+                    "size": slot["size"],
+                    "max_image_size": min(slot["size"], upgrade["size"]),
+                },
             },
         }
     return result
@@ -70,8 +76,14 @@ def merge(args: argparse.Namespace) -> None:
 
     for name, data in images.items():
         part = partitions[name]
+        maximum = part.get("max_image_size", part["size"])
+        if len(data) > maximum:
+            raise SystemExit(
+                f"error: {name} image size {len(data)} exceeds "
+                f"installable size {maximum}"
+            )
         addr = flash_base + part["offset"]
-        print(f"{name:9s}: {len(data)} bytes (max {part['size']}) @ 0x{addr:08X}")
+        print(f"{name:9s}: {len(data)} bytes (max {maximum}) @ 0x{addr:08X}")
 
     total_size = layout_total_size(partitions, "app" in images)
     firmware = bytearray(b"\xff" * total_size)

@@ -22,11 +22,12 @@ constexpr uint32_t kSectorSize = 0x800U;
 constexpr uint32_t kSlot0Offset = 0xA000U;
 constexpr uint32_t kUpgradeOffset = 0x32000U;
 constexpr uint32_t kStorageOffset = 0x58000U;
+constexpr uint32_t kScratchOffset = 0x5E800U;
 constexpr uint32_t kBootCtrlOffset = 0x5F000U;
 
 std::vector<uint8_t> g_flash(kFlashSize, 0xFFU);
 bool g_fail_next_commit_word = false;
-uint32_t g_fail_slot_write_at = UINT32_MAX;
+uint32_t g_fail_write_at = UINT32_MAX;
 
 bool range_valid(uint32_t address, size_t length) {
     return address >= kFlashBase
@@ -41,7 +42,7 @@ size_t offset_of(uint32_t address) {
 void reset_flash() {
     std::fill(g_flash.begin(), g_flash.end(), 0xFFU);
     g_fail_next_commit_word = false;
-    g_fail_slot_write_at = UINT32_MAX;
+    g_fail_write_at = UINT32_MAX;
 }
 
 void test_journal_commit_and_storage_isolation() {
@@ -75,9 +76,10 @@ void test_journal_commit_and_storage_isolation() {
                       g_flash.begin() + kStorageOffset));
 }
 
-void test_copy_resumes_from_committed_checkpoint() {
+void test_sector_swap_resumes_from_every_phase() {
     reset_flash();
     constexpr uint32_t payload_size = 70000U;
+    constexpr uint32_t old_payload_size = 50000U;
     boot::ImageHeader header {};
     header.magic = boot::IMAGE_MAGIC;
     header.hdr_size = sizeof(header);
@@ -91,22 +93,71 @@ void test_copy_resumes_from_committed_checkpoint() {
             static_cast<uint8_t>((index * 17U + 3U) & 0xFFU);
     }
 
+    boot::ImageHeader old_header = header;
+    old_header.img_size = old_payload_size;
+    old_header.security_version = 1U;
+    std::memcpy(g_flash.data() + kSlot0Offset,
+                &old_header, sizeof(old_header));
+    for (uint32_t index = 0U; index < old_payload_size; ++index) {
+        g_flash[kSlot0Offset + sizeof(old_header) + index] =
+            static_cast<uint8_t>((index * 7U + 9U) & 0xFFU);
+    }
+    const std::vector<uint8_t> old_image(
+        g_flash.begin() + kSlot0Offset,
+        g_flash.begin() + kSlot0Offset + sizeof(old_header)
+            + old_payload_size);
+    const std::vector<uint8_t> new_image(
+        g_flash.begin() + kUpgradeOffset,
+        g_flash.begin() + kUpgradeOffset + sizeof(header) + payload_size);
+
     assert(boot::boot_ctrl_write(boot::BOOT_CTRL_UPGRADE_APP));
-    g_fail_slot_write_at = kFlashBase + kSlot0Offset + 20U * kSectorSize;
+
+    g_fail_write_at = kFlashBase + kScratchOffset;
+    assert(!boot::flash_copy_upgrade_to_slot0());
+    uint32_t progress = 0U;
+    uint32_t swap_length = 0U;
+    boot::BootSwapPhase phase = boot::BOOT_SWAP_SAVE_OLD;
+    assert(boot::boot_swap_state_read(progress, phase, swap_length));
+    assert(progress == 0U);
+    assert(phase == boot::BOOT_SWAP_SAVE_OLD);
+
+    g_fail_write_at = kFlashBase + kUpgradeOffset;
+    assert(!boot::flash_copy_upgrade_to_slot0());
+    assert(boot::boot_swap_state_read(progress, phase, swap_length));
+    assert(progress == 0U);
+    assert(phase == boot::BOOT_SWAP_STORE_OLD);
+
+    g_fail_write_at = kFlashBase + kSlot0Offset + 20U * kSectorSize;
     assert(!boot::flash_copy_upgrade_to_slot0());
 
-    uint32_t progress = 0U;
-    assert(boot::boot_copy_progress_read(progress));
-    assert(progress == 32768U);
+    assert(boot::boot_swap_state_read(progress, phase, swap_length));
+    assert(progress == 20U * kSectorSize);
+    assert(phase == boot::BOOT_SWAP_INSTALL_NEW);
 
-    g_fail_slot_write_at = UINT32_MAX;
+    g_fail_write_at = kFlashBase + kUpgradeOffset
+        + 30U * kSectorSize;
+    assert(!boot::flash_copy_upgrade_to_slot0());
+    assert(boot::boot_swap_state_read(progress, phase, swap_length));
+    assert(progress == 30U * kSectorSize);
+    assert(phase == boot::BOOT_SWAP_STORE_OLD);
+
+    g_fail_write_at = UINT32_MAX;
     assert(boot::flash_copy_upgrade_to_slot0());
-    const size_t copy_size = sizeof(header) + payload_size;
-    assert(std::equal(g_flash.begin() + kUpgradeOffset,
-                      g_flash.begin() + kUpgradeOffset + copy_size,
+    assert(std::equal(new_image.begin(), new_image.end(),
                       g_flash.begin() + kSlot0Offset));
-    assert(boot::boot_copy_progress_read(progress));
-    assert(progress == copy_size);
+    assert(std::equal(old_image.begin(), old_image.end(),
+                      g_flash.begin() + kUpgradeOffset));
+    assert(boot::boot_swap_state_read(progress, phase, swap_length));
+    assert(progress == swap_length);
+    assert(phase == boot::BOOT_SWAP_SAVE_OLD);
+
+    assert(boot::boot_trial_begin(swap_length));
+    assert(boot::boot_rollback_begin());
+    assert(boot::flash_copy_upgrade_to_slot0());
+    assert(std::equal(old_image.begin(), old_image.end(),
+                      g_flash.begin() + kSlot0Offset));
+    assert(std::equal(new_image.begin(), new_image.end(),
+                      g_flash.begin() + kUpgradeOffset));
 }
 
 } // namespace
@@ -125,7 +176,8 @@ const FlashArea &flash_area_get(FlashAreaId id) {
         {0x04000U, 0x06000U},
         {kSlot0Offset, 0x28000U},
         {kUpgradeOffset, 0x26000U},
-        {kStorageOffset, 0x07000U},
+        {kScratchOffset, 0x00800U},
+        {kStorageOffset, 0x06800U},
         {kBootCtrlOffset, 0x01000U},
     };
     return areas[id];
@@ -165,8 +217,8 @@ bool flash_write(uint32_t address, const void *data, size_t length) {
         g_fail_next_commit_word = false;
         return false;
     }
-    if (address >= g_fail_slot_write_at
-        && address < kFlashBase + kSlot0Offset + 0x28000U) {
+    if (address >= g_fail_write_at
+        && address < static_cast<uint64_t>(g_fail_write_at) + kSectorSize) {
         return false;
     }
 
@@ -191,7 +243,7 @@ bool flash_update(uint32_t, const void *, size_t) {
 
 int main() {
     test_journal_commit_and_storage_isolation();
-    test_copy_resumes_from_committed_checkpoint();
+    test_sector_swap_resumes_from_every_phase();
     std::cout << "boot power-loss tests passed\n";
     return 0;
 }

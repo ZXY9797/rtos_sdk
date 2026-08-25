@@ -11,11 +11,27 @@ namespace {
 
 constexpr uint32_t kBootCtrlMagic = 0x4254434CU;      // "BTCL"
 constexpr uint32_t kLegacyUpgradeMagic = 0x55504752U; // "UPGR"
-constexpr uint32_t kBootCtrlVersion = 2U;
+constexpr uint32_t kBootCtrlVersion = 3U;
+constexpr uint32_t kPreviousBootCtrlVersion = 2U;
 constexpr uint32_t kLegacyBootCtrlVersion = 1U;
 constexpr uint32_t kMaxJournalSectorSize = 4096U;
 
 struct BootCtrlRecord {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t sequence;
+    uint8_t boot_ctrl;
+    uint8_t loader_upgrade;
+    uint8_t swap_phase;
+    uint8_t trial_attempts;
+    uint32_t copy_progress;
+    uint32_t swap_length;
+    uint32_t crc32;
+    uint32_t reserved1;
+};
+static_assert(sizeof(BootCtrlRecord) == 32U);
+
+struct PreviousBootCtrlRecord {
     uint32_t magic;
     uint32_t version;
     uint32_t sequence;
@@ -26,7 +42,7 @@ struct BootCtrlRecord {
     uint32_t crc32;
     uint32_t reserved1[2];
 };
-static_assert(sizeof(BootCtrlRecord) == 32U);
+static_assert(sizeof(PreviousBootCtrlRecord) == 32U);
 
 struct LegacyBootCtrlRecord {
     uint32_t magic;
@@ -77,11 +93,21 @@ uint32_t legacy_record_crc(const LegacyBootCtrlRecord &record) {
         offsetof(LegacyBootCtrlRecord, crc32));
 }
 
+uint32_t previous_record_crc(const PreviousBootCtrlRecord &record) {
+    constexpr size_t start = offsetof(PreviousBootCtrlRecord, version);
+    constexpr size_t end = offsetof(PreviousBootCtrlRecord, crc32);
+    return crc32_update(
+        0U, reinterpret_cast<const uint8_t *>(&record) + start,
+        end - start);
+}
+
 bool valid_boot_flag(uint8_t flag) {
     return flag == BOOT_CTRL_NORMAL
         || flag == BOOT_CTRL_ENTER_DFU
         || flag == BOOT_CTRL_UPGRADE_APP
-        || flag == BOOT_CTRL_UPGRADE_LOADER;
+        || flag == BOOT_CTRL_UPGRADE_LOADER
+        || flag == BOOT_CTRL_TRIAL_APP
+        || flag == BOOT_CTRL_ROLLBACK_APP;
 }
 
 bool valid_record(const BootCtrlRecord &record) {
@@ -89,7 +115,35 @@ bool valid_record(const BootCtrlRecord &record) {
         && record.version == kBootCtrlVersion
         && valid_boot_flag(record.boot_ctrl)
         && record.loader_upgrade <= 1U
+        && record.swap_phase <= BOOT_SWAP_STORE_OLD
+        && record.trial_attempts <= 1U
         && record.crc32 == record_crc(record);
+}
+
+void default_record(BootCtrlRecord &record);
+
+bool decode_record(const BootCtrlRecord &raw, BootCtrlRecord &decoded) {
+    if (valid_record(raw)) {
+        decoded = raw;
+        return true;
+    }
+    PreviousBootCtrlRecord previous {};
+    std::memcpy(&previous, &raw, sizeof(previous));
+    if (previous.magic != kBootCtrlMagic
+        || previous.version != kPreviousBootCtrlVersion
+        || !valid_boot_flag(previous.boot_ctrl)
+        || previous.boot_ctrl == BOOT_CTRL_TRIAL_APP
+        || previous.boot_ctrl == BOOT_CTRL_ROLLBACK_APP
+        || previous.loader_upgrade > 1U
+        || previous.crc32 != previous_record_crc(previous)) {
+        return false;
+    }
+    default_record(decoded);
+    decoded.sequence = previous.sequence;
+    decoded.boot_ctrl = previous.boot_ctrl;
+    decoded.loader_upgrade = previous.loader_upgrade;
+    decoded.copy_progress = previous.copy_progress;
+    return true;
 }
 
 bool sequence_newer(uint32_t candidate, uint32_t reference) {
@@ -102,6 +156,7 @@ void default_record(BootCtrlRecord &record) {
     record.version = kBootCtrlVersion;
     record.boot_ctrl = BOOT_CTRL_NORMAL;
     record.copy_progress = BOOT_COPY_PROGRESS_IDLE;
+    record.swap_phase = BOOT_SWAP_SAVE_OLD;
 }
 
 bool journal_geometry(uint32_t &base, uint32_t &size,
@@ -130,12 +185,13 @@ bool scan_journal(JournalState &state) {
         if (!flash_read(base + offset, &candidate, sizeof(candidate))) {
             return false;
         }
-        if (valid_record(candidate)
+        BootCtrlRecord decoded {};
+        if (decode_record(candidate, decoded)
             && (!state.found
-                || sequence_newer(candidate.sequence,
+                || sequence_newer(decoded.sequence,
                                   state.latest.sequence))) {
             state.found = true;
-            state.latest = candidate;
+            state.latest = decoded;
             state.latest_addr = base + offset;
         }
     }
@@ -174,8 +230,7 @@ bool read_record(BootCtrlRecord &record) {
         record = state.latest;
         return true;
     }
-    (void)read_legacy(record);
-    return false;
+    return read_legacy(record);
 }
 
 bool slot_erased(uint32_t address) {
@@ -248,14 +303,24 @@ bool boot_ctrl_read(uint8_t &flag) {
 }
 
 bool boot_ctrl_write(uint8_t flag) {
-    if (!valid_boot_flag(flag)) return false;
+    if (!valid_boot_flag(flag)
+        || flag == BOOT_CTRL_TRIAL_APP
+        || flag == BOOT_CTRL_ROLLBACK_APP) {
+        return false;
+    }
     BootCtrlRecord record {};
     (void)read_record(record);
     record.boot_ctrl = flag;
     if (flag == BOOT_CTRL_UPGRADE_APP) {
         record.copy_progress = 0U;
+        record.swap_phase = BOOT_SWAP_SAVE_OLD;
+        record.swap_length = 0U;
+        record.trial_attempts = 0U;
     } else if (flag == BOOT_CTRL_NORMAL) {
         record.copy_progress = BOOT_COPY_PROGRESS_IDLE;
+        record.swap_phase = BOOT_SWAP_SAVE_OLD;
+        record.swap_length = 0U;
+        record.trial_attempts = 0U;
     }
     return write_record(record);
 }
@@ -306,6 +371,66 @@ bool boot_copy_progress_write(uint32_t progress) {
 
 bool boot_copy_progress_clear() {
     return boot_copy_progress_write(BOOT_COPY_PROGRESS_IDLE);
+}
+
+bool boot_swap_state_read(uint32_t &progress, BootSwapPhase &phase,
+                          uint32_t &length) {
+    BootCtrlRecord record {};
+    const bool valid = read_record(record);
+    progress = record.copy_progress;
+    phase = static_cast<BootSwapPhase>(record.swap_phase);
+    length = record.swap_length;
+    return valid;
+}
+
+bool boot_swap_state_write(uint32_t progress, BootSwapPhase phase,
+                           uint32_t length) {
+    if (phase > BOOT_SWAP_STORE_OLD || progress > length) {
+        return false;
+    }
+    BootCtrlRecord record {};
+    if (!read_record(record)
+        || (record.boot_ctrl != BOOT_CTRL_UPGRADE_APP
+            && record.boot_ctrl != BOOT_CTRL_ROLLBACK_APP)) {
+        return false;
+    }
+    record.copy_progress = progress;
+    record.swap_phase = static_cast<uint8_t>(phase);
+    record.swap_length = length;
+    return write_record(record);
+}
+
+bool boot_trial_begin(uint32_t swap_length) {
+    if (swap_length == 0U) {
+        return false;
+    }
+    BootCtrlRecord record {};
+    if (!read_record(record)
+        || record.boot_ctrl != BOOT_CTRL_UPGRADE_APP
+        || record.copy_progress != swap_length
+        || record.swap_length != swap_length
+        || record.swap_phase != BOOT_SWAP_SAVE_OLD) {
+        return false;
+    }
+    record.boot_ctrl = BOOT_CTRL_TRIAL_APP;
+    record.copy_progress = swap_length;
+    record.swap_phase = BOOT_SWAP_SAVE_OLD;
+    record.swap_length = swap_length;
+    record.trial_attempts = 1U;
+    return write_record(record);
+}
+
+bool boot_rollback_begin() {
+    BootCtrlRecord record {};
+    (void)read_record(record);
+    if (record.boot_ctrl != BOOT_CTRL_TRIAL_APP
+        || record.swap_length == 0U) {
+        return false;
+    }
+    record.boot_ctrl = BOOT_CTRL_ROLLBACK_APP;
+    record.copy_progress = 0U;
+    record.swap_phase = BOOT_SWAP_SAVE_OLD;
+    return write_record(record);
 }
 
 } // namespace boot

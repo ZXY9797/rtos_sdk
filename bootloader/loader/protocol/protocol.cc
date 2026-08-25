@@ -2,9 +2,12 @@
 #include <boot/flash_ops.h>
 #include <boot/image.h>
 #include <boot/protocol.h>
+#include <boot/protocol_policy.h>
 
 #include <link/codec.h>
 #include <link/frame.h>
+
+#include <soc.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -24,7 +27,6 @@ static ProtocolRxCallback g_rx_fn = nullptr;
 static ProtocolTxCallback g_tx_fn = nullptr;
 static link::FrameCodec g_codec;
 
-constexpr uint8_t kDefaultBootAddr = 0x20;
 constexpr size_t kAckDataCapacity = CONFIG_LINK_MAX_FRAME_SIZE
     - link::HEADER_SIZE - link::CRC_SIZE;
 
@@ -47,16 +49,13 @@ uint32_t load_u32_le(const uint8_t *p) {
 }
 
 uint8_t ack_sender(const link::Frame &req) {
-    return (req.receiver_id == link::ADDR_BROADCAST ||
-            req.receiver_id == link::ADDR_RESERVED)
-        ? kDefaultBootAddr
+    return req.receiver_id == link::ADDR_BROADCAST
+        ? boot_proto::LOADER_ADDRESS
         : req.receiver_id;
 }
 
-void system_reset() {
-    auto *aircr = reinterpret_cast<volatile uint32_t *>(0xE000ED0CU);
-    *aircr = 0x05FA0004U;
-    while (1) {}
+[[noreturn]] void system_reset() {
+    NVIC_SystemReset();
 }
 
 void send_ack(const link::Frame &req, uint8_t status,
@@ -150,12 +149,12 @@ void handle_query_status(const link::Frame &req) {
 }
 
 void handle_fw_transfer(const link::Frame &req) {
-    if (req.data_len < sizeof(uint32_t) * 2 || !req.data) {
+    if (req.data_len < sizeof(boot_proto::TransferReq) || !req.data) {
         send_ack(req, boot_proto::ACK_ERR_ADDR);
         return;
     }
 
-    constexpr uint32_t header_len = sizeof(uint32_t) * 2;
+    constexpr uint32_t header_len = sizeof(boot_proto::TransferReq);
     const uint32_t offset = load_u32_le(req.data);
     const uint32_t payload_len = load_u32_le(req.data + sizeof(uint32_t));
     const uint32_t actual_data_len = req.data_len - header_len;
@@ -186,8 +185,10 @@ void handle_reboot(const link::Frame &req) {
 }
 
 void dispatch_frame(const link::Frame &frame) {
-    if (frame.cmd_set != boot_proto::CMD_SET) return;
-    if (frame.is_ack()) return;
+    // Drop an invalid envelope silently. In particular, never acknowledge a
+    // spoofed/reserved sender and never let a broadcast erase, write, verify,
+    // or reboot the loader.
+    if (!boot_proto::request_envelope_allowed(frame)) return;
 
     switch (frame.cmd_id) {
     case boot_proto::CMD_ENTER_LOADER:

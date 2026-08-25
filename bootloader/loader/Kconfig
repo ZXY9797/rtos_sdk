@@ -5,12 +5,12 @@ choice BOOT_MODE
     default BOOT_MODE_AB
 
 config BOOT_MODE_AB
-    bool "Staged copy mode (single execution slot)"
+    bool "Power-loss-safe swap mode (single execution slot)"
     help
-      Download into the upgrade staging area, validate it, then copy it into
-      slot0 with readback and persistent checkpoints. The current layout has
-      one execution slot, so it cannot automatically roll back to the previous
-      application after the new application starts.
+      Download into upgrade, validate it, then sector-swap it with slot0 via
+      a dedicated scratch erase block. Persistent phase checkpoints survive
+      reset during every swap step. The previous image remains in upgrade and
+      is restored automatically unless the trial application confirms itself.
 
 config BOOT_MODE_DIRECT
     bool "Development-only direct overwrite mode"
@@ -25,25 +25,29 @@ config BOOT_MODE_STAGED_COPY
     bool
     default y if BOOT_MODE_AB
     help
-      Internal semantic name for the legacy CONFIG_BOOT_MODE_AB option.
-      New code must use this symbol because the layout is staged-copy, not two
-      bootable A/B slots.
+      Internal compatibility name for CONFIG_BOOT_MODE_AB. The layout has one
+      execution slot plus one rollback image; it is not execute-in-place A/B.
 
 choice BOOT_DFU_TRANSPORT
     prompt "DFU recovery transport"
+    default BOOT_DFU_CUSTOM if BOOT_PRODUCTION
     default BOOT_DFU_UART
 
 config BOOT_DFU_UART
     bool "UART DFU transport"
+    depends on !BOOT_PRODUCTION
     help
-      Use the generated uart0 device for loader recovery and DFU.
+      Use the generated uart0 device for development recovery and DFU. This
+      raw transport has no authenticated session boundary and therefore cannot
+      be selected by a production loader.
 
 config BOOT_DFU_CUSTOM
     bool "Product-provided DFU transport"
     help
       Require product/<name>/common/boot_transport.cc to register a custom
       recovery transport at POST_KERNEL level and implement
-      boot::transport_shutdown().
+      boot::transport_shutdown(). In production, the provider must authenticate
+      and authorize a session before delivering frames to the protocol layer.
 
 endchoice
 

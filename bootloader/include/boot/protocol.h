@@ -31,8 +31,11 @@ static constexpr uint8_t ACK_ERR_PROD  = 0x07;
 struct __attribute__((packed)) TransferReq {
     uint32_t offset;
     uint32_t length;
-    uint8_t data[];
+    // Exactly `length` payload bytes follow this fixed wire header. Do not
+    // cast untrusted frame storage to this type; decode the little-endian
+    // fields explicitly because the frame need not be naturally aligned.
 };
+static_assert(sizeof(TransferReq) == 8U);
 
 struct __attribute__((packed)) VerifyReq {
     uint8_t sha256[32];

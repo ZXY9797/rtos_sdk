@@ -32,6 +32,23 @@ class BootLayoutTest(unittest.TestCase):
         self.assertEqual("demo_ble",
                          boot_layout.load_layout("gr5525")["name"])
 
+    def test_scratch_is_carved_from_storage_tail(self) -> None:
+        expected_storage_offsets = {
+            "demo": 0x00058000,
+            "demo_ble": 0x000F8000,
+        }
+        for product, expected_offset in expected_storage_offsets.items():
+            layout = boot_layout.load_layout(product)
+            partitions = layout["partitions"]
+            self.assertEqual(expected_offset,
+                             partitions["storage"]["offset"])
+            self.assertEqual(
+                partitions["storage"]["offset"]
+                + partitions["storage"]["size"],
+                partitions["scratch"]["offset"])
+            self.assertEqual(layout["erase_block_size"],
+                             partitions["scratch"]["size"])
+
     def test_misaligned_partition_is_rejected(self) -> None:
         raw = json.loads(
             (boot_layout.PRODUCT_ROOT / "demo" / "layout.json")
@@ -60,6 +77,21 @@ class BootLayoutTest(unittest.TestCase):
                 json.dumps(raw), encoding="utf-8")
             with mock.patch.object(boot_layout, "PRODUCT_ROOT", root):
                 with self.assertRaisesRegex(ValueError, "geometry"):
+                    boot_layout.load_layout("broken")
+
+    def test_image_header_must_follow_flash_write_alignment(self) -> None:
+        raw = json.loads(
+            (boot_layout.PRODUCT_ROOT / "demo" / "layout.json")
+            .read_text(encoding="utf-8"))
+        raw["write_block_size"] = "0x00000100"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            product_dir = root / "broken"
+            product_dir.mkdir()
+            (product_dir / "layout.json").write_text(
+                json.dumps(raw), encoding="utf-8")
+            with mock.patch.object(boot_layout, "PRODUCT_ROOT", root):
+                with self.assertRaisesRegex(ValueError, "header size"):
                     boot_layout.load_layout("broken")
 
 

@@ -26,6 +26,10 @@
                 label = "upgrade";
                 reg = <@BOOT_UPGRADE_OFFSET@ @BOOT_UPGRADE_SIZE@>;
             };
+            scratch_partition: partition@@BOOT_SCRATCH_UNIT_ADDRESS@ {
+                label = "scratch";
+                reg = <@BOOT_SCRATCH_OFFSET@ @BOOT_SCRATCH_SIZE@>;
+            };
             storage_partition: partition@@BOOT_STORAGE_UNIT_ADDRESS@ {
                 label = "storage";
                 reg = <@BOOT_STORAGE_OFFSET@ @BOOT_STORAGE_SIZE@>;

@@ -10,9 +10,11 @@ const FlashArea kFlashAreas[FLASH_AREA_COUNT] = {
     [FLASH_AREA_BOOTLOADER]= { @BOOT_LOADER_OFFSET@U, @BOOT_LOADER_SIZE@U },
     [FLASH_AREA_SLOT0]     = { @BOOT_SLOT0_OFFSET@U, @BOOT_SLOT0_SIZE@U },
     [FLASH_AREA_UPGRADE]   = { @BOOT_UPGRADE_OFFSET@U, @BOOT_UPGRADE_SIZE@U },
+    [FLASH_AREA_SCRATCH]   = { @BOOT_SCRATCH_OFFSET@U, @BOOT_SCRATCH_SIZE@U },
     [FLASH_AREA_STORAGE]   = { @BOOT_STORAGE_OFFSET@U, @BOOT_STORAGE_SIZE@U },
     [FLASH_AREA_BOOT_CTRL] = { @BOOT_BOOT_CTRL_OFFSET@U, @BOOT_BOOT_CTRL_SIZE@U },
 };
+constexpr FlashArea kInvalidFlashArea {0U, 0U};
 
 } // namespace
 
@@ -23,7 +25,7 @@ uint32_t flash_base_addr()
 
 const FlashArea& flash_area_get(FlashAreaId id)
 {
-    return kFlashAreas[id];
+    return id < FLASH_AREA_COUNT ? kFlashAreas[id] : kInvalidFlashArea;
 }
 
 } // namespace boot

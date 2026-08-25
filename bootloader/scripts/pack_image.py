@@ -95,11 +95,12 @@ def _pack_layouts() -> dict[str, dict[str, int]]:
     result: dict[str, dict[str, int]] = {}
     for name, source in all_layouts().items():
         slot = source["partitions"]["slot0"]
+        upgrade = source["partitions"]["upgrade"]
         if source["image_header_size"] != IMAGE_HEADER_SIZE:
             raise ValueError(f"layout {name} uses an unsupported image header size")
         result[name] = {
             "slot_addr": source["flash_base"] + slot["offset"],
-            "slot_size": slot["size"],
+            "image_size": min(slot["size"], upgrade["size"]),
             "product_id": source["product_id"],
             "product_info_offset": source["product_info_offset"],
             "ram_base": source["ram_base"],
@@ -184,8 +185,8 @@ def build_image(
     signature: bytes,
 ) -> bytes:
     layout = LAYOUTS[layout_name]
-    if len(payload) + IMAGE_HEADER_SIZE > layout["slot_size"]:
-        raise ValueError("application image exceeds the slot partition")
+    if len(payload) + IMAGE_HEADER_SIZE > layout["image_size"]:
+        raise ValueError("application image exceeds the installable limit")
     if len(signature) != 64:
         raise ValueError("ECDSA-P256 signature must contain 64 raw bytes")
 
@@ -232,8 +233,8 @@ def validate_image(image: bytes, layout_name: str) -> None:
         raise ValueError("invalid image state flags")
     if payload_size != len(image) - IMAGE_HEADER_SIZE:
         raise ValueError("image payload length does not match the header")
-    if len(image) > layout["slot_size"]:
-        raise ValueError("image exceeds the slot partition")
+    if len(image) > layout["image_size"]:
+        raise ValueError("image exceeds the installable limit")
     if canonical_header_crc(image[:IMAGE_HEADER_SIZE]) != header_crc:
         raise ValueError("invalid image header CRC-32")
 
@@ -283,7 +284,11 @@ def main() -> None:
         type=Path,
         help="write the canonical 32-byte digest to be signed",
     )
-    parser.add_argument("--pending", action="store_true")
+    parser.add_argument(
+        "--pending",
+        action="store_true",
+        help="mark an OTA/DFU image pending; factory slot0 images stay confirmed",
+    )
     args = parser.parse_args()
 
     if args.security_version < 0 or args.security_version > 0xFFFFFFFF:

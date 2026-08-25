@@ -15,7 +15,8 @@
     "loader":    {"offset": "0x00006000", "size": "0x00006000"},
     "slot0":     {"offset": "0x0000C000", "size": "0x00028000"},
     "upgrade":   {"offset": "0x00034000", "size": "0x000C4000"},
-    "storage":   {"offset": "0x000F8000", "size": "0x00006000"},
+    "storage":   {"offset": "0x000F8000", "size": "0x00005000"},
+    "scratch":   {"offset": "0x000FD000", "size": "0x00001000"},
     "boot_ctrl": {"offset": "0x000FE000", "size": "0x00002000"}
   }
 }

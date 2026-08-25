@@ -125,6 +125,19 @@ class PackImageTest(unittest.TestCase):
                 signature=bytes(64),
             )
 
+    def test_image_must_fit_both_execution_and_upgrade_slots(self) -> None:
+        limit = pack_image.LAYOUTS["demo"]["image_size"]
+        oversized = bytearray(self.payload)
+        oversized.extend(bytes(limit - len(oversized)))
+        with self.assertRaisesRegex(ValueError, "installable limit"):
+            pack_image.build_image(
+                bytes(oversized),
+                "demo",
+                security_version=1,
+                flags=pack_image.IMAGE_F_PENDING,
+                signature=bytes(64),
+            )
+
     def test_p256_signature_verification(self) -> None:
         private_key = 0x123456789ABCDEF
         nonce = 0x23456789ABCDEF1

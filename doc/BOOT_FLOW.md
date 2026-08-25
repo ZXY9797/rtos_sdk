@@ -49,9 +49,9 @@ IDLE
 接受已经写入且 Flash 回读完全一致的数据。所有长 Flash/hash 循环都会周期服务
 watchdog；单次 sector 操作和产品签名校验必须小于 watchdog 窗口。
 
-## Staged-copy 安装与掉电恢复
+## Sector-swap 安装、试运行与掉电恢复
 
-默认模式使用一个执行槽和一个暂存区：
+默认模式使用一个执行槽、一个覆盖可安装镜像上限的交换区和一个擦除块大小的 scratch：
 
 ```text
 DFU writes upgrade
@@ -59,22 +59,27 @@ DFU writes upgrade
   -> boot_ctrl = UPGRADE_APP, progress = 0
   -> reset
   -> validate upgrade again
-  -> erase/copy/readback slot0 sector by sector
-  -> persist checkpoint every 32 KiB and at image end
+  -> for each sector:
+       slot0 -> scratch      (SAVE_OLD)
+       upgrade -> slot0     (INSTALL_NEW)
+       scratch -> upgrade   (STORE_OLD)
+       persist phase/progress
   -> validate slot0 again
-  -> commit confirmed security version
-  -> clear boot_ctrl
-  -> mark staging non-bootable
+  -> boot_ctrl = TRIAL_APP
   -> handoff to slot0
+  -> next reset:
+       confirmed: commit security version, invalidate old image, boot new
+       unconfirmed: boot_ctrl = ROLLBACK_APP, reverse the same swap, boot old
 ```
 
-断电后 loader 读取 checkpoint，并比较该位置之前的 source/destination。前缀一致时从
-checkpoint 继续；不一致或记录非法时从 0 重新复制。最后一个不足 sector 的镜像块也
-会先擦除完整 sector，再只写有效数据并回读有效范围。
+每一步都执行整 sector 擦除、复制和回读，只有完成后才推进双 sector boot journal 中的
+phase/progress。任一步断电都会幂等重做当前阶段；`ROLLBACK_APP` 本身也先持久化，因此
+回滚过程再次断电仍可继续。交换长度取新旧镜像 extent 的较大值并向 sector 对齐，确保
+旧镜像比新镜像更长时仍完整保留。
 
-这不是 A/B 回滚：安装时旧 slot0 被覆盖。staging 只保存新镜像，不能在新应用启动失败
-后恢复旧版本。如果产品要求启动次数、健康判定和自动回滚，必须增加第二个可执行槽和
-独立的 trial/confirmed 状态机，不能复用当前名称假装具备该能力。
+这仍不是双执行槽 A/B：只有 `slot0` 可执行，`upgrade` 保存交换后的旧镜像。当前策略给
+新应用一次启动机会；应用必须在健康检查完成后确认，下一次复位仍未确认就回滚。需要
+多次试运行、两个版本任选启动或无复制切换时，仍应增加第二个可执行槽。
 
 ## Pending、Confirmed 和防降级
 
@@ -107,6 +112,6 @@ payload。可变状态位、签名字段和 header CRC 在认证摘要中按协�
 ## 板级验收矩阵
 
 至少覆盖：正常启动、空片、header/payload/signature/ProductInfo 篡改、低版本镜像、
-boot_ctrl 两阶段提交断电、每个 copy sector 随机断电、Flash 读写失败、重复 DFU 包、
-越界/乱序包、UART 丢包、watchdog 窗口、pending 未确认、OTP 提交失败、handoff 后首个
-中断、MSP watermark 和连续多次升级。
+boot_ctrl 两阶段提交断电、每个 swap phase/sector 随机断电、回滚再次断电、Flash
+读写失败、重复 DFU 包、越界/乱序包、UART 丢包、watchdog 窗口、pending 未确认、OTP
+提交失败、handoff 后首个中断、MSP watermark 和连续多次升级。

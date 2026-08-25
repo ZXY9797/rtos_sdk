@@ -19,7 +19,11 @@ if(NOT CONFIG_OSAL_BAREMETAL_HEAP_SIZE EQUAL 0)
 endif()
 if(CONFIG_BOOT_PRODUCTION AND CONFIG_BOOT_MODE_DIRECT)
     message(FATAL_ERROR
-        "Production loader requires staged-copy mode for power-loss recovery")
+        "Production loader requires sector-swap mode for rollback recovery")
+endif()
+if(CONFIG_BOOT_PRODUCTION AND NOT CONFIG_BOOT_DFU_CUSTOM)
+    message(FATAL_ERROR
+        "Production loader requires an authenticated product DFU transport")
 endif()
 
 set(BOOT_SECURITY_SOURCE ${PROJECT_BOOT_COMMON_DIR}/boot_security.cc)

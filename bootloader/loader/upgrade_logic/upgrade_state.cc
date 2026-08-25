@@ -183,6 +183,13 @@ uint8_t upgrade_verify(const uint8_t expected_hash[32], uint8_t computed[32]) {
     }
 
 #if defined(CONFIG_BOOT_MODE_STAGED_COPY)
+    ImageHeader header {};
+    if (!flash_read(target_base(), &header, sizeof(header))
+        || header.flags != IMAGE_F_PENDING) {
+        // A staged image must be confirmed by the running application. A
+        // pre-confirmed download would bypass trial rollback semantics.
+        return boot_proto::ACK_ERR_STATE;
+    }
     if (!boot_ctrl_write(BOOT_CTRL_UPGRADE_APP)) {
         return boot_proto::ACK_ERR_STATE;
     }

@@ -11,7 +11,8 @@ from typing import Any
 
 PRODUCT_ROOT = Path(__file__).resolve().parents[1] / "product"
 PARTITION_ORDER = (
-    "preloader", "loader", "slot0", "upgrade", "storage", "boot_ctrl",
+    "preloader", "loader", "slot0", "upgrade", "storage", "scratch",
+    "boot_ctrl",
 )
 
 
@@ -90,6 +91,13 @@ def _load_canonical(product: str) -> dict[str, Any]:
                 f"partition {name} is not erase-block aligned")
     if partitions["boot_ctrl"]["size"] < erase_size * 2:
         raise ValueError("boot_ctrl must contain at least two erase blocks")
+    if partitions["scratch"]["size"] != erase_size:
+        raise ValueError("scratch must contain exactly one erase block")
+    if partitions["upgrade"]["size"] <= layout["image_header_size"]:
+        raise ValueError("image header does not fit upgrade")
+    if (layout["image_header_size"] == 0
+            or layout["image_header_size"] % write_size != 0):
+        raise ValueError("image header size is not write-block aligned")
     if layout["flash_base"] + layout["flash_size"] > 0x100000000:
         raise ValueError("product Flash address range exceeds uint32")
     if (layout["ram_size"] == 0
@@ -100,10 +108,11 @@ def _load_canonical(product: str) -> dict[str, Any]:
     if layout["image_header_size"] >= slot["size"]:
         raise ValueError("image header does not fit slot0")
     product_info_offset = layout["product_info_offset"]
+    installable_size = min(slot["size"], partitions["upgrade"]["size"])
     if (product_info_offset < layout["image_header_size"]
-            or product_info_offset + 64 > slot["size"]
-            or product_info_offset % 4 != 0):
-        raise ValueError("ProductInfo offset does not fit slot0")
+            or product_info_offset + 64 > installable_size
+            or product_info_offset % write_size != 0):
+        raise ValueError("ProductInfo offset does not fit installable image")
     return layout
 
 
