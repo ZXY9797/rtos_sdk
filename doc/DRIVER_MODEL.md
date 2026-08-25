@@ -12,6 +12,29 @@
 4. 运行期只保留必要的设备注册表，用于日志、CLI 和诊断。
 5. 产品代码逐步通过板级门面访问设备，减少 `uart0`、`motor0` 这类硬件别名在业务逻辑中扩散。
 
+## 驱动分层
+
+```text
+service / application       产品行为、控制和通信编排
+           ↓
+board facade                main_can()、main_motor() 等产品语义接口
+           ↓
+DT adapter + DeviceTrait    DTS 属性到强类型 Config/实例的唯一转换点
+           ↓
+public HAL contract         drivers/*.h 中的厂商无关接口和状态语义
+           ↓
+SoC backend / vendor HAL    寄存器、厂商 HAL/LL、ROM/SDK ABI
+```
+
+依赖只能向下。公共 HAL 头文件不得包含厂商 HAL 类型；业务代码不得按寄存器地址
+推导控制器编号，也不得绕过板级门面重新构造同一个外设对象。需要访问厂商原生
+对象的 IRQ 适配代码，应从对应 DTS 实例的 `native()` 取得同一个底层对象。
+
+后端启用条件必须同时满足：DTS 中存在 `status = "okay"` 的 compatible 节点，
+并且 Kconfig 选择了该后端。后端 Kconfig 必须 `depends on
+DT_HAS_<COMPATIBLE>_ENABLED`；CMake 只能在配置成立时创建/链接目标，不生成裸
+`-l<driver>` 依赖。
+
 ## 和 Zephyr 的取舍
 
 Zephyr 的设备模型提供了成熟的依赖、生命周期和诊断能力，但完整的 `struct device`
@@ -38,6 +61,10 @@ RTOS SDK 通过 `DeviceTrait<Ord>` 在编译期生成强类型设备实例；I2C
 `is_ready()` 还要求 `last_error() == Status::Ok`。驱动调用 `set_error()` 后会进入 `Error`
 状态，诊断表和上层代码都不能把它当成可用设备。
 
+生成的运行期诊断注册表只保存 `const void *` 和 const 就绪回调，不提供通过诊断
+接口修改设备的旁路。`device_get()` 仍返回编译期强类型引用；注册表不参与正常
+数据路径，也不能成为新的 service locator。
+
 新增驱动时优先遵守以下规则：
 
 - 有显式初始化动作的驱动，应提供 `init()`、`deinit()` 和
@@ -56,12 +83,19 @@ cxx-driver:
     - parent
     - phandle: clocks
     - phandle-array: dmas
+      lifecycle: external
     - phandle-array: gpios
+      lifecycle: external
 ```
 
-生成器会把依赖解析为设备 ordinal，并检查依赖设备是否早于当前设备初始化。生成器负责
-校验，但不自动重排初始化顺序。依赖顺序错误会在配置阶段作为构建错误退出，需要显式调整
-binding 或 DTS 中的 `init-level` / `init-priority`。
+依赖默认 `lifecycle: generated`：目标必须有生成的 C++ 设备实例，并且初始化顺序早于
+当前设备。只有当当前 adapter/厂商 HAL 明确拥有目标的初始化与释放时，才能标为
+`external`。生成器会拒绝“缺少 generated owner 却未声明 external”，也会拒绝“目标已有
+generated owner 仍声明 external”，防止双初始化或无人初始化。
+
+生成器负责校验但不自动重排顺序。依赖顺序错误会在配置阶段退出，需要显式调整 binding
+或 DTS 中的 `init-level` / `init-priority`。`devices.json` 会记录每条依赖的 lifecycle，
+评审时必须能说明 external owner 位于哪个 adapter/HAL。
 
 C++ adapter 使用 devicetree 宏取得依赖对象：
 
@@ -97,13 +131,13 @@ C++ adapter 使用 devicetree 宏取得依赖对象：
 产品目录可以提供 `board_devices.h/.cc`，集中管理设备别名：
 
 ```cpp
-namespace demo::board {
+namespace app::board {
 
 decltype(device_get(uart0)) console();
 decltype(device_get(motor0)) main_motor();
 decltype(device_get(led0)) status_led();
 
-} // namespace demo::board
+} // namespace app::board
 ```
 
 ## 当前模型约束
@@ -123,6 +157,21 @@ decltype(device_get(led0)) status_led();
   `device_get<BusOrd>()` 访问父总线实例。
 - `DT_REG_ADDR(DT_PARENT(node_id))` 只表示父节点寄存器基地址，不能替代
   父设备对象。
+
+## 并发、超时与资源失败
+
+- UART/SPI/I2C 的 `timeout_ms` 是一次 API 调用的总预算，包含取锁、DMA/轮询和完成等待，
+  每个阶段不得重新获得一份完整 timeout；
+- 异步 UART TX 必须由每个实例的 mutex 串行化，ISR 只提交完成信号，不得抢占新的 owner；
+- 驱动初始化必须检查 OSAL 队列、stream、mutex/semaphore 和 DMA 资源创建结果，失败进入
+  `DeviceBase::Error`，不能返回“已初始化”；
+- bare-metal OSAL 不支持的 thread、queue、event-group、software-timer API 必须明确失败，
+  不能用 no-op 伪装成功；能力由 `OSAL_HAS_THREADS` 在 Kconfig 阶段约束；
+- ISR 接收缓存满时必须计数丢包；UART 统计至少包括 TX timeout、RX drop 和硬件错误。
+
+异步日志只在 `OSAL_HAS_THREADS=y` 时可用。它采用静态有界队列和单消费者后端所有权；
+生产者在 ISR/队列满时丢弃并计数，不允许阻塞实时线程。`log_flush()` 只用于正常线程的
+有界收尾，fault handler 禁止调用日志系统。
 
 应用代码优先使用产品语义接口。只有板级门面和极少数底层适配文件应该直接调用
 `device_get(alias)`。

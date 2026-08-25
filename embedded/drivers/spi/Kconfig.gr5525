@@ -1,7 +1,7 @@
 config SPI_GR5525
     bool "GR5525 SPI driver"
     select SPI
-    depends on SOC_SERIES_GR5525X
+    depends on SOC_SERIES_GR5525X && DT_HAS_GOODIX_GR5525_SPI_ENABLED
     default y
     help
       Enable GR5525 SPI driver.

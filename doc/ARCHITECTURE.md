@@ -3,6 +3,18 @@
 本 SDK 是一个“描述驱动”的嵌入式框架。设备树和 Kconfig 描述产品与固件，
 CMake 负责组织构建，生成的 DeviceTrait 特化在编译期完成硬件实例绑定。
 
+构建输入按以下单向流水线收敛，禁止从后一级反向补写硬件事实：
+
+```text
+产品 + 固件类型
+    -> board.dts + binding
+    -> EDT / devicetree_generated.h / Kconfig.dts
+    -> 根 Kconfig + 产品 Kconfig + prj.conf
+    -> CMake 目标与源码依赖闭包
+    -> 严格链接 ELF
+    -> bin/hex/三合一固件
+```
+
 ## 分层规则
 
 依赖方向必须保持向下：
@@ -29,15 +41,25 @@ bootloader 私有源文件。
 
 ## 配置职责
 
-DTS 描述硬件拓扑：启用的设备、MMIO 基地址、中断、引脚、时钟、Flash 分区
-以及外设静态参数。
+| 配置层 | 唯一职责 | 典型内容 | 禁止内容 |
+|:---|:---|:---|:---|
+| DTS/binding | 板级物理事实和静态硬件拓扑 | MMIO、IRQ、DMA、引脚、总线依赖、Flash 几何、电机电气参数、采样与 PWM 参数 | 产品策略、运行时标定值、驱动源码选择 |
+| Kconfig/prj.conf | 编译期功能和产品策略 | 组件开关、容量上限、算法策略、保护阈值、产品默认行为 | 已在 DTS 中存在的寄存器地址、电机极对数、PWM/ADC 硬件参数 |
+| NVS | 经校验的运行时状态和标定覆盖 | 电流零点、控制环标定、用户设置 | 未校验的数据直接覆盖安全边界、硬件拓扑 |
+| CMake | 构建图和依赖闭包 | 源码、include、库依赖、生成器输入、链接脚本、产物规则 | 设备地址、IRQ、业务阈值和隐式驱动选择 |
 
-Kconfig 描述构建期选择：功能开关、驱动选择、组件容量上限以及编译期策略。
+同一个事实只能有一个维护入口。派生文件必须由该入口生成；例如 boot Flash
+布局来自 `bootloader/product/<product>/layout.json`，C++ 映射和打包参数均由
+生成器得到，不再手写多份分区表。
 
-产品配置描述业务策略：控制默认值、产品 ID、固件身份以及产品级行为。
+驱动后端使用双重闭合：Kconfig 选项必须依赖对应的
+`DT_HAS_<COMPATIBLE>_ENABLED`，CMake 只在该配置为 `y` 时编译后端。这样 DTS
+不存在对应设备时，手写 `CONFIG_...=y` 会在配置阶段失败，而不是生成一个链接
+后才暴露问题的空目标。
 
-除非是由单一事实源生成出来的派生文件，否则不要在多个配置层重复维护同一个
-事实。
+Kconfig 根入口只解析 `embedded`、`component` 和当前产品 Kconfig 各一次。配置
+缓存校验覆盖全部 Kconfig/配置文件的路径和内容；输入改变后自动重新生成，输入
+未改变时复用 `.config`。完整构建约定见 [BUILD_SYSTEM.md](BUILD_SYSTEM.md)。
 
 ## 启动架构
 
@@ -49,8 +71,8 @@ Boot 代码分为公共代码和固件私有代码。
 
 各固件目录只保留自己的职责：
 
-- `bootloader/preloader`：第一阶段跳转选择，只读 `boot_ctrl` 并跳转目标分区。
-- `bootloader/loader`：第二阶段启动决策、DFU 协议处理、app 校验、app AB 拷贝和跳转应用。
+- `bootloader/preloader`：第一阶段信任根；生产配置认证固定 loader，开发配置可进入 loader-upgrade。
+- `bootloader/loader`：第二阶段启动决策、DFU 协议处理、签名/防降级校验、staged-copy 掉电续拷和应用 handoff；当前不是双执行槽 A/B。
 - `bootloader/upgrade`：loader 自升级执行，处理 `loader_upgrade` 路径并写入新的 loader 镜像。
 - `app/product/*`：产品固件编排和产品元数据。
 
@@ -81,3 +103,18 @@ CLI、产品启动流程、boot 状态和板级策略应放在 `app/product`。
 
 设备驱动模型的细化规则见 [DRIVER_MODEL.md](DRIVER_MODEL.md)。后续驱动接入、设备依赖、
 初始化顺序和产品级设备门面都以该文档为准。
+
+## 链接与启动约束
+
+- 所有固件执行严格链接，不允许 `--unresolved-symbols=ignore-in-object-files`、
+  `--allow-multiple-definition` 或 semihosting `rdimon.specs` 掩盖依赖错误。
+- Cortex-M 启动对象和最小故障处理对象直接进入每个最终 ELF；应用运行时系统对象
+  仅进入需要它的固件，避免静态库提取顺序决定启动行为。
+- GR5525 的 BLE 预编译库与 ROM symbol 表是一组 ABI。CMake 在配置阶段校验两者
+  的 SHA-256，版本不匹配立即失败。
+- pre-kernel 初始化失败时按逆序回滚已完成的阶段；OSAL 初始化/启动失败不进入
+  应用。调度器正常返回同样视为致命错误。
+
+构建通过只证明源码、配置和链接关系闭合，不等于板级验收通过。CAN 引脚复用和
+收发器、PWM/ADC 触发时序与电流零点、Flash 擦写、BLE 射频连接以及故障输出通道
+仍必须在目标板上验证。

@@ -28,6 +28,4 @@ target_sources_ifdef(CONFIG_CAN_GD32 soc
 target_link_libraries(soc
     PUBLIC
         cmsis
-    PRIVATE
-        arch
 )

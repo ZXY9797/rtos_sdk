@@ -48,9 +48,14 @@ void usart_clock_enable(uintptr_t base) {
 } // anonymous namespace
 
 Status UartBase::init(const UartConfig &config) {
-    if (!config.rx_buffer || config.rx_buffer_size == 0 ||
+    if (!config.rx_buffer || config.rx_buffer_size == 0U
+        || config.baudrate == 0U
+        ||
         !config.dma_tx.is_valid() || config.dma_tx.channel > 6U) {
         return Status::InvalidArgument;
+    }
+    if (!m_tx_mutex.is_valid() || !m_tx_sem.is_valid()) {
+        return Status::NoMemory;
     }
 
     if (!m_rx_stream.create(config.rx_buffer, config.rx_buffer_size, 1)) {
@@ -100,12 +105,22 @@ Status UartBase::deinit() {
     return Status::Ok;
 }
 
-Status UartBase::send(const uint8_t *data, size_t len, size_t *bytes_sent, uint32_t timeout_ms) {
-    if (!is_initialized() || !data || len == 0 || len > 0xFFFFU) {
+Status UartBase::send(const uint8_t *data, size_t len,
+                      size_t *bytes_sent, uint32_t timeout_ms) {
+    if (bytes_sent) {
+        *bytes_sent = 0U;
+    }
+    if (!is_initialized() || !data || len == 0U || len > UINT16_MAX) {
         return Status::InvalidArgument;
     }
 
-    osal::LockGuard lock(m_tx_mutex);
+    osal::Deadline deadline(timeout_ms);
+    osal::LockGuard lock(m_tx_mutex, deadline.remaining());
+    if (!lock.owns_lock()) {
+        return Status::Timeout;
+    }
+    while (m_tx_sem.take(0U) == 0) {
+    }
     DmaChannel tx_dma(static_cast<uint32_t>(m_dma_tx.controller),
                       m_dma_tx.channel, m_dma_tx.mux_channel);
     tx_dma.clear_flags();
@@ -134,19 +149,23 @@ Status UartBase::send(const uint8_t *data, size_t len, size_t *bytes_sent, uint3
     }
 
     /* 等待 DMA 完成（ISR 释放信号量，让出 CPU） */
-    if (m_tx_sem.take(timeout_ms) != 0) {
+    if (m_tx_sem.take(deadline.remaining()) != 0) {
         (void)tx_dma.stop();
         tx_dma.clear_flags();
+        const IrqGuard guard;
+        ++m_stats.tx_timeouts;
         return Status::Timeout;
     }
 
     /* 等待 TC（最后一位从移位寄存器发出，ISR 释放信号量） */
     auto *regs = reinterpret_cast<gd32::UsartRegs *>(m_base);
     regs->CTL0 |= CTL0_TCIE;
-    if (m_tx_sem.take(timeout_ms) != 0) {
+    if (m_tx_sem.take(deadline.remaining()) != 0) {
         regs->CTL0 &= ~CTL0_TCIE;
         (void)tx_dma.stop();
         tx_dma.clear_flags();
+        const IrqGuard guard;
+        ++m_stats.tx_timeouts;
         return Status::Timeout;
     }
 
@@ -154,7 +173,10 @@ Status UartBase::send(const uint8_t *data, size_t len, size_t *bytes_sent, uint3
     tx_dma.clear_flags();
 
     if (bytes_sent) *bytes_sent = len;
-    m_stats.tx_bytes += len;
+    {
+        const IrqGuard guard;
+        m_stats.tx_bytes += len;
+    }
     return Status::Ok;
 }
 
@@ -181,7 +203,11 @@ void UartBase::isr_handler(osal::IsrContext& context) {
 
     if (stat & STAT_RBNE) {
         uint8_t ch = static_cast<uint8_t>(regs->DATA);
-        (void)m_rx_stream.send_from_isr(&ch, 1, context);
+        if (m_rx_stream.send_from_isr(&ch, 1, context) > 0U) {
+            ++m_stats.rx_bytes;
+        } else {
+            ++m_stats.rx_dropped;
+        }
     }
 
     /* TC 中断：传输完成，释放 send 信号量 */

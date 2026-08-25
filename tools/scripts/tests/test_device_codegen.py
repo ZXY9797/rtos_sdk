@@ -15,6 +15,7 @@ if SCRIPT_DIR not in sys.path:
 
 from device_bindings import parse_adapter
 from gen_device_traits import (
+    check_init_dependencies,
     render_header,
     render_report,
     render_source,
@@ -60,6 +61,7 @@ def fake_spec(has_init=False, interrupts=None):
         'has_init': has_init,
         'has_isr': bool(interrupts),
         'interrupts': interrupts or [],
+        'readiness': 'auto',
     }
 
 
@@ -82,6 +84,27 @@ class BindingContractTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'required property'):
             resolve_dependencies(
                 node, [('phandle', 'controller')])
+
+    def test_external_dependency_lifecycle_is_parsed(self):
+        driver = valid_driver()
+        driver['requires'] = [{
+            'phandle-array': 'dmas',
+            'lifecycle': 'external',
+        }]
+        parsed = parse_adapter(
+            driver, 'test.yaml', 'vendor,test')
+        self.assertEqual(
+            parsed['requires'],
+            [('phandle_array', 'dmas', 'external')])
+
+    def test_invalid_dependency_lifecycle_is_rejected(self):
+        driver = valid_driver()
+        driver['requires'] = [{
+            'phandle': 'clock',
+            'lifecycle': 'implicit',
+        }]
+        with self.assertRaisesRegex(ValueError, 'invalid dependency lifecycle'):
+            parse_adapter(driver, 'test.yaml', 'vendor,test')
 
     def test_interrupt_metadata_is_structured(self):
         driver = valid_driver()
@@ -126,6 +149,82 @@ class BindingContractTest(unittest.TestCase):
 
 
 class GeneratedCodeTest(unittest.TestCase):
+    def test_missing_generated_lifecycle_owner_is_rejected(self):
+        dependency_node = fake_node('/dma0')
+        dependency_node.dep_ordinal = 2
+        spec = fake_spec(has_init=True)
+        spec['dependencies'] = [{
+            'node': dependency_node,
+            'ord': 2,
+            'reason': 'phandle_array:dmas',
+            'lifecycle': 'generated',
+        }]
+        with self.assertRaisesRegex(
+                ValueError, r'no generated C\+\+ lifecycle owner'):
+            check_init_dependencies([spec])
+
+    def test_explicit_external_lifecycle_owner_is_accepted(self):
+        dependency_node = fake_node('/dma0')
+        dependency_node.dep_ordinal = 2
+        spec = fake_spec(has_init=True)
+        spec['dependencies'] = [{
+            'node': dependency_node,
+            'ord': 2,
+            'reason': 'phandle_array:dmas',
+            'lifecycle': 'external',
+        }]
+        check_init_dependencies([spec])
+
+    def test_external_lifecycle_cannot_hide_generated_owner(self):
+        dependency_node = fake_node('/dma0')
+        dependency_node.dep_ordinal = 2
+        source = fake_spec(has_init=True)
+        source['dependencies'] = [{
+            'node': dependency_node,
+            'ord': 2,
+            'reason': 'phandle_array:dmas',
+            'lifecycle': 'external',
+        }]
+        target = fake_spec(has_init=True)
+        target.update({
+            'node': dependency_node,
+            'ord': 2,
+            'alias': 'dma0',
+            'path': '/dma0',
+            'dependencies': [],
+        })
+        with self.assertRaisesRegex(
+                ValueError, r'generated C\+\+ lifecycle owner'):
+            check_init_dependencies([source, target])
+
+    def test_registry_honors_all_readiness_contracts(self):
+        specs = []
+        for ordinal, readiness in enumerate((
+                'auto', 'device-base', 'is-initialized',
+                'always-ready'), start=1):
+            spec = fake_spec()
+            spec.update({
+                'ord': ordinal,
+                'alias': f'test{ordinal}',
+                'readiness': readiness,
+            })
+            specs.append(spec)
+
+        header = render_header(
+            specs, {'device_adapters/test_dt.h'})
+        self.assertIn('return detail::device_ready(*device);', header)
+        self.assertIn(
+            'readiness=device-base requires DeviceBase', header)
+        self.assertIn(
+            'readiness=is-initialized requires a const ', header)
+        self.assertIn('(void)instance;', header)
+        self.assertIn('bool _check_test1(const void *instance)', header)
+
+    def test_empty_registry_is_safe(self):
+        header = render_header([], set())
+        self.assertIn('if (count != nullptr)', header)
+        self.assertIn('return nullptr;', header)
+
     def test_report_schema_tracks_interrupt_source_metadata(self):
         spec = fake_spec()
         spec.update({
@@ -137,7 +236,7 @@ class GeneratedCodeTest(unittest.TestCase):
             'device_base': False,
         })
         report = render_report([spec])
-        self.assertIn('"schema": "rtos-sdk.devices.v4"', report)
+        self.assertIn('"schema": "rtos-sdk.devices.v5"', report)
 
     def test_drivers_do_not_declare_vector_handlers(self):
         repo_root = Path(SCRIPT_DIR).parents[1]
@@ -215,7 +314,8 @@ class GeneratedCodeTest(unittest.TestCase):
         self.assertIn(
             'hal::DeviceTrait<1>::isr_global(context);', source)
         self.assertIn('Irq::enable(37);', source)
-        self.assertIn('SYS_INIT(hal::_init_test0', source)
+        self.assertIn('SYS_INIT_ROLLBACK(hal::_init_test0', source)
+        self.assertIn('hal::_deinit_test0', source)
 
     def test_dma_interrupt_is_resolved_from_controller_channel(self):
         controller_irq = SimpleNamespace(

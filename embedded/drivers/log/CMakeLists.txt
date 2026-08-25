@@ -7,9 +7,14 @@ target_include_directories(${MODULE_NAME}
 )
 
 target_link_libraries(${MODULE_NAME}
-    PUBLIC
     PRIVATE
-        uart
         soc
         osal
 )
+
+if(CONFIG_UART)
+    if(NOT TARGET uart)
+        message(FATAL_ERROR "CONFIG_UART is enabled but the uart target is missing")
+    endif()
+    target_link_libraries(${MODULE_NAME} PRIVATE uart)
+endif()

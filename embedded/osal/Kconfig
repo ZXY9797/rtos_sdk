@@ -15,4 +15,23 @@ config RTOS_FREERTOS
 
 endchoice
 
+config OSAL_HAS_THREADS
+	bool
+	default n if RTOS_BAREMETAL
+	default y
+	help
+	  Internal capability flag. Selectors that require actual schedulable
+	  threads must depend on this instead of assuming all OSAL backends provide
+	  the same runtime facilities.
+
+config OSAL_BAREMETAL_HEAP_SIZE
+    int "Baremetal OSAL heap size"
+    default 4096
+    range 0 65536
+    depends on RTOS_BAREMETAL
+    help
+      Static bytes reserved for the baremetal allocator. Set this to zero in
+      firmware that forbids dynamic allocation; rtos_malloc() will then fail
+      deterministically without reserving a heap.
+
 endmenu

@@ -3,5 +3,6 @@ config FLASH_STM32
 	select FLASH
 	default y
 	depends on SOC_FAMILY_ST
+	depends on DT_HAS_SOC_NV_FLASH_ENABLED || DT_HAS_ST_STM32_NV_FLASH_ENABLED
 	help
 	  Enable Flash driver for STM32 family using HAL.

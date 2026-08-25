@@ -44,7 +44,6 @@ constexpr uint32_t CTRL0_SCPHA       = (1U << 6);   /* Serial Clock Phase */
 constexpr uint32_t CTRL0_SCPOL       = (1U << 7);   /* Serial Clock Polarity */
 constexpr uint32_t CTRL0_XFE_MODE    = (0U << 8);   /* TX and RX (normal) */
 constexpr uint32_t CTRL0_DFS_8BIT    = (7U << 16);  /* Data Frame Size = 8 (value = bits-1) */
-constexpr uint32_t CTRL0_DFS_16BIT   = (15U << 16);
 
 /* SSI_EN bits */
 constexpr uint32_t SSI_EN            = (1U << 0);
@@ -61,6 +60,14 @@ constexpr uint32_t STAT_RFNE         = (1U << 3);   /* RX FIFO Not Empty */
 } // anonymous namespace
 
 Status SpiBase::init(const SpiConfig &config) {
+    if (config.clock_hz == 0U
+        || config.data_bits != 8U) {
+        return Status::InvalidArgument;
+    }
+    if (!m_bus_mutex.is_valid() || !m_xfer_sem.is_valid()) {
+        return Status::NoMemory;
+    }
+    m_config = config;
     auto *regs = reinterpret_cast<Gr5525SpiRegs *>(m_base);
 
     /* Disable SSI before configuration */
@@ -74,10 +81,7 @@ Status SpiBase::init(const SpiConfig &config) {
     if (config.mode == SpiMode::Mode2 || config.mode == SpiMode::Mode3)
         ctl0 |= CTRL0_SCPOL;
 
-    if (config.data_bits == 16)
-        ctl0 |= CTRL0_DFS_16BIT;
-    else
-        ctl0 |= CTRL0_DFS_8BIT;
+    ctl0 |= CTRL0_DFS_8BIT;
 
     regs->CTRL0 = ctl0;
 
@@ -106,25 +110,31 @@ Status SpiBase::deinit() {
     return Status::Ok;
 }
 
-Status SpiBase::sync_send(const uint8_t *tx, uint8_t *rx, size_t len, uint32_t timeout_ms) {
+Status SpiBase::transfer(const uint8_t *tx, uint8_t *rx, size_t len,
+                         uint32_t timeout_ms, ChipSelectFn chip_select,
+                         void *chip_select_arg) {
     if (!is_initialized() || len == 0) return Status::InvalidArgument;
 
-    osal::LockGuard lock(m_bus_mutex);
+    osal::Deadline deadline(timeout_ms);
+    osal::LockGuard lock(m_bus_mutex, deadline.remaining());
+    if (!lock.owns_lock()) {
+        return Status::Busy;
+    }
+    detail::SpiChipSelectGuard select_guard(chip_select, chip_select_arg);
     auto *regs = reinterpret_cast<Gr5525SpiRegs *>(m_base);
 
-    uint32_t start_tick = osal::Kernel::tick_count();
     for (size_t i = 0; i < len; i++) {
         uint8_t tx_byte = tx ? tx[i] : 0xFF;
 
         while (!(regs->STAT & STAT_TFNF)) {
-            if ((osal::Kernel::tick_count() - start_tick) >= timeout_ms) {
+            if (deadline.expired()) {
                 m_stats.timeout_count++; return Status::Timeout;
             }
         }
         regs->DATA = tx_byte;
 
         while (!(regs->STAT & STAT_RFNE)) {
-            if ((osal::Kernel::tick_count() - start_tick) >= timeout_ms) {
+            if (deadline.expired()) {
                 m_stats.timeout_count++; return Status::Timeout;
             }
         }

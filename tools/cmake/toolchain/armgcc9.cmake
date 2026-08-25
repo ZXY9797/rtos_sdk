@@ -44,7 +44,6 @@ set(CMAKE_EXECUTABLE_SUFFIX_CXX     ${CMAKE_OUTPUT_SUFFIX})
 
 # GCC 9.x 兼容标记 — compiler.cmake 读取
 set(ARMGCC9_CXX2A TRUE)       # -std=c++2a 替代 -std=c++20
-set(ARMGCC9_UNRESOLVED TRUE)  # --unresolved-symbols=ignore-in-object-files
 
 unset(_TOOLCHAIN_BIN)
 unset(_EXE)

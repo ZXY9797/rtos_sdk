@@ -11,6 +11,7 @@ if GPIO
 
 config GPIO_INIT_PRIORITY
 	int "GPIO init priority"
+	range 0 999
 	default KERNEL_INIT_PRIORITY_DEFAULT
 	help
 	  GPIO driver device initialization priority.

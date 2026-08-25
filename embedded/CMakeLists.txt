@@ -1,10 +1,9 @@
 set(MODULE_NAME embedded)
-add_library(${MODULE_NAME} ${NULL_C})
+add_library(${MODULE_NAME} INTERFACE)
 
 target_include_directories(${MODULE_NAME}
-    PUBLIC
+    INTERFACE
         ./include
-    PRIVATE
 )
 
 add_subdirectory(soc)
@@ -15,21 +14,11 @@ add_subdirectory(osal)
 add_subdirectory(system)
 
 target_link_libraries(${MODULE_NAME}
-    PUBLIC
-        -Wl,--whole-archive
+    INTERFACE
         arch
         soc
         drivers
         modules
         osal
         $<$<STREQUAL:${FIRMWARE_TYPE},app>:system>
-        -Wl,--no-whole-archive
 )
-
-if(FIRMWARE_TYPE STREQUAL "app")
-    target_link_libraries(${MODULE_NAME}
-        PUBLIC
-        osal
-        system
-    )
-endif()

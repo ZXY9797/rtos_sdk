@@ -4,6 +4,7 @@ rsource "dts/Kconfig"
 
 config MAIN_STACK_SIZE
 	int "Size of stack for initialization and main thread"
+	range 256 65536
 	default 1024
 	help
 	  When the initialization is complete, the thread executing it then
@@ -12,53 +13,11 @@ config MAIN_STACK_SIZE
 
 	  After initialization is complete, the thread runs main().
 
-menu "Device Options"
-
-config DEVICE_DEPS
-	bool "Store device dependencies"
-	help
-	  When enabled, device dependencies will be stored so that they can be
-	  queried at runtime. Device dependencies are typically inferred from
-	  devicetree. Enabling this option will increase ROM usage (or RAM if
-	  dynamic device dependencies are enabled).
-
-config DEVICE_DEPS_DYNAMIC
-	bool "Dynamic device dependencies"
-	depends on DEVICE_DEPS
-	help
-	  Option that makes it possible to manipulate device dependencies at
-	  runtime.
-
-config DEVICE_MUTABLE
-	bool "Mutable devices [EXPERIMENTAL]"
-	select EXPERIMENTAL
-	help
-	  Support mutable devices. Mutable devices are instantiated in SRAM
-	  instead of Flash and are runtime modifiable in kernel mode.
-
-config DEVICE_DT_METADATA
-	bool "Store additional devicetree metadata for each device"
-	help
-	  If enabled, additional data from the devicetree will be stored for
-	  each device. This allows you to use device_get_by_dt_nodelabel(),
-	  device_get_dt_metadata(), etc.
-
-config DEVICE_DEINIT_SUPPORT
-	bool "Support device de-initialization"
-	default y
-	help
-	  In very specific case, it might be necessary to de-initialize
-	  a device at runtime. This is possible by providing a function
-	  to do so. Note, that this will grow every struct device by a
-	  function pointer. All device drivers that use the relevant
-	  macros and provide such function should select this option.
-
-endmenu
-
 menu "Initialization Priorities"
 
 config KERNEL_INIT_PRIORITY_OBJECTS
 	int "Kernel objects initialization priority"
+	range 0 999
 	default 30
 	help
 	  Kernel objects use this priority for initialization. This
@@ -67,6 +26,7 @@ config KERNEL_INIT_PRIORITY_OBJECTS
 
 config KERNEL_INIT_PRIORITY_LIBC
 	int "LIBC initialization priority"
+	range 0 999
 	default 35
 	help
 	  LIBC uses this priority for initialization. This
@@ -75,12 +35,14 @@ config KERNEL_INIT_PRIORITY_LIBC
 
 config KERNEL_INIT_PRIORITY_DEFAULT
 	int "Default init priority"
+	range 0 999
 	default 40
 	help
 	  Default minimal init priority for each init level.
 
 config KERNEL_INIT_PRIORITY_DEVICE
 	int "Default init priority for device drivers"
+	range 0 999
 	default 50
 	help
 	  Device driver, that depends on common components, such as
@@ -89,6 +51,7 @@ config KERNEL_INIT_PRIORITY_DEVICE
 
 config APPLICATION_INIT_PRIORITY
 	int "Default init priority for application level drivers"
+	range 0 999
 	default 90
 	help
 	  This priority level is for end-user drivers such as sensors and display
@@ -108,6 +71,7 @@ config SYS_CLOCK_EXISTS
 
 config SYS_CLOCK_TICKS_PER_SEC
 	int "System tick frequency (in ticks/second)"
+	range 1 1000000 if SYS_CLOCK_EXISTS
 	default 1000
 	help
 	  This option specifies the nominal frequency of the system clock in Hz.

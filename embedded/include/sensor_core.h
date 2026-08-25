@@ -1,6 +1,7 @@
 #pragma once
 
 #include <osal/osal.h>
+#include <atomic>
 #include <cstdint>
 
 /// 传感器触发链：定时器 ISR → 可选分频 → 任务唤醒 → 传感器读取。
@@ -29,8 +30,16 @@ public:
     SensorCore& operator=(const SensorCore&) = delete;
 
     [[nodiscard]] int start();
-    [[nodiscard]] osal::PeriodicThread* thread() const { return thread_; }
-    [[nodiscard]] uint32_t fire_count() const { return fire_count_; }
+    [[nodiscard]] int stop();
+    [[nodiscard]] osal::PeriodicThread* thread() const {
+        return thread_.load(std::memory_order_acquire);
+    }
+    [[nodiscard]] uint32_t fire_count() const {
+        return fire_count_.load(std::memory_order_relaxed);
+    }
+    [[nodiscard]] uint32_t read_error_count() const {
+        return read_error_count_.load(std::memory_order_relaxed);
+    }
 
     /// 从外部 ISR 调用（带分频）
     void on_sensor_done();
@@ -40,6 +49,8 @@ private:
     static void thread_entry(
         void *arg, const osal::PeriodicStats& stats);
     Config cfg_;
-    osal::PeriodicThread *thread_ {nullptr};
-    volatile uint32_t fire_count_ {0};
+    std::atomic<osal::PeriodicThread *> thread_ {nullptr};
+    std::atomic<bool> timer_attached_ {false};
+    std::atomic<uint32_t> fire_count_ {0U};
+    std::atomic<uint32_t> read_error_count_ {0U};
 };

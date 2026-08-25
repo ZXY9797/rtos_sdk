@@ -11,12 +11,16 @@
             DT_PROP_OR(node_id, bitrate, 500000U);                 \
         static constexpr uint32_t kIrqPriority =                   \
             DT_PROP_OR(node_id, irq_priority, 8U);                 \
+        static constexpr uint32_t kPort = DT_PROP(node_id, port);  \
                                                                    \
         static_assert(kBitrate > 0U, "CAN bitrate must be nonzero");\
         static_assert(kIrqPriority <= UINT8_MAX,                   \
                       "CAN IRQ priority does not fit uint8_t");     \
+        static_assert(kPort <= UINT8_MAX,                          \
+                      "CAN port does not fit uint8_t");             \
                                                                    \
-        using type = CanDriver<DT_REG_ADDR(node_id)>;              \
+        using type = CanDriver<DT_REG_ADDR(node_id),               \
+                               static_cast<uint8_t>(kPort)>;       \
         static type instance;                                      \
                                                                    \
         static int init()                                          \

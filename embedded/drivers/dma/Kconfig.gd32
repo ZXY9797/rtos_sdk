@@ -1,7 +1,7 @@
 config DMA_GD32
 	bool "GD32 DMA driver"
 	select DMA
-	depends on SOC_SERIES_GD32F50X
+	depends on SOC_SERIES_GD32F50X && DT_HAS_GD_GD32_DMA_ENABLED
 	default y
 	help
 	  Enable DMA driver for GD32F50x series using DMAMUX.

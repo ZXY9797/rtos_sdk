@@ -17,77 +17,128 @@ properties:
 
   pwm-ch-u:
     type: int
-    default: 0
+    required: true
     description: U-phase PWM channel index (0=Ch1, 1=Ch2, 2=Ch3, 3=Ch4)
 
   pwm-ch-v:
     type: int
-    default: 1
+    required: true
     description: V-phase PWM channel index
 
   pwm-ch-w:
     type: int
-    default: 2
+    required: true
     description: W-phase PWM channel index
 
   # 电机物理参数 (工程单位, 整数)
   rs-milliohm:
     type: int
-    default: 50
+    required: true
     description: Stator resistance in milliohms
 
   ld-microhenry:
     type: int
-    default: 100
+    required: true
     description: D-axis inductance in microhenries
 
   lq-microhenry:
     type: int
-    default: 100
+    required: true
     description: Q-axis inductance in microhenries
 
   flux-milliweber:
     type: int
-    default: 0
+    required: true
     description: Flux linkage in milliwebers
 
   pole-pairs:
     type: int
-    default: 7
+    required: true
     description: Motor pole pairs
 
   # FOC 限制参数
   max-current-ma:
     type: int
-    default: 20000
+    required: true
     description: Maximum phase current in milliamps
 
   max-voltage-mv:
     type: int
-    default: 48000
+    required: true
     description: Maximum bus voltage in millivolts
 
   # FOC 控制参数
   pwm-frequency:
     type: int
-    default: 20000
+    required: true
     description: PWM switching frequency in Hz
 
   current-bandwidth:
     type: int
-    default: 1000
+    required: true
     description: Current loop bandwidth in Hz
+
+  timer-clock-hz:
+    type: int
+    required: true
+    description: Timer input clock before the PWM prescaler
+
+  pwm-prescaler:
+    type: int
+    required: true
+    description: PWM timer prescaler register value
+
+  dead-time-ns:
+    type: int
+    required: true
+    description: Complementary PWM dead time in nanoseconds
+
+  adc-resolution-bits:
+    type: int
+    required: true
+
+  current-u-channel:
+    type: int
+    required: true
+
+  current-w-channel:
+    type: int
+    required: true
+
+  vbus-channel:
+    type: int
+    required: true
+
+  adc-trigger-source:
+    type: int
+    required: true
+
+  adc-reference-mv:
+    type: int
+    required: true
+
+  current-zero-code:
+    type: int
+    required: true
+
+  current-sense-uv-per-amp:
+    type: int
+    required: true
+
+  vbus-divider-milli:
+    type: int
+    required: true
 
   # 模式选择
   sensor-mode:
     type: int
-    default: 0
+    required: true
     description: >
       Sensor mode: 0=Sensorless, 1=Hall, 2=OpenLoop, 3=Encoder
 
   control-mode:
     type: int
-    default: 1
+    required: true
     description: >
       Control mode: 0=Torque, 1=Speed, 2=Duty, 3=Position
 

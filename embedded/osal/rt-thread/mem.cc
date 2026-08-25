@@ -11,8 +11,10 @@
 static void *rtos_calloc(size_t n, size_t size) { return rt_calloc(n, size); }
 
 static void *rtos_aligned_alloc(size_t alignment, size_t size) {
-    if (alignment <= RT_ALIGN_SIZE) return rt_malloc(size);
-    size_t total = size + alignment + sizeof(void *);
+    if (alignment < alignof(void *)) alignment = alignof(void *);
+    if ((alignment & (alignment - 1U)) != 0U
+        || size > SIZE_MAX - (alignment - 1U) - sizeof(void *)) return nullptr;
+    size_t total = size + alignment - 1U + sizeof(void *);
     void *raw = rt_malloc(total);
     if (!raw) return nullptr;
     uintptr_t addr = reinterpret_cast<uintptr_t>(raw) + sizeof(void *);
@@ -25,7 +27,7 @@ static void *rtos_aligned_alloc(size_t alignment, size_t size) {
 static void rtos_aligned_free(void *ptr) {
     if (ptr) {
         void *raw = static_cast<void **>(ptr)[-1];
-        rt_free((raw == ptr) ? ptr : raw);
+        rt_free(raw);
     }
 }
 
@@ -35,7 +37,10 @@ Mem::Mem(size_t size)
     : ptr_(rtos_malloc(size)), size_(size), aligned_(false) {}
 
 Mem::Mem(size_t nitems, size_t size)
-    : ptr_(rtos_calloc(nitems, size)), size_(nitems * size), aligned_(false) {}
+    : ptr_((size == 0U || nitems <= SIZE_MAX / size)
+               ? rtos_calloc(nitems, size) : nullptr),
+      size_((size == 0U || nitems <= SIZE_MAX / size) ? nitems * size : 0U),
+      aligned_(false) {}
 
 Mem::Mem(void *p, size_t s, bool aligned)
     : ptr_(p), size_(s), aligned_(aligned) {}

@@ -42,7 +42,7 @@ static void goodix_noop(void *) {}
 
 Flash flash_create_default() {
     (void)hal_exflash_init();
-    return Flash(GOODIX_FLASH_BASE, GOODIX_WRITE_BLOCK,
+    return Flash(GOODIX_FLASH_BASE, EXFLASH_SIZE, GOODIX_WRITE_BLOCK,
                  GOODIX_SECTOR_SIZE, nullptr,
                  goodix_write_block, goodix_erase_sector,
                  goodix_noop, goodix_noop, goodix_read);

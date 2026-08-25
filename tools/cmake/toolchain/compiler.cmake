@@ -3,17 +3,73 @@ include(extensions)
 dt_arch_type(arch_core 0)
 include(${arch_core})
 
-set(CFCOMMON "${MCPU_FLAGS} ${VFP_FLAGS} ${SYSTEM_PATH} --specs=nano.specs -specs=rdimon.specs --specs=nosys.specs -Wall -fmessage-length=0 -ffunction-sections -fdata-sections")
+add_library(sdk_build_config INTERFACE)
+target_include_directories(sdk_build_config INTERFACE
+    ${BINARY_DIR_INCLUDE_GENERATED})
 
-set(CMAKE_C_FLAGS "-O2 -g -Werror ${CFCOMMON} -imacros ${AUTOCONF_H}")
-if(ARMGCC9_CXX2A)
-    set(CMAKE_CXX_FLAGS "-O2 -g -Werror ${CFCOMMON} -imacros ${AUTOCONF_H} -fno-exceptions -fno-rtti -std=c++2a")
-else()
-    set(CMAKE_CXX_FLAGS "-O2 -g -Werror ${CFCOMMON} -imacros ${AUTOCONF_H} -fno-exceptions -fno-rtti -std=c++20")
+separate_arguments(_sdk_cpu_flags UNIX_COMMAND "${MCPU_FLAGS}")
+separate_arguments(_sdk_vfp_flags UNIX_COMMAND "${VFP_FLAGS}")
+separate_arguments(_sdk_system_flags UNIX_COMMAND "${SYSTEM_PATH}")
+
+set(_sdk_optimization -O2)
+if(FIRMWARE_TYPE STREQUAL "loader")
+    set(_sdk_optimization -Os)
 endif()
-set(CMAKE_ASM_FLAGS "${MCPU_FLAGS} ${VFP_FLAGS} -x assembler-with-cpp -imacros ${AUTOCONF_H}")
 
-add_compile_options($<$<COMPILE_LANGUAGE:ASM>:-D_ASMLANGUAGE>)
+set(_sdk_c_family_options
+    ${_sdk_cpu_flags}
+    ${_sdk_vfp_flags}
+    ${_sdk_system_flags}
+    --specs=nano.specs
+    --specs=nosys.specs
+    ${_sdk_optimization}
+    -g
+    -Werror
+    -Wall
+    -fmessage-length=0
+    -ffunction-sections
+    -fdata-sections
+    -imacros
+    ${AUTOCONF_H})
+foreach(_option IN LISTS _sdk_c_family_options)
+    target_compile_options(sdk_build_config INTERFACE
+        "$<$<OR:$<COMPILE_LANGUAGE:C>,$<COMPILE_LANGUAGE:CXX>>:${_option}>")
+endforeach()
+
+if(ARMGCC9_CXX2A)
+    set(_sdk_cxx_standard -std=c++2a)
+else()
+    set(_sdk_cxx_standard -std=c++20)
+endif()
+target_compile_options(sdk_build_config INTERFACE
+    $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>
+    $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti>
+    $<$<COMPILE_LANGUAGE:CXX>:${_sdk_cxx_standard}>)
+
+if(FIRMWARE_TYPE STREQUAL "loader")
+    target_compile_options(sdk_build_config INTERFACE
+        $<$<COMPILE_LANGUAGE:CXX>:-fno-threadsafe-statics>)
+endif()
+
+set(_sdk_asm_options
+    ${_sdk_cpu_flags}
+    ${_sdk_vfp_flags}
+    -x
+    assembler-with-cpp
+    -imacros
+    ${AUTOCONF_H}
+    -D_ASMLANGUAGE)
+foreach(_option IN LISTS _sdk_asm_options)
+    target_compile_options(sdk_build_config INTERFACE
+        "$<$<COMPILE_LANGUAGE:ASM>:${_option}>")
+endforeach()
+
+target_link_options(sdk_build_config INTERFACE
+    ${_sdk_cpu_flags}
+    ${_sdk_vfp_flags}
+    ${_sdk_system_flags}
+    --specs=nano.specs
+    --specs=nosys.specs)
 
 dt_get_soc_name(soc_name)
 set(DEFAULT_LINKER_SCRIPT ${BSP_DIR}/linkscript/${soc_name}.ld)
@@ -31,24 +87,23 @@ endif()
 set(LINKER_SCRIPT ${LINKER_SCRIPT} CACHE PATH "Linker script path" FORCE)
 message(STATUS "Link script: ${LINKER_SCRIPT}")
 
-set(VECTOR_TABLE_LINK_FLAG "-Wl,-u,Default_Handler,-u,z_cstart")
-
-if(ARMGCC9_UNRESOLVED)
-    set(UNRESOLVED_FLAG "-Wl,--unresolved-symbols=ignore-in-object-files -Wl,--allow-multiple-definition")
-else()
-    set(UNRESOLVED_FLAG "")
-endif()
-
 if(DEFINED FIRMWARE_OUTPUT_NAME)
     set(LINK_MAP_NAME ${FIRMWARE_OUTPUT_NAME})
 else()
     set(LINK_MAP_NAME ${PROJECT_NAME})
 endif()
 
-set(CMAKE_EXE_LINKER_FLAGS
-    "-T ${LINKER_SCRIPT} -Wl,-Map=${PROJECT_BINARY_DIR}/${LINK_MAP_NAME}.map -Wl,--gc-sections,--print-memory-usage ${UNRESOLVED_FLAG} ${VECTOR_TABLE_LINK_FLAG}"
-    CACHE STRING "" FORCE
-)
+set(SDK_EXECUTABLE_LINK_OPTIONS
+    "-T${LINKER_SCRIPT}"
+    "-Wl,-Map=${PROJECT_BINARY_DIR}/${LINK_MAP_NAME}.map"
+    "-Wl,--gc-sections,--print-memory-usage"
+    "-Wl,-u,Default_Handler,-u,z_cstart")
+
+if(FIRMWARE_TYPE STREQUAL "loader")
+    list(APPEND SDK_EXECUTABLE_LINK_OPTIONS
+        -nostartfiles
+        "-Wl,--defsym=BOOT_STACK_SIZE=${CONFIG_BOOT_STACK_SIZE}")
+endif()
 
 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)

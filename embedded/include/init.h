@@ -7,9 +7,14 @@ extern "C" {
 #endif
 
 typedef int (*initcall_fn_t)(void);
+typedef int (*deinitcall_fn_t)(void);
 
 struct initcall_entry {
 	initcall_fn_t fn;
+	deinitcall_fn_t rollback;
+	const char *name;
+	unsigned short priority;
+	unsigned char level;
 };
 
 /*
@@ -38,8 +43,9 @@ enum init_level {
 };
 
 /*
- * Section name: .z_init_<LEVEL>_P_<PRIORITY>_<COUNTER>
- * The linker scripts keep and sort these sections within each init level.
+ * Section name: .z_init_<LEVEL>_P_<PRIORITY>_<FUNCTION>
+ * The stable function suffix makes equal-priority ordering independent of
+ * source and object link order.
  */
 #define _STRINGIFY(x) #x
 #define _STRINGIFY2(x) _STRINGIFY(x)
@@ -53,17 +59,23 @@ enum init_level {
 #define _LEVEL_NAME_FOR(l)  _LEVEL_NAME_FOR2(l)
 #define _LEVEL_NAME_FOR2(l) _LEVEL_NAME_FOR_ ## l
 
-#define _INITCALL_SECTION(level, prio, counter)                              \
+#define _INITCALL_SECTION(level, prio, order)                                \
 	".z_init_" _LEVEL_NAME_FOR(level) "_P_" _STRINGIFY2(prio) "_"          \
-	_STRINGIFY2(counter)
+	_STRINGIFY2(order)
 
 #define _INITCALL_VAR2(counter)  _initcall_entry_##counter
 #define _INITCALL_VAR(counter)   _INITCALL_VAR2(counter)
 
 #define _SYS_INIT_ENTRY_WITH_ID(fn, level, prio, id)                         \
 	static const Z_DECL_ALIGN(struct initcall_entry)                         \
-		__attribute__((section(_INITCALL_SECTION(level, prio, id)))) __used \
-		_INITCALL_VAR(id) = { reinterpret_cast<initcall_fn_t>(fn) }
+		__attribute__((section(_INITCALL_SECTION(level, prio, fn)))) __used \
+		_INITCALL_VAR(id) = { reinterpret_cast<initcall_fn_t>(fn), nullptr, #fn, prio, level }
+
+#define _SYS_INIT_ROLLBACK_ENTRY_WITH_ID(fn, rollback_fn, level, prio, id)   \
+	static const Z_DECL_ALIGN(struct initcall_entry)                         \
+		__attribute__((section(_INITCALL_SECTION(level, prio, fn)))) __used \
+		_INITCALL_VAR(id) = { reinterpret_cast<initcall_fn_t>(fn),            \
+			reinterpret_cast<deinitcall_fn_t>(rollback_fn), #fn, prio, level }
 
 #define _SYS_INIT_ENTRY(fn, level, prio)                                     \
 	_SYS_INIT_ENTRY_WITH_ID(fn, level, prio, __COUNTER__)
@@ -92,6 +104,10 @@ enum init_level {
 /* Variadic dispatch */
 #define SYS_INIT_GET(_1, _2, _3, NAME, ...) NAME
 #define SYS_INIT(...) SYS_INIT_GET(__VA_ARGS__, SYS_INIT_3, SYS_INIT_2, SYS_INIT_1)(__VA_ARGS__)
+
+/** Register an initializer with an idempotent rollback callback. */
+#define SYS_INIT_ROLLBACK(fn, rollback_fn, level, prio)                      \
+	_SYS_INIT_ROLLBACK_ENTRY_WITH_ID(fn, rollback_fn, level, prio, __COUNTER__)
 
 #ifdef __cplusplus
 }

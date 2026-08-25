@@ -60,19 +60,32 @@ def resolve_dependencies(node, requires):
     dependencies = []
     seen = set()
 
-    def add(target, reason):
+    def add(target, reason, lifecycle):
         record = dependency_record(target, reason)
         if record['ord'] in seen:
+            existing = next(
+                item for item in dependencies
+                if item['ord'] == record['ord'])
+            if existing['lifecycle'] != lifecycle:
+                raise ValueError(
+                    f'{node.path}: dependency {target.path} has '
+                    f'conflicting lifecycle ownership')
             return
         seen.add(record['ord'])
+        record['lifecycle'] = lifecycle
         dependencies.append(record)
 
-    for dependency_type, property_name in requires:
+    for requirement in requires:
+        if len(requirement) == 2:
+            dependency_type, property_name = requirement
+            lifecycle = 'generated'
+        else:
+            dependency_type, property_name, lifecycle = requirement
         if dependency_type == 'parent':
             if node.parent is None:
                 raise ValueError(
                     f'{node.path}: required parent does not exist')
-            add(node.parent, 'parent')
+            add(node.parent, 'parent', lifecycle)
             continue
 
         prop = node.props.get(property_name)
@@ -86,7 +99,7 @@ def resolve_dependencies(node, requires):
             if not hasattr(target, 'dep_ordinal'):
                 raise ValueError(
                     f'{node.path}: {property_name!r} is not a phandle')
-            add(target, f'phandle:{property_name}')
+            add(target, f'phandle:{property_name}', lifecycle)
             continue
 
         if dependency_type == 'phandle_array':
@@ -100,7 +113,7 @@ def resolve_dependencies(node, requires):
                     raise ValueError(
                         f'{node.path}: malformed phandle-array '
                         f'{property_name!r}')
-                add(target, f'phandle_array:{property_name}')
+                add(target, f'phandle_array:{property_name}', lifecycle)
             continue
 
         raise ValueError(
@@ -305,7 +318,22 @@ def check_init_dependencies(specs):
 
         for dependency in spec['dependencies']:
             target = spec_by_ordinal.get(dependency['ord'])
-            if target is None or not target['enabled']:
+            if target is None:
+                if dependency.get('lifecycle') != 'external':
+                    errors.append(
+                        f'{source_name} depends on '
+                        f'{dependency["node"].path} via '
+                        f'{dependency["reason"]}, but that dependency has '
+                        f'no generated C++ lifecycle owner; mark it '
+                        f'lifecycle: external only when the adapter owns it')
+                continue
+            if dependency.get('lifecycle') == 'external':
+                errors.append(
+                    f'{source_name} marks {dependency["reason"]} external, '
+                    f'but {target["alias"] or target["path"]} has a '
+                    f'generated C++ lifecycle owner')
+                continue
+            if not target['enabled']:
                 continue
 
             target_level = resolve_init_level_key(target)
@@ -333,19 +361,50 @@ def append_registry(lines, specs):
     enabled_specs = [
         spec for spec in specs if spec['enabled']]
     if not enabled_specs:
+        lines.extend([
+            'inline const DeviceInfo *get_device_registry(size_t *count) {',
+            '    if (count != nullptr) {',
+            '        *count = 0;',
+            '    }',
+            '    return nullptr;',
+            '}',
+            '',
+        ])
         return
 
     for spec in enabled_specs:
         ordinal = spec['ord']
         identifier = str_to_identifier(
             spec['alias'] or f'ord{ordinal}')
-        lines.extend([
-            f'inline bool _check_{identifier}(void *instance) {{',
-            f'    auto *device = static_cast<DeviceTrait<{ordinal}>::'
-            f'type *>(instance);',
-            '    return detail::device_ready(*device);',
-            '}',
-        ])
+        readiness = spec.get('readiness', 'auto')
+        lines.append(
+            f'inline bool _check_{identifier}(const void *instance) {{')
+        if readiness == 'always-ready':
+            lines.extend([
+                '    (void)instance;',
+                '    return true;',
+            ])
+        else:
+            lines.extend([
+                f'    using Type = DeviceTrait<{ordinal}>::type;',
+                '    auto *device = static_cast<const Type *>(instance);',
+            ])
+            if readiness == 'device-base':
+                lines.extend([
+                    '    static_assert(std::is_base_of_v<DeviceBase, Type>,',
+                    '        "readiness=device-base requires DeviceBase");',
+                    '    return device->is_ready();',
+                ])
+            elif readiness == 'is-initialized':
+                lines.extend([
+                    '    static_assert(detail::HasIsInitialized<const Type>::value,',
+                    '        "readiness=is-initialized requires a const "',
+                    '        "is_initialized() method");',
+                    '    return device->is_initialized();',
+                ])
+            else:
+                lines.append('    return detail::device_ready(*device);')
+        lines.append('}')
 
     lines.extend([
         '// Device registry for diagnostics and runtime enumeration.',
@@ -366,7 +425,9 @@ def append_registry(lines, specs):
         '};',
         '',
         'inline const DeviceInfo *get_device_registry(size_t *count) {',
-        f'    *count = {len(enabled_specs)};',
+        '    if (count != nullptr) {',
+        f'        *count = {len(enabled_specs)};',
+        '    }',
         '    return s_device_registry;',
         '}',
         '',
@@ -479,6 +540,7 @@ def render_source(specs):
 
         if spec['has_init'] or spec['interrupts']:
             function_name = f'_init_{safe_name}'
+            rollback_name = f'_deinit_{safe_name}'
             lines.extend([
                 f'static int {function_name}() {{',
             ])
@@ -529,9 +591,19 @@ def render_source(specs):
             lines.extend([
                 '}',
                 '',
+                f'static int {rollback_name}() {{',
+            ])
+            for interrupt in spec['interrupts']:
+                lines.append(f'    Irq::disable({interrupt["irq"]});')
+            lines.extend([
+                f'    return detail::device_deinit('
+                f'DeviceTrait<{ordinal}>::instance);',
+                '}',
+                '',
             ])
             init_functions.append((
                 function_name,
+                rollback_name,
                 resolve_init_level(spec),
                 resolve_init_priority(spec),
             ))
@@ -560,9 +632,10 @@ def render_source(specs):
             '',
         ])
 
-    for function_name, level, priority in init_functions:
+    for function_name, rollback_name, level, priority in init_functions:
         lines.append(
-            f'SYS_INIT(hal::{function_name}, {level}, {priority});')
+            f'SYS_INIT_ROLLBACK(hal::{function_name}, '
+            f'hal::{rollback_name}, {level}, {priority});')
     lines.append('')
     return '\n'.join(lines)
 
@@ -581,6 +654,7 @@ def render_report(specs):
                 'node_id': dependency['node_id'],
                 'path': dependency['node'].path,
                 'reason': dependency['reason'],
+                'lifecycle': dependency.get('lifecycle', 'generated'),
                 'has_cxx_driver': target is not None,
                 'enabled': node_enabled(
                     dependency['node']),
@@ -611,7 +685,7 @@ def render_report(specs):
         })
 
     report = {
-        'schema': 'rtos-sdk.devices.v4',
+        'schema': 'rtos-sdk.devices.v5',
         'device_count': len(devices),
         'enabled_count': sum(
             1 for device in devices if device['enabled']),

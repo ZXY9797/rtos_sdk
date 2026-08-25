@@ -1,12 +1,20 @@
 target_include_directories(soc
     PUBLIC
+        ${PROJECT_CONFIG_DIR}
+)
+
+# The Goodix SDK headers intentionally use typed half-word MMIO accessors on
+# word-sized register definitions. Treat only the vendor boundary as system
+# headers so those implementation-specific diagnostics do not hide warnings
+# from SDK-owned code.
+target_include_directories(soc SYSTEM
+    PUBLIC
         .
         include
         include/hal
         include/app
         include/platform
         include/cmsis
-        ${PROJECT_CONFIG_DIR}
     PRIVATE
         ${BSP_DIR}/include
         ${TOP_DIR}/component/ble/goodix/libraries/ring_buffer
@@ -68,18 +76,35 @@ target_compile_definitions(soc
         CFG_LAYER_TAG_SDK
 )
 
-# Goodix SDK has type-punning, deprecated 'register', volatile-param, sign-compare warnings
+# GR5525 BLE and peripheral libraries call services implemented in Stack ROM.
+# Bind every Goodix image to the exact ROM ABI exported by the matching SDK;
+# never allow those symbols to remain unresolved in the output ELF.
+set(GOODIX_ROM_SYMBOL_FILE
+    ${CMAKE_CURRENT_SOURCE_DIR}/linker/rom_symbol_gcc_v1.0.3_patch_2.txt)
+set(GOODIX_ROM_SYMBOL_SHA256
+    bd3721bdcf60399431b149d946e76aa65b1549b5ed21d14344c7892c0e0218aa)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    ${GOODIX_ROM_SYMBOL_FILE})
+file(SHA256 ${GOODIX_ROM_SYMBOL_FILE} _goodix_rom_symbol_sha256)
+if(NOT _goodix_rom_symbol_sha256 STREQUAL GOODIX_ROM_SYMBOL_SHA256)
+    message(FATAL_ERROR
+        "GR5525 ROM symbol table does not match Goodix SDK v1.0.3_patch_2: "
+        "expected ${GOODIX_ROM_SYMBOL_SHA256}, got ${_goodix_rom_symbol_sha256}")
+endif()
+target_link_options(soc INTERFACE ${GOODIX_ROM_SYMBOL_FILE})
+set_property(TARGET soc APPEND PROPERTY INTERFACE_LINK_DEPENDS
+    ${GOODIX_ROM_SYMBOL_FILE})
+
+# Goodix SDK sources contain deprecated 'register' and sign-compare warnings.
 target_compile_options(soc
     PRIVATE
-        -Wno-strict-aliasing
         -Wno-sign-compare
+        -Wno-error=sign-compare
         $<$<COMPILE_LANGUAGE:CXX>:-Wno-register>
-        $<$<COMPILE_LANGUAGE:CXX>:-Wno-volatile>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wno-error=register>
 )
 
 target_link_libraries(soc
     PUBLIC
         cmsis
-    PRIVATE
-        arch
 )

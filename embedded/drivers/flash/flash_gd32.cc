@@ -35,7 +35,8 @@ static void gd32_lock(void *) {
 }
 
 Flash flash_create_default() {
-    return Flash(GD32_FLASH_BASE, GD32_WRITE_BLOCK,
+    const uint32_t flash_size = static_cast<uint32_t>(FMC_SIZE) * 1024U;
+    return Flash(GD32_FLASH_BASE, flash_size, GD32_WRITE_BLOCK,
                     GD32_SECTOR_SIZE, nullptr,
                     gd32_write_block, gd32_erase_sector,
                     gd32_lock, gd32_unlock);

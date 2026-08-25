@@ -42,18 +42,24 @@ DmaChannel DmaChannel::request(uint32_t dma_base, uint8_t mux_channel) {
     if (ch < 0) {
         return DmaChannel(dma_base, 0xFF, mux_channel);  // 无效通道
     }
-    return DmaChannel(dma_base, static_cast<uint8_t>(ch), mux_channel);
+    DmaChannel result(dma_base, static_cast<uint8_t>(ch), mux_channel);
+    result.m_owned = true;
+    return result;
 }
 
 DmaChannel::~DmaChannel() {
     if (m_ch != 0xFF) {
         (void)stop();
-        DmaChannelPool::release(m_dma, m_ch);
+        if (m_owned) {
+            DmaChannelPool::release(m_dma, m_ch);
+        }
     }
 }
 
 DmaChannel::DmaChannel(DmaChannel &&other) noexcept
-    : m_dma(other.m_dma), m_ch(other.m_ch), m_mux_ch(other.m_mux_ch) {
+    : m_dma(other.m_dma), m_ch(other.m_ch), m_mux_ch(other.m_mux_ch),
+      m_owned(other.m_owned) {
+    other.m_owned = false;
     other.m_ch = 0xFF;  // 标记源对象为无效
 }
 
@@ -62,13 +68,17 @@ DmaChannel &DmaChannel::operator=(DmaChannel &&other) noexcept {
         // 释放当前通道
         if (m_ch != 0xFF) {
             (void)stop();
-            DmaChannelPool::release(m_dma, m_ch);
+            if (m_owned) {
+                DmaChannelPool::release(m_dma, m_ch);
+            }
         }
         // 转移所有权
         m_dma = other.m_dma;
         m_ch = other.m_ch;
         m_mux_ch = other.m_mux_ch;
+        m_owned = other.m_owned;
         other.m_ch = 0xFF;
+        other.m_owned = false;
     }
     return *this;
 }

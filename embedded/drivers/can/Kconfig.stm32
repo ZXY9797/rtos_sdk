@@ -2,5 +2,7 @@ config CAN_STM32
 	bool "CAN (FDCAN) driver for STM32"
 	select CAN
 	default y if SOC_FAMILY_STM32
+	depends on SOC_FAMILY_STM32
+	depends on DT_HAS_ST_STM32_FDCAN_ENABLED || DT_HAS_ST_STM32_BXCAN_ENABLED
 	help
 	  Enable CAN driver for STM32 family using HAL FDCAN.

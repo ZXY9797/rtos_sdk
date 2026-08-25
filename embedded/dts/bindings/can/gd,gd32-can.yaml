@@ -19,6 +19,11 @@ properties:
     type: array
     required: true
 
+  port:
+    type: int
+    required: true
+    description: Zero-based GD32 CAN controller index
+
   interrupts:
     type: array
     required: true

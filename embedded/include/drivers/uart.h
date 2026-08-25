@@ -1,12 +1,13 @@
 #pragma once
 
-#include <drivers/status.h>
-#include <drivers/dma.h>
 #include <device_base.h>
+#include <drivers/dma.h>
+#include <drivers/status.h>
 #include <irq.h>
 #include <osal.h>
-#include <cstdint>
+
 #include <cstddef>
+#include <cstdint>
 
 namespace hal {
 
@@ -20,17 +21,18 @@ struct UartConfig {
     StopBits stop_bits {StopBits::One};
     Parity parity {Parity::None};
     uint8_t *rx_buffer {nullptr};
-    size_t rx_buffer_size {0};
+    size_t rx_buffer_size {0U};
     DmaChannelConfig dma_tx {};
 };
 
-/// UART 运行时统计
 struct UartStats {
-    uint32_t tx_bytes {0};        ///< 发送字节数
-    uint32_t rx_bytes {0};        ///< 接收字节数
-    uint32_t overrun_count {0};   ///< 溢出错误次数 (ORE)
-    uint32_t framing_errors {0};  ///< 帧错误次数 (FE)
-    uint32_t parity_errors {0};   ///< 校验错误次数 (PE)
+    uint32_t tx_bytes {0U};
+    uint32_t rx_bytes {0U};
+    uint32_t overrun_count {0U};
+    uint32_t framing_errors {0U};
+    uint32_t parity_errors {0U};
+    uint32_t tx_timeouts {0U};
+    uint32_t rx_dropped {0U};
 };
 
 class UartBase : public DeviceBase {
@@ -38,33 +40,33 @@ public:
     [[nodiscard]] Status init(const UartConfig &config);
     [[nodiscard]] Status deinit();
 
-    [[nodiscard]] Status send(const uint8_t *data, size_t len, size_t *bytes_sent, uint32_t timeout_ms);
-    [[nodiscard]] Status recv(uint8_t *data, size_t len, size_t *bytes_read, uint32_t timeout_ms);
+    [[nodiscard]] Status send(const uint8_t *data, size_t len,
+                              size_t *bytes_sent, uint32_t timeout_ms);
+    [[nodiscard]] Status recv(uint8_t *data, size_t len,
+                              size_t *bytes_read, uint32_t timeout_ms);
     [[nodiscard]] size_t rx_available() const;
 
-    /// 获取运行时统计
     [[nodiscard]] UartStats get_stats() const
     {
         const IrqGuard guard;
         return m_stats;
     }
 
-    /// 重置统计计数器
     void reset_stats()
     {
         const IrqGuard guard;
         m_stats = {};
     }
 
-    void isr_handler(osal::IsrContext& context);
-    void dma_tx_isr(osal::IsrContext& context);
+    void isr_handler(osal::IsrContext &context);
+    void dma_tx_isr(osal::IsrContext &context);
 
 protected:
     explicit UartBase(uintptr_t base) : m_base(base) {}
     uintptr_t m_base;
     osal::StreamBuffer m_rx_stream;
     osal::Mutex m_tx_mutex;
-    osal::Semaphore m_tx_sem {0};
+    osal::Semaphore m_tx_sem {0U};
     UartStats m_stats {};
     DmaChannelConfig m_dma_tx {};
 };

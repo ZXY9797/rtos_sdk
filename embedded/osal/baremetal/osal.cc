@@ -21,10 +21,19 @@ namespace {
 constexpr size_t kMaxSemaphores = 16;
 constexpr size_t kMaxMutexes = 8;
 constexpr size_t kMaxStreams = 8;
+constexpr uintptr_t kSysTickControl = 0xE000E010U;
+constexpr uintptr_t kSysTickLoad = 0xE000E014U;
+constexpr uintptr_t kSysTickValue = 0xE000E018U;
+constexpr uint32_t kSysTickEnable = 1U << 0U;
+constexpr uint32_t kSysTickInterrupt = 1U << 1U;
+constexpr uint32_t kSysTickCoreClock = 1U << 2U;
+constexpr uint32_t kSysTickMaxCycles = 0x01000000U;
 
 osal_bare_sem g_sems[kMaxSemaphores];
 osal_bare_mutex g_mutexes[kMaxMutexes];
 volatile uint32_t g_ticks;
+uintptr_t g_scheduler_irq_state;
+uint32_t g_scheduler_suspend_depth;
 
 struct StreamState {
     uint8_t *buf;
@@ -54,25 +63,35 @@ void free_slot(T *slot) {
     if (slot) std::memset(slot, 0, sizeof(*slot));
 }
 
-void irq_lock() {
+uintptr_t irq_lock() {
+    uintptr_t state;
+    asm volatile("mrs %0, primask" : "=r"(state) :: "memory");
     asm volatile("cpsid i" ::: "memory");
+    return state;
 }
 
-void irq_unlock() {
-    asm volatile("cpsie i" ::: "memory");
+void irq_restore(uintptr_t state) {
+    asm volatile("msr primask, %0" :: "r"(state) : "memory");
 }
 
 bool wait_expired(uint32_t start, uint32_t timeout_ms) {
     if (timeout_ms == OSAL_WAITING_FOREVER) return false;
     if (timeout_ms == 0U) return true;
-    return (g_ticks - start) >= timeout_ms;
+    return (osal::Kernel::uptime_ms() - start) >= timeout_ms;
 }
 
 } // namespace
 
 int osal_sleep(int ms) {
-    for (int i = 0; i < ms * 1000; ++i) {
-        asm volatile("nop");
+    if (ms <= 0) return 0;
+    const uint64_t requested_ticks =
+        (static_cast<uint64_t>(static_cast<uint32_t>(ms))
+         * CONFIG_SYS_CLOCK_TICKS_PER_SEC + 999U) / 1000U;
+    const uint32_t wait_ticks = requested_ticks > UINT32_MAX
+        ? UINT32_MAX : static_cast<uint32_t>(requested_ticks);
+    const uint32_t start = g_ticks;
+    while ((g_ticks - start) < wait_ticks) {
+        asm volatile("wfi");
     }
     return 0;
 }
@@ -96,7 +115,27 @@ void sys_clock_announce(uint32_t ticks) {
 }
 
 int osal_init(void) {
+    if (CONFIG_SYS_CLOCK_TICKS_PER_SEC == 0U
+        || (CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC
+            % CONFIG_SYS_CLOCK_TICKS_PER_SEC) != 0U) {
+        return -1;
+    }
+    constexpr uint32_t cycles_per_tick =
+        CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC
+        / CONFIG_SYS_CLOCK_TICKS_PER_SEC;
+    if (cycles_per_tick == 0U || cycles_per_tick > kSysTickMaxCycles) {
+        return -1;
+    }
+    *reinterpret_cast<volatile uint32_t *>(kSysTickLoad) =
+        cycles_per_tick - 1U;
+    *reinterpret_cast<volatile uint32_t *>(kSysTickValue) = 0U;
+    *reinterpret_cast<volatile uint32_t *>(kSysTickControl) =
+        kSysTickEnable | kSysTickInterrupt | kSysTickCoreClock;
     return 0;
+}
+
+extern "C" void SysTick_Handler(void) {
+    sys_clock_announce(1U);
 }
 
 int osal_start(void (*entry)(void)) {
@@ -118,30 +157,45 @@ Kernel::SchedulerState Kernel::get_scheduler_state() {
 }
 
 bool Kernel::in_isr() {
-    return false;
+    uintptr_t ipsr;
+    asm volatile("mrs %0, ipsr" : "=r"(ipsr));
+    return ipsr != 0U;
 }
 
 uint32_t Kernel::tick_count() {
-    g_ticks = g_ticks + 1U;
     return g_ticks;
 }
 
 uint32_t Kernel::uptime_ms() {
-    return tick_count();
+    const uint64_t ticks = tick_count();
+    return static_cast<uint32_t>(
+        (ticks * 1000U) / CONFIG_SYS_CLOCK_TICKS_PER_SEC);
 }
 
 void Kernel::suspend_scheduler() {
-    irq_lock();
+    if (g_scheduler_suspend_depth == UINT32_MAX) {
+        return;
+    }
+    if (g_scheduler_suspend_depth == 0U) {
+        g_scheduler_irq_state = irq_lock();
+    }
+    g_scheduler_suspend_depth = g_scheduler_suspend_depth + 1U;
 }
 
 bool Kernel::resume_scheduler() {
-    irq_unlock();
+    if (g_scheduler_suspend_depth == 0U) return false;
+    g_scheduler_suspend_depth = g_scheduler_suspend_depth - 1U;
+    if (g_scheduler_suspend_depth == 0U) {
+        irq_restore(g_scheduler_irq_state);
+    }
     return true;
 }
 
 Semaphore::Semaphore(uint32_t initial, uint32_t max_count) {
     if (max_count == 0U || initial > max_count) return;
+    const uintptr_t state = irq_lock();
     handle_ = alloc_slot(g_sems);
+    irq_restore(state);
     if (!handle_) return;
     handle_->count = initial;
     handle_->max_count = max_count;
@@ -149,22 +203,24 @@ Semaphore::Semaphore(uint32_t initial, uint32_t max_count) {
 }
 
 Semaphore::~Semaphore() {
+    const uintptr_t state = irq_lock();
     free_slot(handle_);
+    irq_restore(state);
     handle_ = nullptr;
     max_count_ = 0;
 }
 
 int Semaphore::take(Milliseconds timeout_ms) {
     if (!handle_) return -1;
-    const uint32_t start = Kernel::tick_count();
+    const uint32_t start = Kernel::uptime_ms();
     while (true) {
-        irq_lock();
+        const uintptr_t state = irq_lock();
         if (handle_->count > 0U) {
             handle_->count = handle_->count - 1U;
-            irq_unlock();
+            irq_restore(state);
             return 0;
         }
-        irq_unlock();
+        irq_restore(state);
 
         if (wait_expired(start, timeout_ms)) return -1;
     }
@@ -172,13 +228,13 @@ int Semaphore::take(Milliseconds timeout_ms) {
 
 int Semaphore::release() {
     if (!handle_) return -1;
-    irq_lock();
+    const uintptr_t state = irq_lock();
     if (handle_->count < handle_->max_count) {
         handle_->count = handle_->count + 1U;
-        irq_unlock();
+        irq_restore(state);
         return 0;
     }
-    irq_unlock();
+    irq_restore(state);
     return -1;
 }
 
@@ -188,7 +244,10 @@ int Semaphore::release_from_isr(IsrContext& context) {
 }
 
 uint32_t Semaphore::count() const {
-    return handle_ ? handle_->count : 0U;
+    const uintptr_t state = irq_lock();
+    const uint32_t count = handle_ ? handle_->count : 0U;
+    irq_restore(state);
+    return count;
 }
 
 Mutex::Mutex() {
@@ -201,26 +260,30 @@ Mutex::~Mutex() {
 
 bool Mutex::create() {
     if (handle_) return true;
+    const uintptr_t state = irq_lock();
     handle_ = alloc_slot(g_mutexes);
+    irq_restore(state);
     return handle_ != nullptr;
 }
 
 void Mutex::destroy() {
+    const uintptr_t state = irq_lock();
     free_slot(handle_);
+    irq_restore(state);
     handle_ = nullptr;
 }
 
 int Mutex::lock(Milliseconds timeout_ms) {
     if (!handle_) return -1;
-    const uint32_t start = Kernel::tick_count();
+    const uint32_t start = Kernel::uptime_ms();
     while (true) {
-        irq_lock();
+        const uintptr_t state = irq_lock();
         if (!handle_->locked) {
             handle_->locked = true;
-            irq_unlock();
+            irq_restore(state);
             return 0;
         }
-        irq_unlock();
+        irq_restore(state);
         if (wait_expired(start, timeout_ms)) return -1;
     }
 }
@@ -231,9 +294,9 @@ int Mutex::try_lock() {
 
 int Mutex::unlock() {
     if (!handle_) return -1;
-    irq_lock();
+    const uintptr_t state = irq_lock();
     handle_->locked = false;
-    irq_unlock();
+    irq_restore(state);
     return 0;
 }
 
@@ -267,17 +330,30 @@ const char *Thread::get_name() const { return nullptr; }
 bool Thread::abort_delay() { return false; }
 
 IsrTrigger::Slot IsrTrigger::s_slots[kMaxSlots];
-int IsrTrigger::s_count = 0;
 
 int IsrTrigger::register_slot(Callback cb, void *arg) {
-    if (!cb || s_count >= kMaxSlots) return -1;
-    const int id = s_count++;
-    s_slots[id] = {cb, arg};
-    return id;
+    if (!cb) return -1;
+    const uintptr_t state = irq_lock();
+    for (int id = 0; id < kMaxSlots; ++id) {
+        if (s_slots[id].cb == nullptr) {
+            s_slots[id] = {cb, arg};
+            irq_restore(state);
+            return id;
+        }
+    }
+    irq_restore(state);
+    return -1;
+}
+
+void IsrTrigger::unregister_slot(int id) {
+    if (id < 0 || id >= kMaxSlots) return;
+    const uintptr_t state = irq_lock();
+    s_slots[id] = {};
+    irq_restore(state);
 }
 
 void IsrTrigger::fire(int id) {
-    if (id >= 0 && id < s_count && s_slots[id].cb) {
+    if (id >= 0 && id < kMaxSlots && s_slots[id].cb) {
         s_slots[id].cb(s_slots[id].arg);
     }
 }
@@ -285,7 +361,10 @@ void IsrTrigger::fire(int id) {
 PeriodicThread::PeriodicThread(PrivateTag) {
 }
 
-PeriodicThread::~PeriodicThread() = default;
+PeriodicThread::~PeriodicThread() {
+    IsrTrigger::unregister_slot(trigger_id_);
+    trigger_id_ = -1;
+}
 
 uint32_t PeriodicThread::nextDelayTicks(uint32_t, uint32_t, uint32_t &) {
     return 1;
@@ -308,7 +387,7 @@ void PeriodicThread::threadEntry(void *) {
 
 PeriodicThread *PeriodicThread::create(const char *, PeriodicEntry, void *,
                                        size_t, int32_t, uint32_t,
-                                       PeriodicTrigger, IrqTimer *) {
+                                       PeriodicTrigger, IrqTimer *, bool) {
     return nullptr;
 }
 
@@ -321,8 +400,8 @@ EventGroup::~EventGroup() {
 }
 
 bool EventGroup::create() {
-    native_handle_ = this;
-    return true;
+    native_handle_ = nullptr;
+    return false;
 }
 
 void EventGroup::destroy() {
@@ -339,10 +418,10 @@ MessageQueue::~MessageQueue() {
     destroy();
 }
 
-bool MessageQueue::create(uint32_t, size_t item_size, void *, size_t) {
-    item_size_ = item_size;
-    native_handle_ = this;
-    return true;
+bool MessageQueue::create(uint32_t, size_t, void *, size_t) {
+    item_size_ = 0U;
+    native_handle_ = nullptr;
+    return false;
 }
 
 void MessageQueue::destroy() {
@@ -363,14 +442,21 @@ StreamBuffer::~StreamBuffer() {
 bool StreamBuffer::create(size_t buf_size, size_t) {
     auto *buf = static_cast<uint8_t *>(rtos_malloc(buf_size));
     if (!buf) return false;
-    return create(buf, buf_size, 1);
+    if (!create(buf, buf_size, 1U)) {
+        rtos_free(buf);
+        return false;
+    }
+    owns_storage_ = true;
+    return true;
 }
 
 bool StreamBuffer::create(uint8_t *storage, size_t storage_size, size_t) {
     destroy();
     if (!storage || storage_size == 0) return false;
 
+    const uintptr_t irq_state = irq_lock();
     auto *state = alloc_slot(g_streams);
+    irq_restore(irq_state);
     if (!state) return false;
 
     state->buf = storage;
@@ -383,10 +469,15 @@ bool StreamBuffer::create(uint8_t *storage, size_t storage_size, size_t) {
 
 void StreamBuffer::destroy() {
     auto *state = static_cast<StreamState *>(control_block_);
+    uint8_t *storage = state != nullptr ? state->buf : nullptr;
+    const bool release_storage = owns_storage_;
+    const uintptr_t irq_state = irq_lock();
     free_slot(state);
+    irq_restore(irq_state);
     handle_ = nullptr;
     control_block_ = nullptr;
     owns_storage_ = false;
+    if (release_storage) rtos_free(storage);
 }
 
 size_t StreamBuffer::send(const uint8_t *data, size_t len, Milliseconds) {
@@ -400,13 +491,13 @@ size_t StreamBuffer::send_from_isr(const uint8_t *data, size_t len,
     if (!state || !data || len == 0) return 0;
 
     size_t written = 0;
-    irq_lock();
+    const uintptr_t irq_state = irq_lock();
     while (written < len && state->count < state->size) {
         state->buf[state->head] = data[written++];
         state->head = (state->head + 1U) % state->size;
         state->count = state->count + 1U;
     }
-    irq_unlock();
+    irq_restore(irq_state);
 
     (void)context;
     return written;
@@ -417,7 +508,7 @@ size_t StreamBuffer::receive(uint8_t *data, size_t len,
     auto *state = static_cast<StreamState *>(control_block_);
     if (!state || !data || len == 0) return 0;
 
-    const uint32_t start = Kernel::tick_count();
+    const uint32_t start = Kernel::uptime_ms();
     while (state->count == 0U) {
         if (wait_expired(start, timeout_ms)) return 0;
     }
@@ -432,13 +523,13 @@ size_t StreamBuffer::receive_from_isr(uint8_t *data, size_t len,
     if (!state || !data || len == 0) return 0;
 
     size_t read = 0;
-    irq_lock();
+    const uintptr_t irq_state = irq_lock();
     while (read < len && state->count > 0U) {
         data[read++] = state->buf[state->tail];
         state->tail = (state->tail + 1U) % state->size;
         state->count = state->count - 1U;
     }
-    irq_unlock();
+    irq_restore(irq_state);
 
     (void)context;
     return read;
@@ -457,11 +548,11 @@ size_t StreamBuffer::space_available() const {
 void StreamBuffer::reset() {
     auto *state = static_cast<StreamState *>(control_block_);
     if (!state) return;
-    irq_lock();
+    const uintptr_t irq_state = irq_lock();
     state->head = 0;
     state->tail = 0;
     state->count = 0;
-    irq_unlock();
+    irq_restore(irq_state);
 }
 
 void SoftTimer::dispatch(void *timer) {
@@ -475,10 +566,12 @@ SoftTimer::~SoftTimer() {
 
 bool SoftTimer::create(const char *, Milliseconds, bool,
                        Callback callback, void *context) {
-    callback_ = callback;
-    context_ = context;
-    native_handle_ = callback ? this : nullptr;
-    return native_handle_ != nullptr;
+    (void)callback;
+    (void)context;
+    callback_ = nullptr;
+    context_ = nullptr;
+    native_handle_ = nullptr;
+    return false;
 }
 
 void SoftTimer::destroy() {
@@ -493,21 +586,20 @@ bool SoftTimer::reset() { return native_handle_ != nullptr; }
 bool SoftTimer::change_period(Milliseconds) { return native_handle_ != nullptr; }
 bool SoftTimer::is_active() const { return native_handle_ != nullptr; }
 
-CriticalSectionGuard::CriticalSectionGuard() {
-    irq_lock();
+CriticalSectionGuard::CriticalSectionGuard()
+    : saved_state_(irq_lock()) {
 }
 
 CriticalSectionGuard::~CriticalSectionGuard() {
-    irq_unlock();
+    irq_restore(saved_state_);
 }
 
 IsrCriticalSectionGuard::IsrCriticalSectionGuard()
-    : saved_state_(0) {
-    irq_lock();
+    : saved_state_(irq_lock()) {
 }
 
 IsrCriticalSectionGuard::~IsrCriticalSectionGuard() {
-    irq_unlock();
+    irq_restore(saved_state_);
 }
 
 namespace this_thread {
@@ -518,11 +610,21 @@ void sleep_for(Milliseconds timeout_ms) {
 
 bool sleep_until(uint32_t *previous_wake_tick, Milliseconds period_ms) {
     if (!previous_wake_tick) return false;
+    const uint64_t scaled =
+        static_cast<uint64_t>(period_ms) * CONFIG_SYS_CLOCK_TICKS_PER_SEC;
+    const uint32_t period_ticks = static_cast<uint32_t>(
+        std::max<uint64_t>(1U, (scaled + 999U) / 1000U));
     const uint32_t now = Kernel::tick_count();
-    if (now - *previous_wake_tick < period_ms) {
-        sleep_for(period_ms - (now - *previous_wake_tick));
+    const uint32_t elapsed = now - *previous_wake_tick;
+    if (elapsed < period_ticks) {
+        const uint32_t remaining_ticks = period_ticks - elapsed;
+        const uint32_t remaining_ms = static_cast<uint32_t>(
+            (static_cast<uint64_t>(remaining_ticks) * 1000U
+             + CONFIG_SYS_CLOCK_TICKS_PER_SEC - 1U)
+            / CONFIG_SYS_CLOCK_TICKS_PER_SEC);
+        sleep_for(remaining_ms);
     }
-    *previous_wake_tick = Kernel::tick_count();
+    *previous_wake_tick = *previous_wake_tick + period_ticks;
     return true;
 }
 

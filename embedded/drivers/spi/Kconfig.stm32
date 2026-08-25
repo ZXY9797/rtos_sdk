@@ -3,5 +3,6 @@ config SPI_STM32
 	select SPI
 	default y
 	depends on SOC_FAMILY_ST
+	depends on DT_HAS_ST_STM32_SPI_ENABLED || DT_HAS_ST_STM32H7_SPI_ENABLED
 	help
 	  Enable SPI driver for STM32 family using HAL.

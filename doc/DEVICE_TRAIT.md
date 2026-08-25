@@ -33,6 +33,10 @@ RTOS SDK 使用编译期模板特化实现设备分发，相比 Zephyr 的运行
 | `Uart<Base, Irq>` | 值参数模板，编译期绑定基地址/中断号 |
 | `UartBase` | 非模板基类，MCU 特定实现在 `.cc` 文件中 |
 
+`device_get()` 是正常数据路径；生成的设备注册表仅供日志、CLI 和诊断枚举使用。
+注册表保存 const 设备地址、元数据和就绪回调，不做运行时类型分发，也不允许通过
+`void *` 修改设备。
+
 ## 与运行时多态对比
 
 | | 运行时多态（Zephyr） | 编译期多态（RTOS SDK） |
@@ -114,11 +118,21 @@ cxx-driver:
 | `init` | adapter 是否提供 `static int init()` |
 | `interrupts` | 中断名称、adapter 方法、OSAL 使用和共享属性 |
 | `scope` | `node` 或 `children` |
-| `requires` | parent/phandle 初始化依赖 |
+| `requires` | parent/phandle 初始化依赖及 `generated/external` 生命周期所有权 |
 | `init-level` | initcall 级别 |
 | `init-priority` | 同级 initcall 优先级 |
 | `readiness` | 诊断表的就绪策略 |
 | `device-base` | 类型是否继承 `DeviceBase` |
+
+`readiness` 必须与实际类型契约一致：
+
+- `device-base`：对 const/non-const `DeviceBase` 派生类型调用 `is_ready()`；
+- `is-initialized`：调用设备的 `is_initialized()`；
+- `always-ready`：仅用于没有运行期状态的轻量门面；
+- `auto`：由生成器按上述能力安全推导。
+
+没有启用设备时，生成器仍会生成合法的空注册表，固件不需要为“零设备”添加
+特殊 CMake 或源码分支。
 
 adapter 内直接使用项目已有的 devicetree 宏，例如 `DT_REG_ADDR`、
 `DT_IRQN`、`DT_PROP_OR`、`DT_PARENT`、`DT_PHANDLE` 和
@@ -154,3 +168,7 @@ SYS_INIT(hal::_init_uart0, INITCALL_LEVEL_POST_KERNEL, 25);
 - **类型安全**：DT 属性转换由 C++ 编译器和 `static_assert` 检查
 - **自动初始化**：DTS `status = "okay"` → 启动时自动 init，业务层零配置
 - **依赖安全**：初始化顺序在配置阶段校验，错误顺序直接构建失败
+- **所有权明确**：默认要求生成生命周期 owner；厂商 HAL 自管依赖必须显式标注
+  `lifecycle: external`，并禁止与生成 owner 重复
+- **可观测就绪状态**：诊断注册表按设备真实生命周期报告 ready/error，不把
+  “对象存在”误判为“硬件可用”

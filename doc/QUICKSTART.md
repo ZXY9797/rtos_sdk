@@ -46,7 +46,10 @@ ls out_ble/demo_ble.elf  out_ble/demo_ble.bin
 
 Demo BLE 源码在 `app/product/demo_ble/`，产品目录结构见 [APP_LAYOUT.md](APP_LAYOUT.md)。该工程面向 Goodix GR5525RGNI，展示 BLE HID 键盘 + UART 透传。
 
-> **为什么需要 GCC 9.3.1？** Goodix 预编译的 `libble_sdk.a` 使用 GCC 9.3.1 编译，与 GCC 15.x 的 binutils 存在二进制兼容性问题（dangerous relocation）。`-Dt=armgcc9` 会自动启用兼容标记（`-std=c++2a`、`--unresolved-symbols=ignore-in-object-files`）。
+> **为什么需要 GCC 9.3.1？** 当前仓库的 Goodix `libble_sdk.a` 与
+> GR5525 ROM symbol 表固定匹配 SDK `v1.0.3_patch_2`。CMake 会校验两者
+> SHA-256，并使用 GCC 9.3.1 兼容工具链。构建仍采用严格链接，不允许未解析符号、
+> 重复定义或 semihosting 运行库。
 
 ## CMake 参数说明
 
@@ -55,13 +58,14 @@ Demo BLE 源码在 `app/product/demo_ble/`，产品目录结构见 [APP_LAYOUT.m
 | `-Dp=<project>` | 项目名（对应 app/ 下的目录） | `-Dp=demo` |
 | `-Dt=<toolchain>` | 工具链（armgcc、armgcc9） | `-Dt=armgcc9` |
 | `-G<generator>` | 构建系统 | `-GNinja` |
+| `-DFIRMWARE_TYPE=<type>` | 固件类型：app/preloader/loader/upgrade | `-DFIRMWARE_TYPE=loader` |
+
+配置输入、DTS/Kconfig/CMake 职责和严格链接规则见
+[BUILD_SYSTEM.md](BUILD_SYSTEM.md)。
 
 ## 常用命令
 
 ```bash
-# 清理构建
-rm -rf out/
-
 # 查看编译命令
 ninja -C out -v
 
@@ -70,11 +74,23 @@ ninja -C out demo.elf
 
 # 查看设备树预处理结果
 ninja -C out show_dts
+
+# 构建并打包 preloader + loader + app
+python bootloader/scripts/build_3in1.py demo --out out/demo_3in1
+
+# 检查最终 ELF 不含未解析符号
+arm-none-eabi-nm -uC out/demo.elf
 ```
+
+不要复用不同产品或不同 `FIRMWARE_TYPE` 的同一构建目录；每个产品/固件类型使用
+独立目录。Kconfig 输入内容或文件集合改变时会自动重算，无法满足依赖的手写
+`CONFIG_...=y` 会在配置阶段失败。
 
 ## 烧录
 
 烧录方式取决于目标板和调试器：
+
+烧录、擦除和复位会改变目标板状态，执行前应核对芯片、映像基址和当前调试策略。
 
 ```bash
 # J-Link

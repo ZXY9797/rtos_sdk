@@ -4,62 +4,69 @@
 #include <drivers/dma.h>
 #include <drivers/status.h>
 #include <osal.h>
-#include <cstdint>
+
+#include <atomic>
 #include <cstddef>
+#include <cstdint>
 
 namespace hal {
 
-enum class SpiMode : uint8_t { Mode0 = 0, Mode1, Mode2, Mode3 };
+enum class SpiMode : uint8_t { Mode0 = 0U, Mode1, Mode2, Mode3 };
 
 struct SpiConfig {
     SpiMode mode {SpiMode::Mode0};
     uint32_t clock_hz {1000000U};
-    uint8_t data_bits {8};
+    uint8_t data_bits {8U};
     DmaChannelConfig dma_tx {};
     DmaChannelConfig dma_rx {};
 };
 
-/// SPI 运行时统计
 struct SpiStats {
-    uint32_t xfer_count {0};      ///< 传输次数
-    uint32_t xfer_bytes {0};      ///< 传输字节数
-    uint32_t error_count {0};     ///< 错误次数
-    uint32_t timeout_count {0};   ///< 超时次数
+    uint32_t xfer_count {0U};
+    uint32_t xfer_bytes {0U};
+    uint32_t error_count {0U};
+    uint32_t timeout_count {0U};
 };
 
 class SpiBase : public DeviceBase {
 public:
-    [[nodiscard]] Status init(const SpiConfig &config);
-    [[nodiscard]] Status deinit();
+    using ChipSelectFn = void (*)(void* arg, bool active);
 
-    [[nodiscard]] Status sync_send(const uint8_t *tx, uint8_t *rx, size_t len, uint32_t timeout_ms);
+    [[nodiscard]] Status init(const SpiConfig& config);
+    [[nodiscard]] Status deinit();
+    [[nodiscard]] Status transfer(const uint8_t* tx, uint8_t* rx, size_t len,
+                                  uint32_t timeout_ms,
+                                  ChipSelectFn chip_select = nullptr,
+                                  void* chip_select_arg = nullptr);
+    [[nodiscard]] Status sync_send(const uint8_t* tx, uint8_t* rx, size_t len,
+                                   uint32_t timeout_ms)
+    {
+        return transfer(tx, rx, len, timeout_ms, nullptr, nullptr);
+    }
+
     void isr_handler(osal::IsrContext& context);
     void dma_tx_isr(osal::IsrContext& context);
     void dma_rx_isr(osal::IsrContext& context);
 
-    /// 获取运行时统计
     [[nodiscard]] SpiStats get_stats() const { return m_stats; }
-
-    /// 重置统计计数器
     void reset_stats() { m_stats = {}; }
-
-    /// 获取总线互斥锁引用（供 SpiDevice 使用）
-    osal::Mutex &bus_mutex() { return m_bus_mutex; }
-
-    /// 获取传输完成信号量引用（供 ISR 使用）
-    osal::Semaphore &xfer_sem() { return m_xfer_sem; }
-
-    /// 获取基地址（供 ISR 分发使用）
-    uintptr_t base() const { return m_base; }
+    [[nodiscard]] const SpiConfig& config() const { return m_config; }
+    osal::Mutex& bus_mutex() { return m_bus_mutex; }
+    osal::Semaphore& xfer_sem() { return m_xfer_sem; }
+    [[nodiscard]] uintptr_t base() const { return m_base; }
 
 protected:
     explicit SpiBase(uintptr_t base) : m_base(base) {}
+
     uintptr_t m_base;
     osal::Mutex m_bus_mutex;
-    osal::Semaphore m_xfer_sem {0};
+    osal::Semaphore m_xfer_sem {0U, 2U};
     SpiStats m_stats {};
+    SpiConfig m_config {};
     DmaChannelConfig m_dma_tx {};
     DmaChannelConfig m_dma_rx {};
+    std::atomic<uint8_t> m_dma_done_mask {0U};
+    std::atomic<uint8_t> m_dma_error_mask {0U};
 };
 
 template <uintptr_t Base>
@@ -68,36 +75,89 @@ public:
     Spi() : SpiBase(Base) {}
 };
 
-/// SPI 设备（挂在总线上的从设备，支持多设备共享总线）
-template <int BusOrd, uint8_t CsIndex = 0xFF>
+template <int BusOrd, uint8_t CsIndex = 0xFFU>
 class SpiDevice {
 public:
-    [[nodiscard]] Status init(const SpiConfig &config) {
+    [[nodiscard]] Status init(const SpiConfig& config)
+    {
+        SpiBase& controller = bus();
+        if (!controller.is_initialized() || config.clock_hz == 0U
+            || config.data_bits != 8U) {
+            return Status::InvalidArgument;
+        }
+        const SpiConfig& bus_config = controller.config();
+        if (config.mode != bus_config.mode || config.data_bits != bus_config.data_bits
+            || config.clock_hz != bus_config.clock_hz) {
+            return Status::NotSupported;
+        }
         m_config = config;
         m_initialized = true;
         return Status::Ok;
     }
 
+    [[nodiscard]] Status deinit()
+    {
+        m_initialized = false;
+        m_chip_select = nullptr;
+        m_chip_select_arg = nullptr;
+        return Status::Ok;
+    }
+
+    void set_chip_select(SpiBase::ChipSelectFn fn, void* arg)
+    {
+        m_chip_select = fn;
+        m_chip_select_arg = arg;
+    }
+
+    [[nodiscard]] Status transfer(const uint8_t* tx, uint8_t* rx, size_t len,
+                                  uint32_t timeout_ms)
+    {
+        if (!m_initialized || m_chip_select == nullptr) {
+            return Status::InvalidArgument;
+        }
+        return bus().transfer(tx, rx, len, timeout_ms,
+                              m_chip_select, m_chip_select_arg);
+    }
+
     [[nodiscard]] bool is_initialized() const { return m_initialized; }
-
-    /// 获取总线实例引用
-    [[nodiscard]] SpiBase &bus() {
-        return DeviceTrait<BusOrd>::instance;
-    }
-
-    /// 获取配置
-    [[nodiscard]] const SpiBase &bus() const {
-        return DeviceTrait<BusOrd>::instance;
-    }
-
-    [[nodiscard]] const SpiConfig &config() const { return m_config; }
-
-    /// 获取 CS 索引
+    [[nodiscard]] SpiBase& bus() { return DeviceTrait<BusOrd>::instance; }
+    [[nodiscard]] const SpiBase& bus() const { return DeviceTrait<BusOrd>::instance; }
+    [[nodiscard]] const SpiConfig& config() const { return m_config; }
     [[nodiscard]] constexpr uint8_t cs_index() const { return CsIndex; }
 
 private:
     SpiConfig m_config {};
+    SpiBase::ChipSelectFn m_chip_select {nullptr};
+    void* m_chip_select_arg {nullptr};
     bool m_initialized {false};
 };
 
+namespace detail {
+
+class SpiChipSelectGuard {
+public:
+    SpiChipSelectGuard(SpiBase::ChipSelectFn fn, void* arg)
+        : fn_(fn), arg_(arg)
+    {
+        if (fn_ != nullptr) {
+            fn_(arg_, true);
+        }
+    }
+
+    ~SpiChipSelectGuard()
+    {
+        if (fn_ != nullptr) {
+            fn_(arg_, false);
+        }
+    }
+
+    SpiChipSelectGuard(const SpiChipSelectGuard&) = delete;
+    SpiChipSelectGuard& operator=(const SpiChipSelectGuard&) = delete;
+
+private:
+    SpiBase::ChipSelectFn fn_;
+    void* arg_;
+};
+
+} // namespace detail
 } // namespace hal

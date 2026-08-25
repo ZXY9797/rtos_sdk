@@ -48,9 +48,25 @@ constexpr uint32_t ICR_TCCF   = (1U << 6);
 constexpr uint32_t ICR_PECF   = (1U << 0);
 constexpr uint32_t ICR_FECF   = (1U << 1);
 constexpr uint32_t ICR_NCF    = (1U << 2);
+constexpr uint32_t kInitPollLimit = 1000000U;
+
+bool wait_ack_clear(volatile uint32_t &status, uint32_t mask) {
+    for (uint32_t poll = 0U; poll < kInitPollLimit; ++poll) {
+        if ((status & mask) == 0U) {
+            return true;
+        }
+    }
+    return false;
+}
 
 Status UartBase::init(const UartConfig &config) {
-    if (!config.rx_buffer || config.rx_buffer_size == 0) return Status::InvalidArgument;
+    if (!config.rx_buffer || config.rx_buffer_size == 0U
+        || config.baudrate == 0U) {
+        return Status::InvalidArgument;
+    }
+    if (!m_tx_mutex.is_valid() || !m_tx_sem.is_valid()) {
+        return Status::NoMemory;
+    }
     auto *regs = reinterpret_cast<UartRegs *>(m_base);
 
     if (!m_rx_stream.create(config.rx_buffer, config.rx_buffer_size, 1)) {
@@ -58,8 +74,11 @@ Status UartBase::init(const UartConfig &config) {
     }
 
     regs->CR1 = 0;
-    while (regs->ISR & ISR_TEACK) {}
-    while (regs->ISR & ISR_REACK) {}
+    if (!wait_ack_clear(regs->ISR, ISR_TEACK)
+        || !wait_ack_clear(regs->ISR, ISR_REACK)) {
+        m_rx_stream.destroy();
+        return Status::Timeout;
+    }
 
     uint32_t cr1 = 0;
     if (config.data_bits == DataBits::Bits9) cr1 |= CR1_M0;
@@ -87,24 +106,51 @@ Status UartBase::deinit() {
     return Status::Ok;
 }
 
-Status UartBase::send(const uint8_t *data, size_t len, size_t *bytes_sent, uint32_t timeout_ms) {
-    if (!is_initialized() || !data || len == 0) return Status::InvalidArgument;
-    osal::LockGuard lock(m_tx_mutex);
+Status UartBase::send(const uint8_t *data, size_t len,
+                      size_t *bytes_sent, uint32_t timeout_ms) {
+    if (bytes_sent) {
+        *bytes_sent = 0U;
+    }
+    if (!is_initialized() || !data || len == 0U) {
+        return Status::InvalidArgument;
+    }
+    osal::Deadline deadline(timeout_ms);
+    osal::LockGuard lock(m_tx_mutex, deadline.remaining());
+    if (!lock.owns_lock()) {
+        return Status::Timeout;
+    }
     auto *regs = reinterpret_cast<UartRegs *>(m_base);
 
+    while (m_tx_sem.take(0U) == 0) {
+    }
+
     for (size_t i = 0; i < len; i++) {
-        while (!(regs->ISR & ISR_TXE)) {}
+        while (!(regs->ISR & ISR_TXE)) {
+            if (deadline.expired()) {
+                if (bytes_sent) {
+                    *bytes_sent = i;
+                }
+                const IrqGuard guard;
+                ++m_stats.tx_timeouts;
+                return Status::Timeout;
+            }
+        }
         regs->TDR = data[i];
     }
 
     /* 使能 TC 中断，等待最后一位发送完成（ISR 释放信号量） */
     regs->CR1 |= CR1_TCIE;
-    if (m_tx_sem.take(timeout_ms) != 0) {
+    if (m_tx_sem.take(deadline.remaining()) != 0) {
         regs->CR1 &= ~CR1_TCIE;
+        const IrqGuard guard;
+        ++m_stats.tx_timeouts;
         return Status::Timeout;
     }
 
-    m_stats.tx_bytes += len;
+    {
+        const IrqGuard guard;
+        m_stats.tx_bytes += len;
+    }
     if (bytes_sent) *bytes_sent = len;
     return Status::Ok;
 }
@@ -133,6 +179,8 @@ void UartBase::isr_handler(osal::IsrContext& context) {
         size_t written = m_rx_stream.send_from_isr(&ch, 1, context);
         if (written > 0) {
             m_stats.rx_bytes++;
+        } else {
+            m_stats.rx_dropped++;
         }
     }
     if ((isr & ISR_TC) && (regs->CR1 & CR1_TCIE)) {

@@ -276,7 +276,7 @@ Thread::~Thread()
 Thread* Thread::create(const char* name, Entry entry, void* param,
                        size_t stack_size, int32_t prio, int32_t tick)
 {
-    auto* thread = new Thread(PrivateTag {});
+    auto* thread = new (std::nothrow) Thread(PrivateTag {});
     if (thread == nullptr) {
         return nullptr;
     }
@@ -406,21 +406,37 @@ bool Thread::abort_delay()
 // ─── IsrTrigger ──────────────────────────────────────────────────
 
 IsrTrigger::Slot IsrTrigger::s_slots[kMaxSlots];
-int IsrTrigger::s_count = 0;
 
 int IsrTrigger::register_slot(Callback cb, void *arg)
 {
-    if (cb == nullptr || s_count >= kMaxSlots) {
+    if (cb == nullptr) {
         return -1;
     }
-    const int id = s_count++;
-    s_slots[id] = {cb, arg};
-    return id;
+    taskENTER_CRITICAL();
+    for (int id = 0; id < kMaxSlots; ++id) {
+        if (s_slots[id].cb == nullptr) {
+            s_slots[id] = {cb, arg};
+            taskEXIT_CRITICAL();
+            return id;
+        }
+    }
+    taskEXIT_CRITICAL();
+    return -1;
+}
+
+void IsrTrigger::unregister_slot(int id)
+{
+    if (id < 0 || id >= kMaxSlots) {
+        return;
+    }
+    taskENTER_CRITICAL();
+    s_slots[id] = {};
+    taskEXIT_CRITICAL();
 }
 
 void IsrTrigger::fire(int id)
 {
-    if (id >= 0 && id < s_count && s_slots[id].cb) {
+    if (id >= 0 && id < kMaxSlots && s_slots[id].cb != nullptr) {
         s_slots[id].cb(s_slots[id].arg);
     }
 }
@@ -504,9 +520,19 @@ PeriodicThread::PeriodicThread(PrivateTag)
 PeriodicThread::~PeriodicThread()
 {
     (void)stop();
-    if (timer_) {
-        timer_->enable_update_irq(nullptr, nullptr);
+    if (timer_attached_) {
+        taskENTER_CRITICAL();
+        const bool detached = timer_->enable_update_irq(nullptr, nullptr);
+        if (detached) {
+            timer_attached_ = false;
+        }
+        taskEXIT_CRITICAL();
+        if (!detached) {
+            __builtin_trap();
+        }
     }
+    IsrTrigger::unregister_slot(trigger_id_);
+    trigger_id_ = -1;
     if (thread_.handle != nullptr) {
         vTaskDelete(thread_.handle);
         thread_.handle = nullptr;
@@ -524,7 +550,8 @@ PeriodicThread* PeriodicThread::create(const char* name,
                                        int32_t prio,
                                        uint32_t frequency_hz,
                                        PeriodicTrigger trigger,
-                                       IrqTimer *timer)
+                                       IrqTimer *timer,
+                                       bool register_isr_trigger)
 {
     if (entry == nullptr || frequency_hz == 0U || stack_size < sizeof(StackType_t)) {
         return nullptr;
@@ -533,7 +560,7 @@ PeriodicThread* PeriodicThread::create(const char* name,
         return nullptr;
     }
 
-    auto* thread = new PeriodicThread(PrivateTag {});
+    auto* thread = new (std::nothrow) PeriodicThread(PrivateTag {});
     if (thread == nullptr) {
         return nullptr;
     }
@@ -544,15 +571,24 @@ PeriodicThread* PeriodicThread::create(const char* name,
     thread->trigger_ = trigger;
 
     // External 模式：注册到 IsrTrigger 静态触发表
-    if (trigger == PeriodicTrigger::External) {
+    if (trigger == PeriodicTrigger::External && timer == nullptr
+        && register_isr_trigger) {
         thread->trigger_id_ = IsrTrigger::register_slot(
             timer_isr_callback, thread);
+        if (thread->trigger_id_ < 0) {
+            delete thread;
+            return nullptr;
+        }
     }
 
     // 如果传入了硬件定时器，自动连接 ISR 回调
     if (timer != nullptr) {
         thread->timer_ = timer;
-        timer->enable_update_irq(timer_isr_callback, thread);
+        if (!timer->enable_update_irq(timer_isr_callback, thread)) {
+            delete thread;
+            return nullptr;
+        }
+        thread->timer_attached_ = true;
     }
 
     if (trigger == PeriodicTrigger::External) {

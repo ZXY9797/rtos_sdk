@@ -26,6 +26,13 @@ struct HasIsInitialized<T,
     std::void_t<decltype(std::declval<T &>().is_initialized())>>
     : std::true_type {};
 
+template <typename T, typename = void>
+struct HasDeinit : std::false_type {};
+
+template <typename T>
+struct HasDeinit<T, std::void_t<decltype(std::declval<T &>().deinit())>>
+    : std::true_type {};
+
 /**
  * 统一设备就绪判定。
  *
@@ -34,7 +41,8 @@ struct HasIsInitialized<T,
  */
 template <typename T>
 inline bool device_ready(T &dev) {
-    if constexpr (std::is_base_of_v<DeviceBase, std::remove_reference_t<T>>) {
+    using DeviceType = std::remove_cv_t<std::remove_reference_t<T>>;
+    if constexpr (std::is_base_of_v<DeviceBase, DeviceType>) {
         return dev.is_ready();
     } else if constexpr (HasIsReady<T>::value) {
         return dev.is_ready();
@@ -42,6 +50,19 @@ inline bool device_ready(T &dev) {
         return dev.is_initialized();
     } else {
         return true;
+    }
+}
+
+/** Best-effort, idempotent device rollback used by generated initcalls. */
+template <typename T>
+inline int device_deinit(T &dev) {
+    if constexpr (!HasDeinit<T>::value) {
+        return 0;
+    } else if constexpr (std::is_void_v<decltype(dev.deinit())>) {
+        dev.deinit();
+        return 0;
+    } else {
+        return static_cast<int>(dev.deinit());
     }
 }
 
@@ -92,8 +113,8 @@ struct DeviceInfo {
     int ord;                ///< 设备 ordinal
     const char *alias;      ///< 设备别名（如 "uart0"）
     const char *type_name;  ///< 驱动类型名（如 "Uart"）
-    void *instance;         ///< 设备实例指针（DeviceBase* 如果继承了）
-    bool (*is_ready)(void *inst);  ///< 类型擦除的就绪检查（可为 nullptr）
+    const void *instance;   ///< 只读设备实例指针
+    bool (*is_ready)(const void *inst);  ///< 类型擦除的就绪检查
 };
 
 /**

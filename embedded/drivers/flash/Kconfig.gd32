@@ -2,6 +2,6 @@ config FLASH_GD32
 	bool "Flash driver for GD32"
 	select FLASH
 	default y
-	depends on SOC_FAMILY_GD
+	depends on SOC_FAMILY_GD && DT_HAS_SOC_NV_FLASH_ENABLED
 	help
 	  Enable Flash driver for GD32 family using FMC.

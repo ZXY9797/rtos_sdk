@@ -1,0 +1,31 @@
+menu "Logging"
+
+config LOG_ASYNC
+	bool "Asynchronous log dispatcher"
+	depends on OSAL_HAS_THREADS
+	default y
+	help
+	  Format in the producer and enqueue into a bounded static queue. A single
+	  consumer owns all backend writes. Producers never wait for UART output;
+	  records are counted as dropped when the queue is full or called from ISR.
+
+config LOG_QUEUE_DEPTH
+	int "Asynchronous log queue depth"
+	depends on LOG_ASYNC
+	range 2 64
+	default 8
+
+config LOG_THREAD_STACK_SIZE
+	int "Log consumer stack size in bytes"
+	depends on LOG_ASYNC
+	range 512 4096
+	default 768
+
+config LOG_BACKEND_TIMEOUT_MS
+	int "Per-record backend timeout in milliseconds"
+	range 1 1000
+	default 20
+	help
+	  Total timeout budget for a UART record including the line ending.
+
+endmenu

@@ -2,6 +2,7 @@
 
 #include <osal_types.h>
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 
@@ -45,6 +46,30 @@ public:
     static uint32_t uptime_ms();
     static void suspend_scheduler();
     static bool resume_scheduler();
+};
+
+class Deadline {
+public:
+    explicit Deadline(Milliseconds timeout_ms)
+        : started_ms_(Kernel::uptime_ms()), timeout_ms_(timeout_ms) {}
+
+    [[nodiscard]] Milliseconds remaining() const
+    {
+        if (timeout_ms_ == kWaitForever) {
+            return kWaitForever;
+        }
+        const Milliseconds elapsed = Kernel::uptime_ms() - started_ms_;
+        return elapsed >= timeout_ms_ ? 0U : timeout_ms_ - elapsed;
+    }
+
+    [[nodiscard]] bool expired() const
+    {
+        return timeout_ms_ != kWaitForever && remaining() == 0U;
+    }
+
+private:
+    Milliseconds started_ms_;
+    Milliseconds timeout_ms_;
 };
 
 class IsrContext {
@@ -119,7 +144,7 @@ private:
     osal_mutex_t handle_ {};
 };
 
-class LockGuard {
+class [[nodiscard]] LockGuard {
 public:
     explicit LockGuard(Mutex& mutex, Milliseconds timeout_ms = kWaitForever)
         : mutex_(mutex), locked_(mutex_.lock(timeout_ms) == 0) {}
@@ -221,6 +246,9 @@ public:
     /// @return 分配的 slot ID，失败返回 -1
     [[nodiscard]] static int register_slot(Callback cb, void *arg);
 
+    /// Release a slot before its callback owner is destroyed.
+    static void unregister_slot(int id);
+
     /// 通过 ID 触发回调（ISR-safe）
     static void fire(int id);
 
@@ -231,7 +259,6 @@ private:
         void *arg {nullptr};
     };
     static Slot s_slots[kMaxSlots];
-    static int s_count;
 };
 
 class PeriodicThread {
@@ -248,12 +275,15 @@ public:
                                                 int32_t priority,
                                                 uint32_t frequency_hz,
                                                 PeriodicTrigger trigger,
-                                                IrqTimer *timer = nullptr);
+                                                IrqTimer *timer = nullptr,
+                                                bool register_isr_trigger = true);
 
     [[nodiscard]] int startup();
     [[nodiscard]] int stop();
     [[nodiscard]] int notify_from_isr(uint32_t events = 1U);
-    [[nodiscard]] uint32_t missed() const { return missed_; }
+    [[nodiscard]] uint32_t missed() const {
+        return missed_.load(std::memory_order_relaxed);
+    }
 
     /// External 模式下分配的 IsrTrigger slot ID，供 core 层 ISR 通过 fire(id) 触发。
     /// Tick 模式返回 -1。
@@ -273,13 +303,14 @@ private:
     PeriodicEntry entry_ {nullptr};
     void* param_ {nullptr};
     IrqTimer *timer_ {nullptr};
+    bool timer_attached_ {false};
     uint32_t frequency_hz_ {0};
     int trigger_id_ {-1};
     PeriodicTrigger trigger_ {PeriodicTrigger::Tick};
-    volatile uint32_t sequence_ {0};
-    volatile uint32_t missed_ {0};
-    volatile uint32_t pending_ {0};
-    volatile bool running_ {false};
+    std::atomic<uint32_t> sequence_ {0U};
+    std::atomic<uint32_t> missed_ {0U};
+    std::atomic<uint32_t> pending_ {0U};
+    std::atomic<bool> running_ {false};
     bool started_ {false};
 };
 
@@ -422,6 +453,9 @@ public:
 
     CriticalSectionGuard(const CriticalSectionGuard&) = delete;
     CriticalSectionGuard& operator=(const CriticalSectionGuard&) = delete;
+
+private:
+    uintptr_t saved_state_ {};
 };
 
 class IsrCriticalSectionGuard {

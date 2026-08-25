@@ -66,7 +66,7 @@ GPIO 默认状态也可以由 pinctrl 完成，例如 LED 输出低、按键输�
 普通 app 同时编译 `drivers_generated.cc` 和 `pinctrl_generated.cc`。loader 默认也编译这两个生成源，升级通道不绑定到 UART：
 
 - `drivers_generated.cc` 只会为当前 loader DTS 中 `status = "okay"` 的节点生成实例。
-- UART、USB、CAN、BLE、SPI 等升级通道都通过 loader 自己的 DTS/Kconfig 裁剪，不再由 `CONFIG_BOOT_DFU_UART` 控制是否编译设备生成源。
+- UART、USB、CAN、BLE、SPI 等设备实例通过 loader 自己的 DTS/Kconfig 裁剪；设备生成源始终参与 loader 构建，具体恢复 transport 由 `BOOT_DFU_TRANSPORT` choice 选择。
 - 不属于 loader 的 ADC/PWM/Motor/IMU 等外设不要放到 loader DTS，或者保持 `status = "disabled"`，这样不会生成对应设备实例、OSAL 缓冲区和设备 initcall。
 - upgrade 当前只需要把通信管脚切到默认状态，所以仍只编译 `pinctrl_generated.cc`；后续如果 upgrade 也需要设备模型，再按固件职责显式接入 `drivers_generated.cc`。
 

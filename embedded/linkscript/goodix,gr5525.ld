@@ -87,26 +87,44 @@ SECTIONS
     {
         . = ALIGN(4);
         __init_start = .;
-        KEEP(*(.z_init_EARLY*))
+        KEEP(*(SORT(.z_init_EARLY_P_?_*)))
+        KEEP(*(SORT(.z_init_EARLY_P_??_*)))
+        KEEP(*(SORT(.z_init_EARLY_P_???_*)))
         __init_EARLY_end = .;
         __init_PRE_KERNEL_1_start = .;
-        KEEP(*(.z_init_PRE_KERNEL_1*))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_1_P_?_*)))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_1_P_??_*)))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_1_P_???_*)))
         __init_PRE_KERNEL_1_end = .;
         __init_PRE_KERNEL_2_start = .;
-        KEEP(*(.z_init_PRE_KERNEL_2*))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_2_P_?_*)))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_2_P_??_*)))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_2_P_???_*)))
         __init_PRE_KERNEL_2_end = .;
         __init_PRE_KERNEL_3_start = .;
-        KEEP(*(.z_init_PRE_KERNEL_3*))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_3_P_?_*)))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_3_P_??_*)))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_3_P_???_*)))
         __init_PRE_KERNEL_3_end = .;
         __init_POST_KERNEL_start = .;
-        KEEP(*(.z_init_POST_KERNEL*))
+        KEEP(*(SORT(.z_init_POST_KERNEL_P_?_*)))
+        KEEP(*(SORT(.z_init_POST_KERNEL_P_??_*)))
+        KEEP(*(SORT(.z_init_POST_KERNEL_P_???_*)))
         __init_POST_KERNEL_end = .;
         __init_APPLICATION_start = .;
-        KEEP(*(.z_init_APPLICATION*))
+        KEEP(*(SORT(.z_init_APPLICATION_P_?_*)))
+        KEEP(*(SORT(.z_init_APPLICATION_P_??_*)))
+        KEEP(*(SORT(.z_init_APPLICATION_P_???_*)))
         __init_APPLICATION_end = .;
         __init_end = .;
         . = ALIGN(4);
     } > FLASH
+
+    initlevel_error :
+    {
+        KEEP(*(SORT(.z_init_*)))
+    }
+    ASSERT(SIZEOF(initlevel_error) == 0, "Undefined initialization levels used.")
 
     device_area :
     {

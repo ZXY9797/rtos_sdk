@@ -10,10 +10,12 @@ target_include_directories(${MODULE_NAME}
         ${BSP_DIR}/include
     PRIVATE
         ${BSP_DIR}/modules/cmsis/CMSIS/Core/Include
-        ${BSP_DIR}/soc/gd/gd32f50x/include
-        ${BSP_DIR}/soc/goodix/gr5525x/include
-        ${BSP_DIR}/soc/goodix/gr5525x/include/hal
 )
+target_include_directories_ifdef(CONFIG_UART_GD32 ${MODULE_NAME} PRIVATE
+    ${BSP_DIR}/soc/gd/gd32f50x/include)
+target_include_directories_ifdef(CONFIG_UART_GR5525 ${MODULE_NAME} PRIVATE
+    ${BSP_DIR}/soc/goodix/gr5525x/include
+    ${BSP_DIR}/soc/goodix/gr5525x/include/hal)
 
 target_link_libraries(${MODULE_NAME}
     PUBLIC

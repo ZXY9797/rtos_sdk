@@ -71,8 +71,25 @@ endforeach()
 
 # Bring in extra configuration files dropped in by the user or anyone else;
 # make sure they are set at the end so we can override any other setting
-file(GLOB config_files ${PROJECT_CONFIG_DIR}/*.conf)
+file(GLOB config_files CONFIGURE_DEPENDS ${PROJECT_CONFIG_DIR}/*.conf)
 list(SORT config_files)
+if(DEFINED EXTRA_CONF_FILE)
+  list(APPEND config_files ${EXTRA_CONF_FILE})
+endif()
+
+# Track the complete first-party Kconfig file set, not only the files parsed
+# during the previous configure. This makes adding/removing a Kconfig file
+# behind an rsource/orsource glob invalidate the cached configuration.
+file(GLOB_RECURSE kconfig_source_candidates CONFIGURE_DEPENDS
+  LIST_DIRECTORIES false
+  ${TOP_DIR}/bootloader/common/Kconfig*
+  ${TOP_DIR}/embedded/Kconfig*
+  ${TOP_DIR}/component/Kconfig*
+  ${PROJECT_DIR}/Kconfig*
+)
+list(APPEND kconfig_source_candidates ${KCONFIG_ROOT})
+list(REMOVE_DUPLICATES kconfig_source_candidates)
+list(SORT kconfig_source_candidates)
 set(
   merge_config_files
   ${config_files}
@@ -103,20 +120,26 @@ endforeach()
 set(merge_config_files_checksum "")
 foreach(f ${merge_config_files})
   file(MD5 ${f} checksum)
-  set(merge_config_files_checksum "${merge_config_files_checksum}${checksum}")
+  set(merge_config_files_checksum
+      "${merge_config_files_checksum}${f}:${checksum}\n")
 endforeach()
 
 # Add to the checksum all the Kconfig files which were used last time
 set(merge_kconfig_checksum "")
+set(kconfig_checksum_inputs ${kconfig_source_candidates})
 if(EXISTS ${PARSED_KCONFIG_SOURCES_TXT})
   file(STRINGS ${PARSED_KCONFIG_SOURCES_TXT} parsed_kconfig_sources_list ENCODING UTF-8)
-  foreach(f ${parsed_kconfig_sources_list})
-    if(EXISTS ${f})
-      file(MD5 ${f} checksum)
-      set(merge_kconfig_checksum "${merge_kconfig_checksum}${checksum}")
-    endif()
-  endforeach()
+  list(APPEND kconfig_checksum_inputs ${parsed_kconfig_sources_list})
 endif()
+list(REMOVE_DUPLICATES kconfig_checksum_inputs)
+list(SORT kconfig_checksum_inputs)
+foreach(f ${kconfig_checksum_inputs})
+  if(EXISTS ${f})
+    file(MD5 ${f} checksum)
+    set(merge_kconfig_checksum
+        "${merge_kconfig_checksum}${f}:${checksum}\n")
+  endif()
+endforeach()
 
 # Create a new .config if it does not exists, or if the checksum of
 # the dependencies has changed
@@ -137,12 +160,6 @@ if(EXISTS ${DOTCONFIG} AND EXISTS ${merge_config_files_checksum_file})
     # Checksum is the same as before
     set(CREATE_NEW_DOTCONFIG 0)
   endif()
-endif()
-
-# Create a new .config if it does not exists
-set(CREATE_NEW_DOTCONFIG 1)
-if(EXISTS ${DOTCONFIG})
-    set(CREATE_NEW_DOTCONFIG 0)
 endif()
 
 if(CREATE_NEW_DOTCONFIG)
@@ -183,15 +200,22 @@ file(STRINGS ${PARSED_KCONFIG_SOURCES_TXT} parsed_kconfig_sources_list ENCODING 
 # Recalculate the Kconfig files' checksum, since the list of files may have
 # changed.
 set(merge_kconfig_checksum "")
-foreach(f ${parsed_kconfig_sources_list})
+set(kconfig_checksum_inputs
+    ${kconfig_source_candidates}
+    ${parsed_kconfig_sources_list})
+list(REMOVE_DUPLICATES kconfig_checksum_inputs)
+list(SORT kconfig_checksum_inputs)
+foreach(f ${kconfig_checksum_inputs})
   file(MD5 ${f} checksum)
-  set(merge_kconfig_checksum "${merge_kconfig_checksum}${checksum}")
+  set(merge_kconfig_checksum
+      "${merge_kconfig_checksum}${f}:${checksum}\n")
 endforeach()
 
 # Force CMAKE configure when the Kconfig sources or configuration files changes.
 foreach(kconfig_input
     ${merge_config_files}
     ${DOTCONFIG}
+    ${kconfig_source_candidates}
     ${parsed_kconfig_sources_list}
     )
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${kconfig_input})

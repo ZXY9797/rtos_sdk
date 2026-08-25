@@ -22,6 +22,7 @@ struct SpiRegs {
 // CR1
 constexpr uint32_t CR1_SPE    = (1U << 0);
 constexpr uint32_t CR1_CSTART = (1U << 9);
+constexpr uint32_t CR2_TSIZE_Msk = 0xFFFFU;
 // CFG1
 constexpr uint32_t CFG1_DSIZE_Pos = 0;
 constexpr uint32_t CFG1_FTHLV_Pos = 5;
@@ -46,6 +47,14 @@ constexpr uint32_t IFCR_OVRC  = (1U << 6);
 
 Status SpiBase::init(const SpiConfig &config) {
     HAL_ASSERT(m_base != 0);
+    if (config.clock_hz == 0U
+        || config.data_bits != 8U) {
+        return Status::InvalidArgument;
+    }
+    if (!m_bus_mutex.is_valid() || !m_xfer_sem.is_valid()) {
+        return Status::NoMemory;
+    }
+    m_config = config;
     auto *regs = reinterpret_cast<SpiRegs *>(m_base);
 
     regs->CR1 = 0;
@@ -84,29 +93,51 @@ void SpiBase::isr_handler(osal::IsrContext& context)
     }
 }
 
-Status SpiBase::sync_send(const uint8_t *tx, uint8_t *rx, size_t len, uint32_t timeout_ms) {
+Status SpiBase::transfer(const uint8_t *tx, uint8_t *rx, size_t len,
+                         uint32_t timeout_ms, ChipSelectFn chip_select,
+                         void *chip_select_arg) {
     HAL_ASSERT_MSG(is_initialized(), "SPI not initialized");
-    if (!is_initialized() || len == 0) return Status::InvalidArgument;
+    if (!is_initialized() || len == 0U || len > CR2_TSIZE_Msk) {
+        return Status::InvalidArgument;
+    }
 
-    osal::LockGuard lock(m_bus_mutex);
-
+    osal::Deadline deadline(timeout_ms);
+    osal::LockGuard lock(m_bus_mutex, deadline.remaining());
+    if (!lock.owns_lock()) {
+        return Status::Busy;
+    }
+    while (m_xfer_sem.take(0U) == 0) {
+    }
+    detail::SpiChipSelectGuard select_guard(chip_select, chip_select_arg);
     auto *regs = reinterpret_cast<SpiRegs *>(m_base);
 
     regs->IFCR = IFCR_EOTC | IFCR_TXTFC | IFCR_OVRC;
+    regs->CR2 = (regs->CR2 & ~CR2_TSIZE_Msk)
+        | static_cast<uint32_t>(len);
     regs->CR1 |= CR1_CSTART;
 
     /* 数据传输阶段：逐字节轮询（SPI 时钟 MHz 级，单字节延迟 <1μs） */
     for (size_t i = 0; i < len; i++) {
-        while (!(regs->SR & SR_TXP)) {}
+        while (!(regs->SR & SR_TXP)) {
+            if (deadline.expired()) {
+                m_stats.timeout_count++;
+                return Status::Timeout;
+            }
+        }
         regs->TXDR = tx ? tx[i] : 0xFF;
-        while (!(regs->SR & SR_RXP)) {}
+        while (!(regs->SR & SR_RXP)) {
+            if (deadline.expired()) {
+                m_stats.timeout_count++;
+                return Status::Timeout;
+            }
+        }
         uint8_t data = static_cast<uint8_t>(regs->RXDR);
         if (rx) rx[i] = data;
     }
 
     /* 最终等待：EOT 中断 + 信号量让出 CPU */
     regs->IER |= IER_EOTIE;
-    if (m_xfer_sem.take(timeout_ms) != 0) {
+    if (m_xfer_sem.take(deadline.remaining()) != 0) {
         regs->IER &= ~IER_EOTIE;
         m_stats.timeout_count++;
         return Status::Timeout;

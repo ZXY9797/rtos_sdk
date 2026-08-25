@@ -10,6 +10,7 @@ if CAN
 
 config CAN_INIT_PRIORITY
 	int "CAN init priority"
+	range 0 999
 	default KERNEL_INIT_PRIORITY_DEFAULT
 	help
 	  CAN driver device initialization priority.

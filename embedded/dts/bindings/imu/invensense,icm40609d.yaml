@@ -20,7 +20,8 @@ properties:
   sample-rate:
     type: int
     default: 16000
-    description: Output data rate in Hz
+    enum: [25, 50, 100, 200, 500, 1000, 2000, 4000, 8000, 16000, 32000]
+    description: Common accelerometer and gyroscope output data rate in Hz
   cs-gpios:
     type: phandle-array
     required: true
@@ -36,5 +37,7 @@ cxx-driver:
   requires:
     - parent
     - phandle-array: cs-gpios
-  init-level: pre-kernel-3
+      lifecycle: external
+  # SPI transfers use OSAL locking and completion primitives.
+  init-level: post-kernel
   init-priority: 20

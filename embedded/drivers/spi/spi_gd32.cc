@@ -39,13 +39,24 @@ void spi_clock_enable(uintptr_t base) {
 
 void dma_channel_isr(const DmaChannelConfig &config,
                      osal::Semaphore &semaphore,
-                     osal::IsrContext& context)
+                     osal::IsrContext& context,
+                     std::atomic<uint8_t> &done_mask,
+                     std::atomic<uint8_t> &error_mask,
+                     uint8_t channel_bit)
 {
     if (!config.is_valid() || config.channel > 6U) {
         return;
     }
 
     auto *dma = reinterpret_cast<gd32::DmaRegs *>(config.controller);
+    const uint32_t flags = dma->INTF >> (config.channel * 4U);
+    if ((flags & DMA_INTF_ERRIF) != 0U) {
+        error_mask.fetch_or(channel_bit, std::memory_order_relaxed);
+    }
+    if ((flags & (DMA_INTF_FTFIF | DMA_INTF_ERRIF)) == 0U) {
+        return;
+    }
+    done_mask.fetch_or(channel_bit, std::memory_order_relaxed);
     dma->INTC = (DMA_INTC_GIFC | DMA_INTC_FTFIFC
                  | DMA_INTC_HTFIFC | DMA_INTC_ERRIFC)
                 << (config.channel * 4U);
@@ -56,15 +67,21 @@ void dma_channel_isr(const DmaChannelConfig &config,
 
 Status SpiBase::init(const SpiConfig &config) {
     HAL_ASSERT(m_base != 0);
-    if (!config.dma_tx.is_valid() || !config.dma_rx.is_valid() ||
+    if (config.clock_hz == 0U
+        || config.data_bits != 8U
+        || !config.dma_tx.is_valid() || !config.dma_rx.is_valid() ||
         config.dma_tx.channel > 6U || config.dma_rx.channel > 6U ||
         (config.dma_tx.controller == config.dma_rx.controller &&
          config.dma_tx.channel == config.dma_rx.channel)) {
         return Status::InvalidArgument;
     }
+    if (!m_bus_mutex.is_valid() || !m_xfer_sem.is_valid()) {
+        return Status::NoMemory;
+    }
 
     m_dma_tx = config.dma_tx;
     m_dma_rx = config.dma_rx;
+    m_config = config;
 
     auto *regs = reinterpret_cast<gd32::SpiRegs *>(m_base);
     spi_clock_enable(m_base);
@@ -100,13 +117,23 @@ Status SpiBase::deinit() {
     return Status::Ok;
 }
 
-Status SpiBase::sync_send(const uint8_t *tx, uint8_t *rx, size_t len, uint32_t timeout_ms) {
+Status SpiBase::transfer(const uint8_t *tx, uint8_t *rx, size_t len,
+                         uint32_t timeout_ms, ChipSelectFn chip_select,
+                         void *chip_select_arg) {
     HAL_ASSERT_MSG(is_initialized(), "SPI not initialized");
     if (!is_initialized() || len == 0 || len > 0xFFFFU) {
         return Status::InvalidArgument;
     }
 
-    osal::LockGuard lock(m_bus_mutex);
+    osal::Deadline deadline(timeout_ms);
+    osal::LockGuard lock(m_bus_mutex, deadline.remaining());
+    if (!lock.owns_lock()) {
+        return Status::Busy;
+    }
+    while (m_xfer_sem.take(0U) == 0) {
+    }
+    m_dma_done_mask = 0U;
+    m_dma_error_mask = 0U;
 
     auto *regs = reinterpret_cast<gd32::SpiRegs *>(m_base);
 
@@ -155,6 +182,7 @@ Status SpiBase::sync_send(const uint8_t *tx, uint8_t *rx, size_t len, uint32_t t
         m_stats.error_count++;
         return dma_status;
     }
+    detail::SpiChipSelectGuard select_guard(chip_select, chip_select_arg);
     dma_status = tx_dma.start();
     if (dma_status != Status::Ok) {
         (void)rx_dma.stop();
@@ -163,14 +191,14 @@ Status SpiBase::sync_send(const uint8_t *tx, uint8_t *rx, size_t len, uint32_t t
     }
 
     /* 等待 TX DMA 完成（ISR 释放信号量） */
-    if (m_xfer_sem.take(timeout_ms) != 0) {
+    if (m_xfer_sem.take(deadline.remaining()) != 0) {
         m_stats.timeout_count++;
         (void)tx_dma.stop(); (void)rx_dma.stop();
         tx_dma.clear_flags(); rx_dma.clear_flags();
         return Status::Timeout;
     }
     /* 等待 RX DMA 完成 */
-    if (m_xfer_sem.take(timeout_ms) != 0) {
+    if (m_xfer_sem.take(deadline.remaining()) != 0) {
         m_stats.timeout_count++;
         (void)tx_dma.stop(); (void)rx_dma.stop();
         tx_dma.clear_flags(); rx_dma.clear_flags();
@@ -178,9 +206,15 @@ Status SpiBase::sync_send(const uint8_t *tx, uint8_t *rx, size_t len, uint32_t t
     }
 
     /* 等待 SPI 总线空闲 */
-    uint32_t start_tick = osal::Kernel::tick_count();
+    if (m_dma_error_mask.load(std::memory_order_relaxed) != 0U
+        || m_dma_done_mask.load(std::memory_order_relaxed) != 0x03U) {
+        (void)tx_dma.stop();
+        (void)rx_dma.stop();
+        m_stats.error_count++;
+        return Status::HardwareError;
+    }
     while (regs->STAT & STAT_TRANS) {
-        if ((osal::Kernel::tick_count() - start_tick) >= timeout_ms) {
+        if (deadline.expired()) {
             m_stats.timeout_count++;
             return Status::Timeout;
         }
@@ -193,12 +227,14 @@ Status SpiBase::sync_send(const uint8_t *tx, uint8_t *rx, size_t len, uint32_t t
 
 void SpiBase::dma_tx_isr(osal::IsrContext& context)
 {
-    dma_channel_isr(m_dma_tx, m_xfer_sem, context);
+    dma_channel_isr(m_dma_tx, m_xfer_sem, context,
+                    m_dma_done_mask, m_dma_error_mask, 0x01U);
 }
 
 void SpiBase::dma_rx_isr(osal::IsrContext& context)
 {
-    dma_channel_isr(m_dma_rx, m_xfer_sem, context);
+    dma_channel_isr(m_dma_rx, m_xfer_sem, context,
+                    m_dma_done_mask, m_dma_error_mask, 0x02U);
 }
 
 } // namespace hal

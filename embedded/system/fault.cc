@@ -1,18 +1,23 @@
 #include <arch/arm/cortex_m/fault.h>
 #include <cmsis_core.h>
-#include <log.h>
 #include <init.h>
 #include <cstdarg>
-#include <cstdio>
+
+extern "C" {
+extern uint8_t __ram_region_start;
+extern uint8_t __ram_region_end;
+}
 
 namespace hal::fault {
 
 // ============================================================
-//  底层输出（异常上下文专用，不依赖 RTOS/LOG）
-//  putc 是弱符号，SoC 层可覆盖为 UART 寄存器直写
+//  Fault-context output: no RTOS or normal logging dependencies.
+//  Enabling CONFIG_FAULT_UART_BACKEND requires a strong product provider.
 // ============================================================
 
+#if !defined(CONFIG_FAULT_UART_BACKEND)
 [[gnu::weak]] void putc(char c) { (void)c; }
+#endif
 void print(const char *s) { while (*s) putc(*s++); }
 
 void printHex(uint32_t val) {
@@ -48,105 +53,102 @@ static void vprint(const char *fmt, va_list ap) {
 }
 
 // ============================================================
-//  格式化记录输出（共享工具）
+//  逐字段记录输出（无 libc/heap/锁）
 // ============================================================
 
-static constexpr size_t RECORD_BUF_SIZE = 1024;
 
-static size_t formatRecord(const FaultRecord &rec, char *buf, size_t bufSize) {
-    size_t pos = 0;
-
-    auto append = [&](const char *fmt, ...) {
-        va_list ap;
-        va_start(ap, fmt);
-        int n = vsnprintf(buf + pos, bufSize - pos, fmt, ap);
-        va_end(ap);
-        if (n > 0) pos += static_cast<size_t>(n);
-    };
-
-    auto appendCfsr = [&](uint32_t cfsr) {
-        if (cfsr & Cfsr::MMFSR_MASK) {
-            append("  MemManage:");
-            if (cfsr & Cfsr::IACCVIOL)  append(" IACCVIOL");
-            if (cfsr & Cfsr::DACCVIOL)  append(" DACCVIOL");
-            if (cfsr & Cfsr::MUNSTKERR) append(" MUNSTKERR");
-            if (cfsr & Cfsr::MSTKERR)   append(" MSTKERR");
-            if (cfsr & Cfsr::MLSPERR)   append(" MLSPERR");
-            if (cfsr & Cfsr::MMARVALID) { append(" MMFAR="); append("0x%08X", SCB->MMFAR); }
-            append("\n");
-        }
-        if (cfsr & Cfsr::BFSR_MASK) {
-            append("  BusFault:");
-            if (cfsr & Cfsr::IBUSERR)     append(" IBUSERR");
-            if (cfsr & Cfsr::PRECISERR)   append(" PRECISERR");
-            if (cfsr & Cfsr::IMPRECISERR) append(" IMPRECISERR");
-            if (cfsr & Cfsr::UNSTKERR)    append(" UNSTKERR");
-            if (cfsr & Cfsr::STKERR)      append(" STKERR");
-            if (cfsr & Cfsr::LSPERR)      append(" LSPERR");
-            if (cfsr & Cfsr::BFARVALID)   { append(" BFAR="); append("0x%08X", SCB->BFAR); }
-            append("\n");
-        }
-        if (cfsr & Cfsr::UFSR_MASK) {
-            append("  UsageFault:");
-            if (cfsr & Cfsr::UNDEFINSTR) append(" UNDEFINSTR");
-            if (cfsr & Cfsr::INVSTATE)   append(" INVSTATE");
-            if (cfsr & Cfsr::INVPC)      append(" INVPC");
-            if (cfsr & Cfsr::NOCP)       append(" NOCP");
-            if (cfsr & Cfsr::UNALIGNED)  append(" UNALIGNED");
-            if (cfsr & Cfsr::DIVBYZERO)  append(" DIVBYZERO");
-            append("\n");
-        }
-    };
-
-    auto appendHfsr = [&](uint32_t hfsr) {
-        if (hfsr & Hfsr::VECTTBL)  append("  HFSR: VECTTBL\n");
-        if (hfsr & Hfsr::FORCED)   append("  HFSR: FORCED\n");
-        if (hfsr & Hfsr::DEBUGEVT) append("  HFSR: DEBUGEVT\n");
-    };
-
-    append("R0 : 0x%08X\n", rec.frame.r0);
-    append("R1 : 0x%08X\n", rec.frame.r1);
-    append("R2 : 0x%08X\n", rec.frame.r2);
-    append("R3 : 0x%08X\n", rec.frame.r3);
-    append("R12: 0x%08X\n", rec.frame.r12);
-    append("LR : 0x%08X\n", rec.frame.lr);
-    append("PC : 0x%08X\n", rec.frame.pc);
-    append("xPSR: 0x%08X\n", rec.frame.xpsr);
-    append("EXC_RETURN: 0x%08X\n", rec.excReturn);
-    append("CFSR: 0x%08X\n", rec.cfsr);
-    append("HFSR: 0x%08X\n", rec.hfsr);
-    appendCfsr(rec.cfsr);
-    appendHfsr(rec.hfsr);
-    append("MSP: 0x%08X\n", rec.msp);
-    append("PSP: 0x%08X\n", rec.psp);
-
-    if (rec.backtraceDepth > 0) {
-        append("Backtrace (%d frames):\n", rec.backtraceDepth);
-        for (int i = 0; i < rec.backtraceDepth; ++i) {
-            append("  #%d 0x%08X\n", i, rec.backtrace[i]);
-        }
-    }
-
-    if (rec.snapshotSp) {
-        append("Stack @ 0x%08X:\n", rec.snapshotSp);
-        for (int i = 0; i < FaultRecord::STACK_SNAPSHOT_WORDS; i += 4) {
-            append("0x%08X: ", rec.snapshotSp + i * 4);
-            for (int j = 0; j < 4 && (i + j) < FaultRecord::STACK_SNAPSHOT_WORDS; ++j) {
-                append("0x%08X ", rec.stackSnapshot[i + j]);
-            }
-            append("\n");
-        }
-    }
-
-    return pos;
+// Fault context output must not use libc formatting, heap allocation, locks,
+// or a large stack buffer. Emit each field through the polling putc hook.
+static void printNamedHex(const char *name, uint32_t value) {
+    print(name);
+    printHex(value);
+    putc('\n');
 }
 
-// 异常上下文：逐字符输出到 putc
 static void printRecord(const FaultRecord &rec) {
-    char buf[RECORD_BUF_SIZE];
-    size_t len = formatRecord(rec, buf, sizeof(buf));
-    for (size_t i = 0; i < len; ++i) {
-        putc(buf[i]);
+    printNamedHex("R0 : ", rec.frame.r0);
+    printNamedHex("R1 : ", rec.frame.r1);
+    printNamedHex("R2 : ", rec.frame.r2);
+    printNamedHex("R3 : ", rec.frame.r3);
+    printNamedHex("R12: ", rec.frame.r12);
+    printNamedHex("LR : ", rec.frame.lr);
+    printNamedHex("PC : ", rec.frame.pc);
+    printNamedHex("xPSR: ", rec.frame.xpsr);
+    printNamedHex("EXC_RETURN: ", rec.excReturn);
+    printNamedHex("CFSR: ", rec.cfsr);
+    printNamedHex("HFSR: ", rec.hfsr);
+
+    if ((rec.cfsr & Cfsr::MMFSR_MASK) != 0U) {
+        print("  MemManage:");
+        if ((rec.cfsr & Cfsr::IACCVIOL) != 0U)  print(" IACCVIOL");
+        if ((rec.cfsr & Cfsr::DACCVIOL) != 0U)  print(" DACCVIOL");
+        if ((rec.cfsr & Cfsr::MUNSTKERR) != 0U) print(" MUNSTKERR");
+        if ((rec.cfsr & Cfsr::MSTKERR) != 0U)   print(" MSTKERR");
+        if ((rec.cfsr & Cfsr::MLSPERR) != 0U)   print(" MLSPERR");
+        if ((rec.cfsr & Cfsr::MMARVALID) != 0U) {
+            print(" MMFAR=");
+            printHex(rec.mmfar);
+        }
+        putc('\n');
+    }
+    if ((rec.cfsr & Cfsr::BFSR_MASK) != 0U) {
+        print("  BusFault:");
+        if ((rec.cfsr & Cfsr::IBUSERR) != 0U)     print(" IBUSERR");
+        if ((rec.cfsr & Cfsr::PRECISERR) != 0U)   print(" PRECISERR");
+        if ((rec.cfsr & Cfsr::IMPRECISERR) != 0U) print(" IMPRECISERR");
+        if ((rec.cfsr & Cfsr::UNSTKERR) != 0U)    print(" UNSTKERR");
+        if ((rec.cfsr & Cfsr::STKERR) != 0U)      print(" STKERR");
+        if ((rec.cfsr & Cfsr::LSPERR) != 0U)      print(" LSPERR");
+        if ((rec.cfsr & Cfsr::BFARVALID) != 0U) {
+            print(" BFAR=");
+            printHex(rec.bfar);
+        }
+        putc('\n');
+    }
+    if ((rec.cfsr & Cfsr::UFSR_MASK) != 0U) {
+        print("  UsageFault:");
+        if ((rec.cfsr & Cfsr::UNDEFINSTR) != 0U) print(" UNDEFINSTR");
+        if ((rec.cfsr & Cfsr::INVSTATE) != 0U)   print(" INVSTATE");
+        if ((rec.cfsr & Cfsr::INVPC) != 0U)      print(" INVPC");
+        if ((rec.cfsr & Cfsr::NOCP) != 0U)       print(" NOCP");
+        if ((rec.cfsr & Cfsr::UNALIGNED) != 0U)  print(" UNALIGNED");
+        if ((rec.cfsr & Cfsr::DIVBYZERO) != 0U)  print(" DIVBYZERO");
+        putc('\n');
+    }
+    if ((rec.hfsr & Hfsr::VECTTBL) != 0U)  print("  HFSR: VECTTBL\n");
+    if ((rec.hfsr & Hfsr::FORCED) != 0U)   print("  HFSR: FORCED\n");
+    if ((rec.hfsr & Hfsr::DEBUGEVT) != 0U) print("  HFSR: DEBUGEVT\n");
+
+    printNamedHex("MSP: ", rec.msp);
+    printNamedHex("PSP: ", rec.psp);
+
+    if (rec.backtraceDepth > 0) {
+        print("Backtrace (");
+        printDec(static_cast<uint32_t>(rec.backtraceDepth));
+        print(" frames):\n");
+        for (int i = 0; i < rec.backtraceDepth; ++i) {
+            print("  #");
+            printDec(static_cast<uint32_t>(i));
+            putc(' ');
+            printHex(rec.backtrace[i]);
+            putc('\n');
+        }
+    }
+
+    if (rec.snapshotSp != 0U) {
+        print("Stack @ ");
+        printHex(rec.snapshotSp);
+        print(":\n");
+        for (int i = 0; i < FaultRecord::STACK_SNAPSHOT_WORDS; i += 4) {
+            printHex(rec.snapshotSp + static_cast<uint32_t>(i * 4));
+            print(": ");
+            for (int j = 0;
+                 j < 4 && (i + j) < FaultRecord::STACK_SNAPSHOT_WORDS; ++j) {
+                printHex(rec.stackSnapshot[i + j]);
+                putc(' ');
+            }
+            putc('\n');
+        }
     }
 }
 
@@ -160,99 +162,153 @@ static FaultRecord s_faultRecord;
 
 const FaultRecord *getRecord() { return &s_faultRecord; }
 
-class NoinitBackend : public IBackend {
-public:
-    void onFault(const FaultRecord &rec) override {
-        s_faultRecord = rec;
+static void noinit_on_fault(void *, const FaultRecord &rec) {
+    s_faultRecord.magic = 0U;
+    __DSB();
+    const auto *source = reinterpret_cast<const unsigned char *>(&rec);
+    auto *destination = reinterpret_cast<volatile unsigned char *>(
+        &s_faultRecord);
+    for (size_t index = sizeof(s_faultRecord.magic);
+         index < sizeof(FaultRecord); ++index) {
+        destination[index] = source[index];
     }
-    void onBoot() override {}
-    void clear() override {
-        s_faultRecord.magic = 0;
-    }
-};
+    __DSB();
+    s_faultRecord.magic = FaultRecord::MAGIC;
+    __DSB();
+}
 
-static NoinitBackend s_noinitBackend;
+static void noinit_clear(void *) {
+    s_faultRecord.magic = 0U;
+}
 #else
 const FaultRecord *getRecord() { return nullptr; }
 #endif
 
 // ============================================================
-//  UartBackend
-//  - onFault: 异常上下文，使用 putc 弱符号（不依赖 RTOS）
-//  - onBoot:  正常线程上下文，使用 LOG 模块
+//  UART backend. Both paths use the required polling putc provider.
 // ============================================================
 
 #ifdef CONFIG_FAULT_UART_BACKEND
-class UartBackend : public IBackend {
-public:
-    void onFault(const FaultRecord &rec) override {
-        print("===== FAULT =====\n");
-        printRecord(rec);
-        print("==================\n");
-    }
-    void onBoot() override {
-#ifdef CONFIG_FAULT_NOINIT_BACKEND
-        if (!s_faultRecord.valid()) return;
-        char buf[RECORD_BUF_SIZE];
-        formatRecord(s_faultRecord, buf, sizeof(buf));
-        log_write(LogLevel::Error, "fault", "===== LAST FAULT (noinit) =====\n%s"
-                   "================================", buf);
-#endif
-    }
-};
+static void uart_on_fault(void *, const FaultRecord &rec) {
+    print("===== FAULT =====\n");
+    printRecord(rec);
+    print("==================\n");
+}
 
-static UartBackend s_uartBackend;
+static void uart_on_boot(void *) {
+#ifdef CONFIG_FAULT_NOINIT_BACKEND
+    if (!s_faultRecord.valid()) return;
+    print("===== LAST FAULT (noinit) =====\n");
+    printRecord(s_faultRecord);
+    print("================================\n");
+#endif
+}
 #endif
 
 // ============================================================
 //  后端注册
 // ============================================================
 
-static IBackend *s_backends[MAX_BACKENDS] = {};
-static int s_backendCount = 0;
+static Backend s_backends[MAX_BACKENDS] {};
+static size_t s_backendCount = 0U;
+static bool s_registryFrozen = false;
 
-void registerBackend(IBackend *backend) {
-    if (s_backendCount < MAX_BACKENDS) {
-        s_backends[s_backendCount++] = backend;
+static bool backend_equal(const Backend &lhs, const Backend &rhs) {
+    return lhs.context == rhs.context
+        && lhs.on_fault == rhs.on_fault
+        && lhs.on_boot == rhs.on_boot
+        && lhs.clear == rhs.clear;
+}
+
+bool registerBackend(const Backend &backend) {
+    if (backend.on_fault == nullptr) return false;
+
+    const uint32_t previous_mask = __get_PRIMASK();
+    __disable_irq();
+    bool accepted = !s_registryFrozen;
+    for (size_t index = 0U; accepted && index < s_backendCount; ++index) {
+        if (backend_equal(s_backends[index], backend)) {
+            accepted = true;
+            if (previous_mask == 0U) __enable_irq();
+            return accepted;
+        }
     }
+    if (accepted && s_backendCount < MAX_BACKENDS) {
+        s_backends[s_backendCount++] = backend;
+    } else {
+        accepted = false;
+    }
+    if (previous_mask == 0U) __enable_irq();
+    return accepted;
 }
 
 void notifyFault(const FaultRecord &rec) {
-    for (int i = 0; i < s_backendCount; ++i) {
-        s_backends[i]->onFault(rec);
+#ifdef CONFIG_FAULT_NOINIT_BACKEND
+    // Built-in backends must work before PRE_KERNEL_1 fault_init() runs.
+    noinit_on_fault(nullptr, rec);
+#endif
+#ifdef CONFIG_FAULT_UART_BACKEND
+    uart_on_fault(nullptr, rec);
+#endif
+    for (size_t index = 0U; index < s_backendCount; ++index) {
+        s_backends[index].on_fault(s_backends[index].context, rec);
     }
 }
 
-// SYS_INIT 自动初始化：注册后端 + 触发 onBoot
+// SYS_INIT 自动初始化：启动期输出持久化记录。Built-in fault handling
+// itself does not depend on this initcall, so early faults are still captured.
 static int fault_init() {
+    const uint32_t previous_mask = __get_PRIMASK();
+    __disable_irq();
+    s_registryFrozen = true;
+    if (previous_mask == 0U) __enable_irq();
 #ifdef CONFIG_FAULT_NOINIT_BACKEND
-    registerBackend(&s_noinitBackend);
+    // Noinit capture requires no boot-time action.
 #endif
 #ifdef CONFIG_FAULT_UART_BACKEND
-    registerBackend(&s_uartBackend);
+    uart_on_boot(nullptr);
 #endif
 
-    for (int i = 0; i < s_backendCount; ++i) {
-        s_backends[i]->onBoot();
+    for (size_t index = 0U; index < s_backendCount; ++index) {
+        if (s_backends[index].on_boot != nullptr) {
+            s_backends[index].on_boot(s_backends[index].context);
+        }
     }
     return 0;
 }
 
-SYS_INIT(fault_init, INITCALL_LEVEL_PRE_KERNEL_1, 10);
+static int fault_deinit() {
+    const uint32_t previous_mask = __get_PRIMASK();
+    __disable_irq();
+    for (size_t index = 0U; index < s_backendCount; ++index) {
+        s_backends[index] = {};
+    }
+    s_backendCount = 0U;
+    s_registryFrozen = false;
+    if (previous_mask == 0U) __enable_irq();
+    return 0;
+}
+
+SYS_INIT_ROLLBACK(fault_init, fault_deinit,
+                  INITCALL_LEVEL_PRE_KERNEL_1, 10);
 
 void dump() {
 #ifdef CONFIG_FAULT_NOINIT_BACKEND
     if (!s_faultRecord.valid()) return;
-    char buf[RECORD_BUF_SIZE];
-    formatRecord(s_faultRecord, buf, sizeof(buf));
-    log_write(LogLevel::Error, "fault", "===== LAST FAULT (noinit) =====\n%s"
-               "================================", buf);
+    print("===== LAST FAULT (noinit) =====\n");
+    printRecord(s_faultRecord);
+    print("================================\n");
 #endif
 }
 
 void clear() {
-    for (int i = 0; i < s_backendCount; ++i) {
-        s_backends[i]->clear();
+#ifdef CONFIG_FAULT_NOINIT_BACKEND
+    noinit_clear(nullptr);
+#endif
+    for (size_t index = 0U; index < s_backendCount; ++index) {
+        if (s_backends[index].clear != nullptr) {
+            s_backends[index].clear(s_backends[index].context);
+        }
     }
 }
 
@@ -260,24 +316,40 @@ void clear() {
 //  帧指针回溯
 // ============================================================
 
+static bool ramRangeValid(uint32_t address, size_t length) {
+    const uintptr_t ramStart = reinterpret_cast<uintptr_t>(&__ram_region_start);
+    const uintptr_t ramEnd = reinterpret_cast<uintptr_t>(&__ram_region_end);
+    const uint64_t end = static_cast<uint64_t>(address) + length;
+    return ramStart < ramEnd && address >= ramStart && end <= ramEnd;
+}
+
 static int unwindFramePointer(uint32_t fp, uint32_t *out, int maxDepth) {
     int depth = 0;
     for (int i = 0; i < maxDepth; ++i) {
-        if (fp == 0 || (fp & 0x3)) break;
-        uint32_t *frame = reinterpret_cast<uint32_t *>(fp);
-        uint32_t nextFp = frame[0];
-        uint32_t retAddr = frame[1];
-        if (retAddr == 0) break;
+        if ((fp & 0x3U) != 0U || !ramRangeValid(fp, 2U * sizeof(uint32_t))) {
+            break;
+        }
+        const auto *frame = reinterpret_cast<const uint32_t *>(fp);
+        const uint32_t nextFp = frame[0];
+        const uint32_t retAddr = frame[1];
+        if ((retAddr & 0x1U) == 0U) break;
         out[depth++] = retAddr;
-        if (nextFp <= fp) break;
+        if (nextFp <= fp || !ramRangeValid(nextFp, 2U * sizeof(uint32_t))) {
+            break;
+        }
         fp = nextFp;
     }
     return depth;
 }
 
 static void captureStackSnapshot(uint32_t sp, FaultRecord &rec) {
+    constexpr size_t snapshotBytes = sizeof(rec.stackSnapshot);
+    if ((sp & 0x3U) != 0U || !ramRangeValid(sp, snapshotBytes)) {
+        rec.snapshotSp = 0U;
+        return;
+    }
     rec.snapshotSp = sp;
-    uint32_t *src = reinterpret_cast<uint32_t *>(sp);
+    const auto *src = reinterpret_cast<const uint32_t *>(sp);
     for (int i = 0; i < FaultRecord::STACK_SNAPSHOT_WORDS; ++i) {
         rec.stackSnapshot[i] = src[i];
     }
@@ -287,30 +359,40 @@ static void captureStackSnapshot(uint32_t sp, FaultRecord &rec) {
 //  FaultRecord 构建
 // ============================================================
 
-static FaultRecord buildRecord(const Frame *frame, uint32_t excReturn) {
+static FaultRecord s_activeFaultRecord;
+
+static void buildRecord(FaultRecord &rec, const Frame *frame,
+                        uint32_t excReturn, uint32_t activeSp) {
     const bool usedPsp = (excReturn & 0x04) != 0;
     const uint32_t msp = __get_MSP();
     const uint32_t psp = __get_PSP();
-    const uint32_t activeSp = usedPsp ? psp : msp;
 
-    FaultRecord rec{};
+    rec = {};
     rec.magic      = FaultRecord::MAGIC;
     rec.cfsr       = SCB->CFSR;
     rec.hfsr       = SCB->HFSR;
     rec.mmfar      = SCB->MMFAR;
     rec.bfar       = SCB->BFAR;
     rec.excReturn  = excReturn;
-    rec.frame      = *frame;
-    rec.msp        = msp;
-    rec.psp        = psp;
+    if (frame != nullptr
+        && ramRangeValid(static_cast<uint32_t>(
+            reinterpret_cast<uintptr_t>(frame)), sizeof(Frame))) {
+        rec.frame = *frame;
+    }
+    rec.msp        = usedPsp ? msp : activeSp;
+    rec.psp        = usedPsp ? activeSp : psp;
 
 #ifdef CONFIG_FAULT_BACKTRACE
     // 帧指针回溯
-    uint32_t fpReg = usedPsp ? frame->r7 : frame->r11;
-    rec.backtrace[0] = frame->lr;
-    rec.backtraceDepth = 1 +
-        unwindFramePointer(fpReg, &rec.backtrace[1],
-                           FaultRecord::MAX_BACKTRACE - 1);
+    if (frame != nullptr
+        && ramRangeValid(static_cast<uint32_t>(
+            reinterpret_cast<uintptr_t>(frame)), sizeof(Frame))) {
+        const uint32_t fpReg = usedPsp ? rec.frame.r7 : rec.frame.r11;
+        rec.backtrace[0] = rec.frame.lr;
+        rec.backtraceDepth = 1 +
+            unwindFramePointer(fpReg, &rec.backtrace[1],
+                               FaultRecord::MAX_BACKTRACE - 1);
+    }
 #endif
 
 #ifdef CONFIG_FAULT_STACK_SNAPSHOT
@@ -318,7 +400,7 @@ static FaultRecord buildRecord(const Frame *frame, uint32_t excReturn) {
     captureStackSnapshot(activeSp, rec);
 #endif
 
-    return rec;
+    rec.crc32 = rec.calculateCrc();
 }
 
 } // namespace hal::fault
@@ -328,18 +410,25 @@ static FaultRecord buildRecord(const Frame *frame, uint32_t excReturn) {
 // ============================================================
 
 extern "C" [[noreturn]]
-void arm_fault_handler(const hal::fault::Frame *frame, uint32_t excReturn)
+void arm_fault_handler(const hal::fault::Frame *frame, uint32_t excReturn,
+                       uint32_t activeSp)
 {
     using namespace hal::fault;
 
+    __disable_irq();
+
     // 1. 构建完整记录
-    FaultRecord rec = buildRecord(frame, excReturn);
+    buildRecord(s_activeFaultRecord, frame, excReturn, activeSp);
 
     // 2. 遍历所有后端
-    notifyFault(rec);
+    notifyFault(s_activeFaultRecord);
 
-    // 3. 死循环
-    for (;;) {}
+    // 3. Stop all normal execution. WFI keeps the failed system quiescent
+    // while still allowing a debugger to inspect the captured record.
+    __DSB();
+    for (;;) {
+        __WFI();
+    }
 }
 
 void assert_print(const char *fmt, ...) {
@@ -358,5 +447,9 @@ assert_post_action(const char *file, unsigned int line) {
     print(":");
     printDec(line);
     putc('\n');
-    for (;;) {}
+    __disable_irq();
+    __DSB();
+    for (;;) {
+        __WFI();
+    }
 }

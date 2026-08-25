@@ -35,6 +35,7 @@ set(VENDOR_PREFIXES             dts/bindings/vendor-prefixes.txt)
 
 set(dts_files
   ${DTS_SOURCE}
+  ${BOOT_PARTITIONS_DTS}
   # ${board_extension_dts_files}
   # ${shield_dts_files}
   )

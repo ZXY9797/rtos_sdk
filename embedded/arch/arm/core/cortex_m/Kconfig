@@ -30,10 +30,12 @@ config FAULT_NOINIT_BACKEND
 
 config FAULT_UART_BACKEND
 	bool "UART backend (print fault on exception + boot)"
-	default y
+	default n
 	help
-	  Print fault diagnostics via putc on exception, and via LOG
-	  on boot if a previous fault was recorded.
+	  Print fault diagnostics using the polling hal::fault::putc provider.
+	  Enabling this option without a strong, fault-context-safe provider is a
+	  link error. The provider must not use interrupts, DMA, RTOS services,
+	  locks, heap allocation, or an unbounded peripheral wait.
 
 config FAULT_STACK_SNAPSHOT
 	bool "Stack snapshot capture"

@@ -36,6 +36,44 @@ uint32_t SystemSlowClock = 32768UL;
 #define VECTOR_TABLE_SIZE  (MAX_NUMS_IRQn + 16)
 __ALIGNED(0x100) uint32_t ram_vector_table[VECTOR_TABLE_SIZE];
 
+static void copy_active_vector_table(void)
+{
+    const volatile uint32_t *active_vectors =
+        (const volatile uint32_t *)(uintptr_t)SCB->VTOR;
+    uint32_t i;
+
+    for (i = 0U; i < VECTOR_TABLE_SIZE; i++)
+    {
+        ram_vector_table[i] = active_vectors[i];
+    }
+}
+
+void soc_register_nvic(IRQn_Type indx, uint32_t func)
+{
+    const int32_t irq = (int32_t)indx;
+    uint32_t primask;
+
+    if ((irq < 0) || ((uint32_t)irq >= MAX_NUMS_IRQn) || (func == 0U))
+    {
+        return;
+    }
+
+    primask = __get_PRIMASK();
+    __disable_irq();
+
+    if (SCB->VTOR != (uint32_t)(uintptr_t)ram_vector_table)
+    {
+        copy_active_vector_table();
+    }
+
+    ram_vector_table[16U + (uint32_t)irq] = func;
+    __DSB();
+    SCB->VTOR = (uint32_t)(uintptr_t)ram_vector_table;
+    __DSB();
+    __ISB();
+    __set_PRIMASK(primask);
+}
+
 void arm_irq_connect(unsigned int irq, void (*handler)(void))
 {
     if ((irq < MAX_NUMS_IRQn) && (handler != NULL))

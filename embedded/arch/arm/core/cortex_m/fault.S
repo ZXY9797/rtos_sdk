@@ -32,6 +32,7 @@
     STR     r11, [sp, #60]
     MOV     r0, sp
     MOV     r1, lr
+    MOV     r2, r12
     BL      arm_fault_handler
 1:  B       1b
 .endm
@@ -65,6 +66,7 @@ HardFault_Handler:
     STR     r11, [sp, #60]
     MOV     r0, sp
     MOV     r1, lr
+    MOV     r2, r12
     BL      arm_fault_handler
 1:  B       1b
 

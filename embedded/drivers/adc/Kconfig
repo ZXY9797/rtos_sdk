@@ -9,6 +9,7 @@ if ADC
 
 config ADC_INIT_PRIORITY
     int "ADC init priority"
+    range 0 999
     default KERNEL_INIT_PRIORITY_DEFAULT
     help
       ADC driver device initialization priority.

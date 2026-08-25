@@ -2,5 +2,6 @@ config CAN_GD32
 	bool "CAN driver for GD32"
 	select CAN
 	default y if SOC_SERIES_GD32F50X
+	depends on SOC_SERIES_GD32F50X && DT_HAS_GD_GD32_CAN_ENABLED
 	help
 	  Enable CAN driver for GD32F50x family.

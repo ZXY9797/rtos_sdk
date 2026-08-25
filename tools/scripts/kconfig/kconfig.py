@@ -78,9 +78,8 @@ def main():
         # output and also assigns promptless symbols.
         check_no_promptless_assign(kconf)
 
-        # Print warnings for symbols that didn't get the assigned value. Only
-        # do this for handwritten input too, to avoid likely unhelpful warnings
-        # when using an old configuration and updating Kconfig files.
+        # Reject handwritten assignments that cannot take effect. Silently
+        # continuing would make the generated driver set differ from prj.conf.
         check_assigned_sym_values(kconf)
         check_assigned_choice_values(kconf)
 
@@ -183,7 +182,7 @@ def check_assigned_sym_values(kconf):
                 msg += "Check these unsatisfied dependencies: " + \
                     ", ".join(expr_strs) + ". "
 
-            warn(msg + SYM_INFO_HINT.format(sym))
+            err(msg + SYM_INFO_HINT.format(sym))
 
 
 def missing_deps(sym):
@@ -213,7 +212,7 @@ def missing_deps(sym):
 
 def check_assigned_choice_values(kconf):
     # Verifies that any choice symbols that were selected (by setting them to
-    # y) ended up as the selection, printing warnings otherwise.
+    # y) ended up as the selection, rejecting mismatches.
     #
     # We check choice symbols separately to avoid warnings when two different
     # choice symbols within the same choice are set to y. This might happen if
@@ -228,7 +227,7 @@ def check_assigned_choice_values(kconf):
         if choice.user_selection and \
            choice.user_selection is not choice.selection:
 
-            warn(f"""\
+            err(f"""\
 The choice symbol {choice.user_selection.name_and_loc} was selected (set =y),
 but {choice.selection.name_and_loc if choice.selection else "no symbol"} ended
 up as the choice selection. """ + SYM_INFO_HINT.format(choice.user_selection))

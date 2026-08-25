@@ -30,17 +30,20 @@ static uint32_t can_base_from_port(uint8_t port) {
 
 Can &Can::instance(uint8_t port) {
     static Can insts[kMaxCans] = {Can(0), Can(1)};
-    return insts[port % kMaxCans];
+    static Can invalid(kMaxCans);
+    return port < kMaxCans ? insts[port] : invalid;
 }
 
 Status Can::init(const CanConfig &config) {
     uint32_t base = can_base_from_port(m_port);
-    if (!base) return Status::InvalidArgument;
+    if (!base || config.bitrate != 500000U) return Status::InvalidArgument;
 
     s_instances[m_port % kMaxCans].base = base;
 
     // Enter init mode
-    can_working_mode_set(base, CAN_MODE_INITIALIZE);
+    if (can_working_mode_set(base, CAN_MODE_INITIALIZE) != SUCCESS) {
+        return Status::HardwareError;
+    }
 
     // Configure bit timing
     // GD32 CAN clock = APB1 = 100MHz (200MHz / 2)
@@ -61,7 +64,9 @@ Status Can::init(const CanConfig &config) {
     params.rec_fifo_overwrite = DISABLE;
     params.trans_fifo_order = DISABLE;
 
-    can_init(base, &params);
+    if (can_init(base, &params) != SUCCESS) {
+        return Status::HardwareError;
+    }
 
     // Configure filter 0: accept all standard IDs into FIFO0
     can_filter_mask_mode_init(0, 0, CAN_STANDARD_FIFO0, 0);
@@ -85,7 +90,9 @@ Status Can::deinit() {
 Status Can::start() {
     if (!m_initialized) return Status::InvalidArgument;
     uint32_t base = s_instances[m_port % kMaxCans].base;
-    can_working_mode_set(base, CAN_MODE_NORMAL);
+    if (can_working_mode_set(base, CAN_MODE_NORMAL) != SUCCESS) {
+        return Status::HardwareError;
+    }
     s_instances[m_port % kMaxCans].started = true;
     return Status::Ok;
 }
@@ -93,14 +100,21 @@ Status Can::start() {
 Status Can::stop() {
     if (!m_initialized) return Status::InvalidArgument;
     uint32_t base = s_instances[m_port % kMaxCans].base;
-    can_working_mode_set(base, CAN_MODE_SLEEP);
+    if (can_working_mode_set(base, CAN_MODE_SLEEP) != SUCCESS) {
+        return Status::HardwareError;
+    }
     s_instances[m_port % kMaxCans].started = false;
     return Status::Ok;
 }
 
 Status Can::send(uint32_t id, const uint8_t *data, uint8_t len, uint32_t id_ext) {
     HAL_ASSERT_MSG(m_initialized, "CAN not initialized");
-    if (!m_initialized || !data || len > 8) return Status::InvalidArgument;
+    if (!m_initialized || !data || len > 8
+        || !s_instances[m_port % kMaxCans].started
+        || (id_ext == 0U && id > CAN_SFID_MASK)
+        || (id_ext != 0U && id > CAN_EFID_MASK)) {
+        return Status::InvalidArgument;
+    }
 
     uint32_t base = s_instances[m_port % kMaxCans].base;
 
@@ -131,7 +145,10 @@ Status Can::send(uint32_t id, const uint8_t *data, uint8_t len, uint32_t id_ext)
 }
 
 Status Can::get_rx_message(uint32_t *id, uint8_t *data, uint8_t *len) {
-    if (!m_initialized || !id || !data || !len) return Status::InvalidArgument;
+    if (!m_initialized || !id || !data || !len
+        || !s_instances[m_port % kMaxCans].started) {
+        return Status::InvalidArgument;
+    }
 
     uint32_t base = s_instances[m_port % kMaxCans].base;
 
@@ -151,6 +168,10 @@ Status Can::get_rx_message(uint32_t *id, uint8_t *data, uint8_t *len) {
         *id = rx_msg.rx_sfid;
     }
 
+    if (rx_msg.rx_dlen > 8U) {
+        *len = 0U;
+        return Status::HardwareError;
+    }
     *len = rx_msg.rx_dlen;
     memcpy(data, rx_msg.rx_data, rx_msg.rx_dlen);
 

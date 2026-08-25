@@ -1,21 +1,25 @@
 #pragma once
+
+#include <cstddef>
 #include <cstdint>
 
 namespace hal::fault {
 
-// ---- 数据结构 ----
-
 struct Frame {
-    uint32_t r0, r1, r2, r3;
-    uint32_t r12, lr, pc, xpsr;
+    // Must match fault.S: software-saved registers precede the copied
+    // hardware exception frame in memory.
     uint32_t r4, r5, r6, r7;
     uint32_t r8, r9, r10, r11;
+    uint32_t r0, r1, r2, r3;
+    uint32_t r12, lr, pc, xpsr;
 };
 
 struct FaultRecord {
-    static constexpr uint32_t MAGIC = 0xFA17FAUL;
+    // Low byte is the persistent format version. Version 2 fixes the saved
+    // register ABI and uses a CRC plus commit-last validity contract.
+    static constexpr uint32_t MAGIC = 0xFA17FA02U;
     static constexpr int MAX_BACKTRACE = 16;
-    static constexpr int STACK_SNAPSHOT_WORDS = 32;  // 128 bytes
+    static constexpr int STACK_SNAPSHOT_WORDS = 32;
 
     uint32_t magic;
     uint32_t cfsr;
@@ -23,94 +27,105 @@ struct FaultRecord {
     uint32_t mmfar;
     uint32_t bfar;
     uint32_t excReturn;
-    Frame    frame;
+    Frame frame;
 
     uint32_t msp;
     uint32_t psp;
     uint32_t backtrace[MAX_BACKTRACE];
-    int      backtraceDepth;
+    int backtraceDepth;
     uint32_t stackSnapshot[STACK_SNAPSHOT_WORDS];
     uint32_t snapshotSp;
+    uint32_t crc32;
 
-    [[nodiscard]] bool valid() const { return magic == MAGIC; }
+    [[nodiscard]] uint32_t calculateCrc() const {
+        const auto *bytes = reinterpret_cast<const uint8_t *>(this);
+        uint32_t crc = 0xFFFFFFFFU;
+        for (size_t index = offsetof(FaultRecord, cfsr);
+             index < offsetof(FaultRecord, crc32); ++index) {
+            crc ^= bytes[index];
+            for (uint8_t bit = 0U; bit < 8U; ++bit) {
+                crc = (crc & 1U) != 0U
+                    ? (crc >> 1U) ^ 0xEDB88320U : crc >> 1U;
+            }
+        }
+        return ~crc;
+    }
+
+    [[nodiscard]] bool valid() const {
+        return magic == MAGIC
+            && backtraceDepth >= 0
+            && backtraceDepth <= MAX_BACKTRACE
+            && crc32 == calculateCrc();
+    }
 };
 
 struct Cfsr {
-    static constexpr uint32_t MMFSR_MASK  = 0xFF;
-    static constexpr uint32_t BFSR_MASK   = 0xFF00;
-    static constexpr uint32_t UFSR_MASK   = 0xFFFF0000;
-    static constexpr uint32_t MMFSR_SHIFT = 0;
-    static constexpr uint32_t BFSR_SHIFT  = 8;
-    static constexpr uint32_t UFSR_SHIFT  = 16;
+    static constexpr uint32_t MMFSR_MASK = 0xFFU;
+    static constexpr uint32_t BFSR_MASK = 0xFF00U;
+    static constexpr uint32_t UFSR_MASK = 0xFFFF0000U;
 
-    static constexpr uint32_t MMARVALID = 1u << 7;
-    static constexpr uint32_t MLSPERR   = 1u << 5;
-    static constexpr uint32_t MSTKERR   = 1u << 4;
-    static constexpr uint32_t MUNSTKERR = 1u << 3;
-    static constexpr uint32_t DACCVIOL  = 1u << 1;
-    static constexpr uint32_t IACCVIOL  = 1u << 0;
-    static constexpr uint32_t BFARVALID = 1u << 15;
-    static constexpr uint32_t LSPERR    = 1u << 13;
-    static constexpr uint32_t STKERR    = 1u << 12;
-    static constexpr uint32_t UNSTKERR  = 1u << 11;
-    static constexpr uint32_t IMPRECISERR = 1u << 10;
-    static constexpr uint32_t PRECISERR = 1u << 9;
-    static constexpr uint32_t IBUSERR   = 1u << 8;
-    static constexpr uint32_t DIVBYZERO = 1u << 25;
-    static constexpr uint32_t UNALIGNED = 1u << 24;
-    static constexpr uint32_t NOCP      = 1u << 19;
-    static constexpr uint32_t INVPC     = 1u << 18;
-    static constexpr uint32_t INVSTATE  = 1u << 17;
-    static constexpr uint32_t UNDEFINSTR = 1u << 16;
+    static constexpr uint32_t MMARVALID = 1U << 7U;
+    static constexpr uint32_t MLSPERR = 1U << 5U;
+    static constexpr uint32_t MSTKERR = 1U << 4U;
+    static constexpr uint32_t MUNSTKERR = 1U << 3U;
+    static constexpr uint32_t DACCVIOL = 1U << 1U;
+    static constexpr uint32_t IACCVIOL = 1U << 0U;
+    static constexpr uint32_t BFARVALID = 1U << 15U;
+    static constexpr uint32_t LSPERR = 1U << 13U;
+    static constexpr uint32_t STKERR = 1U << 12U;
+    static constexpr uint32_t UNSTKERR = 1U << 11U;
+    static constexpr uint32_t IMPRECISERR = 1U << 10U;
+    static constexpr uint32_t PRECISERR = 1U << 9U;
+    static constexpr uint32_t IBUSERR = 1U << 8U;
+    static constexpr uint32_t DIVBYZERO = 1U << 25U;
+    static constexpr uint32_t UNALIGNED = 1U << 24U;
+    static constexpr uint32_t NOCP = 1U << 19U;
+    static constexpr uint32_t INVPC = 1U << 18U;
+    static constexpr uint32_t INVSTATE = 1U << 17U;
+    static constexpr uint32_t UNDEFINSTR = 1U << 16U;
 };
 
 struct Hfsr {
-    static constexpr uint32_t DEBUGEVT = 1u << 31;
-    static constexpr uint32_t FORCED   = 1u << 30;
-    static constexpr uint32_t VECTTBL   = 1u << 1;
+    static constexpr uint32_t DEBUGEVT = 1U << 31U;
+    static constexpr uint32_t FORCED = 1U << 30U;
+    static constexpr uint32_t VECTTBL = 1U << 1U;
 };
 
-// ---- 可插拔后端接口 ----
+// Fault callbacks run with interrupts disabled. They must not allocate,
+// acquire locks, call the scheduler, or rely on mutable object lifetime.
+using FaultCallback = void (*)(void *context, const FaultRecord &record);
+using BackendCallback = void (*)(void *context);
 
-class IBackend {
-public:
-    virtual ~IBackend() = default;
-
-    // fault 发生时调用（中断上下文，需快速返回）
-    virtual void onFault(const FaultRecord &rec) = 0;
-
-    // 启动时调用（检查/输出历史记录）
-    virtual void onBoot() {}
-
-    // 清除记录
-    virtual void clear() {}
+struct Backend {
+    void *context {nullptr};
+    FaultCallback on_fault {nullptr};
+    BackendCallback on_boot {nullptr};
+    BackendCallback clear {nullptr};
 };
 
-// 注册后端（最多 MAX_BACKENDS 个）
-static constexpr int MAX_BACKENDS = 4;
-void registerBackend(IBackend *backend);
+static constexpr size_t MAX_BACKENDS = 4U;
 
-// 供架构层调用：遍历所有后端执行 onFault
-void notifyFault(const FaultRecord &rec);
+// Accepted only before PRE_KERNEL_1 fault_init freezes the registry. The
+// descriptor is copied, so its caller-side lifetime is irrelevant.
+[[nodiscard]] bool registerBackend(const Backend &backend);
+void notifyFault(const FaultRecord &record);
 
-// ---- 底层输出（工具函数）----
-
-[[gnu::weak]] void putc(char c);
-void print(const char *s);
-void printHex(uint32_t val);
-void printDec(uint32_t val);
-
-// ---- noinit 记录快捷操作 ----
+// When CONFIG_FAULT_UART_BACKEND is enabled, the product/SoC must provide a
+// strong, bounded, polling implementation. Otherwise a weak no-op is used for
+// assert diagnostics without claiming that a UART backend exists.
+void putc(char character);
+void print(const char *text);
+void printHex(uint32_t value);
+void printDec(uint32_t value);
 
 [[nodiscard]] const FaultRecord *getRecord();
-void dump();     // 通过 UartBackend 打印 noinit 记录
-void clear();    // 遍历所有后端执行 clear()
+void dump();
+void clear();
 
 } // namespace hal::fault
 
-// ---- extern "C" 入口 ----
 extern "C" {
-[[noreturn]] void arm_fault_handler(const hal::fault::Frame *frame, uint32_t excReturn);
+[[noreturn]] void arm_fault_handler(const hal::fault::Frame *frame,
+                                    uint32_t excReturn,
+                                    uint32_t activeSp);
 }
-
-// assert_post_action 在 __assert.h 中声明（C++ 链接）

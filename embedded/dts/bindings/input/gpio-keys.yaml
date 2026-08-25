@@ -32,3 +32,4 @@ cxx-driver:
   readiness: always-ready
   requires:
     - phandle-array: gpios
+      lifecycle: external

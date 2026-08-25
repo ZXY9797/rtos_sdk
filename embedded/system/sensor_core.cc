@@ -1,28 +1,61 @@
 #include <sensor_core.h>
+#include <irq.h>
 
 SensorCore::SensorCore(const Config &cfg) : cfg_(cfg) {}
 
 SensorCore::~SensorCore()
 {
-    if (cfg_.timer) {
-        cfg_.timer->enable_update_irq(nullptr, nullptr);
+    if (stop() != 0) {
+        // Continuing destruction would leave an ISR callback targeting freed
+        // storage. Stop the system at the ownership boundary instead.
+        __builtin_trap();
     }
-    delete thread_;
 }
 
 int SensorCore::start()
 {
-    thread_ = osal::PeriodicThread::create(cfg_.name, thread_entry, this,
-                                           cfg_.stack_size, cfg_.priority,
-                                           cfg_.frequency_hz,
-                                           osal::PeriodicTrigger::External);
-    if (!thread_) return -1;
+    if (thread_.load(std::memory_order_acquire) != nullptr
+        || cfg_.entry == nullptr || cfg_.timer == nullptr
+        || cfg_.frequency_hz == 0U || cfg_.divider == 0U) {
+        return -1;
+    }
+    osal::PeriodicThread *thread = osal::PeriodicThread::create(
+        cfg_.name, thread_entry, this, cfg_.stack_size, cfg_.priority,
+        cfg_.frequency_hz, osal::PeriodicTrigger::External, nullptr, false);
+    if (thread == nullptr) return -1;
 
-    if (cfg_.timer) {
-        cfg_.timer->enable_update_irq(timer_callback, this);
+    if (thread->startup() != 0) {
+        delete thread;
+        return -1;
     }
 
-    return thread_->startup();
+    thread_.store(thread, std::memory_order_release);
+    if (!cfg_.timer->enable_update_irq(timer_callback, this)) {
+        thread_.store(nullptr, std::memory_order_release);
+        delete thread;
+        return -1;
+    }
+    timer_attached_.store(true, std::memory_order_release);
+    read_error_count_.store(0U, std::memory_order_relaxed);
+    return 0;
+}
+
+int SensorCore::stop()
+{
+    osal::PeriodicThread *thread = nullptr;
+    {
+        hal::IrqGuard guard;
+        if (timer_attached_.load(std::memory_order_acquire)
+            && cfg_.timer != nullptr
+            && !cfg_.timer->enable_update_irq(nullptr, nullptr)) {
+            return -1;
+        }
+        timer_attached_.store(false, std::memory_order_release);
+        thread = thread_.exchange(nullptr, std::memory_order_acq_rel);
+    }
+    delete thread;
+    fire_count_.store(0U, std::memory_order_relaxed);
+    return 0;
 }
 
 void SensorCore::timer_callback(void *arg)
@@ -35,8 +68,10 @@ void SensorCore::thread_entry(
     void *arg, const osal::PeriodicStats& stats)
 {
     auto *self = static_cast<SensorCore *>(arg);
-    if (self->cfg_.read_fn) {
-        self->cfg_.read_fn(self->cfg_.sensor_arg);
+    if (self->cfg_.read_fn
+        && !self->cfg_.read_fn(self->cfg_.sensor_arg)) {
+        self->read_error_count_.fetch_add(1U, std::memory_order_relaxed);
+        return;
     }
     if (self->cfg_.entry) {
         self->cfg_.entry(self->cfg_.param, stats);
@@ -45,12 +80,13 @@ void SensorCore::thread_entry(
 
 void SensorCore::on_sensor_done()
 {
-    uint32_t cnt = fire_count_ + 1;
+    uint32_t cnt = fire_count_.load(std::memory_order_relaxed) + 1U;
     if (cnt >= cfg_.divider) {
         cnt = 0;
-        if (thread_) {
-            (void)thread_->notify_from_isr();
+        if (auto *thread = thread_.load(std::memory_order_acquire);
+            thread != nullptr) {
+            (void)thread->notify_from_isr();
         }
     }
-    fire_count_ = cnt;
+    fire_count_.store(cnt, std::memory_order_relaxed);
 }

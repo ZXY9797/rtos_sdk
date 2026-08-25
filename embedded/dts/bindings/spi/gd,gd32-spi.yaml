@@ -29,10 +29,11 @@ cxx-driver:
         interrupt-index-cell: channel
   requires:
     - phandle-array: dmas
+      lifecycle: external
   readiness: device-base
   device-base: true
-  # GD32 SPI is a low-level bus/HAL driver. Devices on this bus can use
-  # init-level: pre-kernel-3 to run after SPI and before OS services are available.
+  # GD32 SPI is a low-level bus/HAL driver. Clients that transfer during
+  # initialization must run post-kernel because transfers use OSAL primitives.
   init-level: pre-kernel-2
   # Default PRE_KERNEL_2 initcall priority for GD32 SPI instances.
   # A board DTS node may override this with:

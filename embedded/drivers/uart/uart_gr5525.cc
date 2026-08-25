@@ -43,7 +43,13 @@ constexpr uint32_t LSR_TEMT    = (1U << 6);   /* Transmitter Empty */
 } // anonymous namespace
 
 Status UartBase::init(const UartConfig &config) {
-    if (!config.rx_buffer || config.rx_buffer_size == 0) return Status::InvalidArgument;
+    if (!config.rx_buffer || config.rx_buffer_size == 0U
+        || config.baudrate == 0U) {
+        return Status::InvalidArgument;
+    }
+    if (!m_tx_mutex.is_valid() || !m_tx_sem.is_valid()) {
+        return Status::NoMemory;
+    }
 
     if (!m_rx_stream.create(config.rx_buffer, config.rx_buffer_size, 1)) {
         return Status::NoMemory;
@@ -101,26 +107,53 @@ Status UartBase::deinit() {
     return Status::Ok;
 }
 
-Status UartBase::send(const uint8_t *data, size_t len, size_t *bytes_sent, uint32_t timeout_ms) {
-    if (!is_initialized() || !data || len == 0) return Status::InvalidArgument;
+Status UartBase::send(const uint8_t *data, size_t len,
+                      size_t *bytes_sent, uint32_t timeout_ms) {
+    if (bytes_sent) {
+        *bytes_sent = 0U;
+    }
+    if (!is_initialized() || !data || len == 0U) {
+        return Status::InvalidArgument;
+    }
 
-    osal::LockGuard lock(m_tx_mutex);
+    osal::Deadline deadline(timeout_ms);
+    osal::LockGuard lock(m_tx_mutex, deadline.remaining());
+    if (!lock.owns_lock()) {
+        return Status::Timeout;
+    }
     auto *regs = reinterpret_cast<Gr5525UartRegs *>(m_base);
 
+    while (m_tx_sem.take(0U) == 0) {
+    }
+
     for (size_t i = 0; i < len; i++) {
-        while (!(regs->LSR & LSR_THRE)) {}
+        while (!(regs->LSR & LSR_THRE)) {
+            if (deadline.expired()) {
+                if (bytes_sent) {
+                    *bytes_sent = i;
+                }
+                const IrqGuard guard;
+                ++m_stats.tx_timeouts;
+                return Status::Timeout;
+            }
+        }
         regs->THR = data[i];
     }
 
     /* 使能 ETBEI 中断，等待发送器完全排空（ISR 释放信号量） */
     regs->IER |= IER_ETBEI;
-    if (m_tx_sem.take(timeout_ms) != 0) {
+    if (m_tx_sem.take(deadline.remaining()) != 0) {
         regs->IER &= ~IER_ETBEI;
+        const IrqGuard guard;
+        ++m_stats.tx_timeouts;
         return Status::Timeout;
     }
 
     if (bytes_sent) *bytes_sent = len;
-    m_stats.tx_bytes += len;
+    {
+        const IrqGuard guard;
+        m_stats.tx_bytes += len;
+    }
     return Status::Ok;
 }
 
@@ -145,7 +178,11 @@ void UartBase::isr_handler(osal::IsrContext& context) {
 
     if (regs->LSR & LSR_DR) {
         uint8_t ch = static_cast<uint8_t>(regs->RBR);
-        (void)m_rx_stream.send_from_isr(&ch, 1, context);
+        if (m_rx_stream.send_from_isr(&ch, 1, context) > 0U) {
+            ++m_stats.rx_bytes;
+        } else {
+            ++m_stats.rx_dropped;
+        }
     }
 
     /* ETBEI 中断：发送器排空，释放 send 信号量 */

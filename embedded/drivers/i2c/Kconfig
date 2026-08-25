@@ -9,6 +9,7 @@ if I2C
 
 config I2C_INIT_PRIORITY
 	int "I2C init priority"
+	range 0 999
 	default KERNEL_INIT_PRIORITY_DEFAULT
 	help
 	  I2C driver device initialization priority.

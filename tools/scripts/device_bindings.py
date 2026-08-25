@@ -96,11 +96,17 @@ def parse_requires(raw_requires, filepath):
     requires = []
     for item in raw_requires:
         if item == 'parent':
-            requires.append(('parent', None))
+            requires.append(('parent', None, 'generated'))
             continue
 
-        if isinstance(item, dict) and len(item) == 1:
-            kind, property_name = next(iter(item.items()))
+        if isinstance(item, dict):
+            dependency_keys = set(item) & {'phandle', 'phandle-array'}
+            unknown = set(item) - dependency_keys - {'lifecycle'}
+            if len(dependency_keys) != 1 or unknown:
+                raise ValueError(
+                    f'invalid requires mapping in {filepath}: {item!r}')
+            kind = next(iter(dependency_keys))
+            property_name = item[kind]
             if kind not in ('phandle', 'phandle-array'):
                 raise ValueError(
                     f'unknown requires kind in {filepath}: {kind!r}')
@@ -109,7 +115,12 @@ def parse_requires(raw_requires, filepath):
                     f'invalid requires property in {filepath}: '
                     f'{property_name!r}')
             normalized = kind.replace('-', '_')
-            requires.append((normalized, property_name))
+            lifecycle = item.get('lifecycle', 'generated')
+            if lifecycle not in ('generated', 'external'):
+                raise ValueError(
+                    f'invalid dependency lifecycle in {filepath}: '
+                    f'{lifecycle!r}')
+            requires.append((normalized, property_name, lifecycle))
             continue
 
         raise ValueError(

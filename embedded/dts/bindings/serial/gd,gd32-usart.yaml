@@ -25,6 +25,7 @@ cxx-driver:
         interrupt-index-cell: channel
   requires:
     - phandle-array: dmas
+      lifecycle: external
   readiness: device-base
   device-base: true
   init-level: post-kernel

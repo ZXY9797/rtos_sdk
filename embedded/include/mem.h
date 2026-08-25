@@ -8,8 +8,16 @@
 
 // ─── 全局 new/delete → RTOS 堆 ────────────────────────────────────
 
-inline void *operator new(size_t size) { return rtos_malloc(size); }
-inline void *operator new[](size_t size) { return rtos_malloc(size); }
+inline void *operator new(size_t size) {
+    void *ptr = rtos_malloc(size);
+    if (ptr == nullptr) __builtin_trap();
+    return ptr;
+}
+inline void *operator new[](size_t size) {
+    void *ptr = rtos_malloc(size);
+    if (ptr == nullptr) __builtin_trap();
+    return ptr;
+}
 inline void *operator new(size_t size, const std::nothrow_t &) noexcept { return rtos_malloc(size); }
 inline void *operator new[](size_t size, const std::nothrow_t &) noexcept { return rtos_malloc(size); }
 

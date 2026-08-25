@@ -83,7 +83,7 @@ public:
 
     /// 使用指定通道（不自动分配）
     constexpr DmaChannel(uint32_t dma_base, uint8_t channel, uint8_t mux_channel)
-        : m_dma(dma_base), m_ch(channel), m_mux_ch(mux_channel) {}
+        : m_dma(dma_base), m_ch(channel), m_mux_ch(mux_channel), m_owned(false) {}
 
     /// 析构时自动停止并释放通道
     ~DmaChannel();
@@ -114,6 +114,7 @@ private:
     uint32_t m_dma {0};
     uint8_t m_ch {0xFF};    // 0xFF 表示无效
     uint8_t m_mux_ch {0};
+    bool m_owned {false};
 };
 
 } /* namespace hal */
