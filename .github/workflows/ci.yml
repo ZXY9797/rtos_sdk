@@ -61,6 +61,10 @@ jobs:
     name: Firmware contracts
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    env:
+      ARMGCC9_VERSION: 9.3.1-1.4
+      ARMGCC9_ARCHIVE_SHA256: >-
+        720dd38a6abadc0286f2b3c8dbc7239c7dbfdd64bc052345d149657e5478b914
     steps:
       - name: Check out sources
         # actions/checkout v6.1.0
@@ -87,22 +91,52 @@ jobs:
           cmake --version
           ninja --version
 
+      - name: Install locked Goodix ARM GCC
+        run: |
+          archive_name="xpack-arm-none-eabi-gcc-${ARMGCC9_VERSION}"
+          archive_name="${archive_name}-linux-x64.tar.gz"
+          archive="${RUNNER_TEMP}/${archive_name}"
+          root="${GITHUB_WORKSPACE}/out/toolchains/gcc-9.3.1"
+          toolchain="${root}/xpack-arm-none-eabi-gcc-${ARMGCC9_VERSION}"
+          release_url="https://github.com/xpack-dev-tools"
+          release_url="${release_url}/arm-none-eabi-gcc-xpack"
+          release_url="${release_url}/releases/download"
+          url="${release_url}/v${ARMGCC9_VERSION}/${archive_name}"
+          curl --fail --location --retry 3 --retry-all-errors \
+            --output "${archive}" "${url}"
+          checksum="${ARMGCC9_ARCHIVE_SHA256}"
+          checksum="${checksum}  ${archive}"
+          sha256sum --check --strict <<< "${checksum}"
+          mkdir -p "${root}"
+          tar -xzf "${archive}" -C "${root}"
+          test "$("${toolchain}/bin/arm-none-eabi-gcc" \
+            -dumpfullversion -dumpversion)" = "9.3.1"
+          "${toolchain}/bin/arm-none-eabi-gcc" --version
+          echo "ARMGCC9_TOOLCHAIN_PATH=${toolchain}" >> "${GITHUB_ENV}"
+
       - name: Verify fail-closed configuration policies
         run: |
           mkdir -p out
 
           expect_rejected() {
             local name="$1"
-            local firmware_type="$2"
-            local config_file="$3"
-            local expected="$4"
+            local product="$2"
+            local toolchain="$3"
+            local firmware_type="$4"
+            local config_file="$5"
+            local expected="$6"
             local build_dir="out/${name}-negative"
             local log_file="${build_dir}.log"
+            local config_args=()
+
+            if [[ -n "${config_file}" ]]; then
+              config_args+=("-DEXTRA_CONF_FILE=${config_file}")
+            fi
 
             if cmake -S . -B "${build_dir}" -G Ninja \
-                -Dp=demo -Dt=armgcc \
+                "-Dp=${product}" "-Dt=${toolchain}" \
                 "-DFIRMWARE_TYPE=${firmware_type}" \
-                "-DEXTRA_CONF_FILE=${config_file}" \
+                "${config_args[@]}" \
                 >"${log_file}" 2>&1; then
               echo "::error title=${name} policy::configuration was accepted"
               return 1
@@ -116,14 +150,19 @@ jobs:
           }
 
           expect_rejected \
-            production-app app tests/config/production_app.conf \
+            production-app demo armgcc app \
+            tests/config/production_app.conf \
             "CONFIG_APP_WATCHDOG requires product provider"
           expect_rejected \
-            secure-link app tests/config/link_secure.conf \
+            secure-link demo armgcc app tests/config/link_secure.conf \
             "CONFIG_LINK_SECURITY requires product provider"
           expect_rejected \
-            production-boot loader tests/config/production_boot.conf \
+            production-boot demo armgcc loader \
+            tests/config/production_boot.conf \
             "Production boot requires product security provider"
+          expect_rejected \
+            goodix-toolchain demo_ble armgcc app "" \
+            "GR5525 requires Arm GNU Toolchain 9.3.1"
 
       - name: Build FreeRTOS application
         run: |
@@ -134,7 +173,7 @@ jobs:
       - name: Build FreeRTOS BLE application
         run: |
           cmake -S . -B out/demo-ble -G Ninja \
-            -Dp=demo_ble -Dt=armgcc
+            -Dp=demo_ble -Dt=armgcc9
           cmake --build out/demo-ble --parallel
 
       - name: Build RT-Thread application
@@ -147,10 +186,15 @@ jobs:
       - name: Build boot-chain firmware matrix
         run: |
           for product in demo demo_ble; do
+            toolchain=armgcc
+            if [[ "${product}" == "demo_ble" ]]; then
+              toolchain=armgcc9
+            fi
+
             for image in preloader loader; do
               build="out/${product}-${image}"
               cmake -S . -B "${build}" -G Ninja \
-                "-Dp=${product}" -Dt=armgcc \
+                "-Dp=${product}" "-Dt=${toolchain}" \
                 "-DFIRMWARE_TYPE=${image}"
               cmake --build "${build}" --parallel
             done
@@ -158,7 +202,7 @@ jobs:
             build="out/${product}-upgrade"
             loader_bin="${PWD}/out/${product}-loader/${product}_loader.bin"
             cmake -S . -B "${build}" -G Ninja \
-              "-Dp=${product}" -Dt=armgcc \
+              "-Dp=${product}" "-Dt=${toolchain}" \
               -DFIRMWARE_TYPE=upgrade \
               "-DLOADER_PAYLOAD_FILE=${loader_bin}"
             cmake --build "${build}" --parallel

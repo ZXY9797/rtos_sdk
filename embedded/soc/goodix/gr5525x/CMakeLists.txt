@@ -76,24 +76,53 @@ target_compile_definitions(soc
         CFG_LAYER_TAG_SDK
 )
 
+# The vendor BLE stack is distributed as a GCC 9.3.1 binary. A newer compiler
+# can link it successfully while still violating its toolchain ABI contract.
+if(NOT CMAKE_C_COMPILER_ID STREQUAL "GNU" OR
+        NOT CMAKE_C_COMPILER_VERSION VERSION_EQUAL "9.3.1" OR
+        NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR
+        NOT CMAKE_CXX_COMPILER_VERSION VERSION_EQUAL "9.3.1")
+    message(FATAL_ERROR
+        "GR5525 requires Arm GNU Toolchain 9.3.1 for Goodix libble_sdk.a; "
+        "got C ${CMAKE_C_COMPILER_ID} ${CMAKE_C_COMPILER_VERSION}, "
+        "C++ ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
+endif()
+
 # GR5525 BLE and peripheral libraries call services implemented in Stack ROM.
 # Bind every Goodix image to the exact ROM ABI exported by the matching SDK;
 # never allow those symbols to remain unresolved in the output ELF.
 set(GOODIX_ROM_SYMBOL_FILE
     ${CMAKE_CURRENT_SOURCE_DIR}/linker/rom_symbol_gcc_v1.0.3_patch_2.txt)
-set(GOODIX_ROM_SYMBOL_SHA256
-    bd3721bdcf60399431b149d946e76aa65b1549b5ed21d14344c7892c0e0218aa)
+set(GOODIX_ROM_SYMBOL_CANONICAL_SHA256
+    a2f1ad8517f00398bb71938cc66f3162f3f082d38a47677d326a80762a1ec72d)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-    ${GOODIX_ROM_SYMBOL_FILE})
-file(SHA256 ${GOODIX_ROM_SYMBOL_FILE} _goodix_rom_symbol_sha256)
-if(NOT _goodix_rom_symbol_sha256 STREQUAL GOODIX_ROM_SYMBOL_SHA256)
+    "${GOODIX_ROM_SYMBOL_FILE}")
+file(READ "${GOODIX_ROM_SYMBOL_FILE}" _goodix_rom_symbol_contents)
+string(REPLACE "\r\n" "\n" _goodix_rom_symbol_canonical
+    "${_goodix_rom_symbol_contents}")
+string(FIND "${_goodix_rom_symbol_canonical}" "\r"
+    _goodix_rom_symbol_bare_cr)
+if(NOT _goodix_rom_symbol_bare_cr EQUAL -1)
+    message(FATAL_ERROR
+        "GR5525 ROM symbol table contains unsupported bare CR line endings")
+endif()
+string(SHA256 _goodix_rom_symbol_sha256
+    "${_goodix_rom_symbol_canonical}")
+if(NOT _goodix_rom_symbol_sha256
+        STREQUAL GOODIX_ROM_SYMBOL_CANONICAL_SHA256)
     message(FATAL_ERROR
         "GR5525 ROM symbol table does not match Goodix SDK v1.0.3_patch_2: "
-        "expected ${GOODIX_ROM_SYMBOL_SHA256}, got ${_goodix_rom_symbol_sha256}")
+        "expected canonical SHA-256 "
+        "${GOODIX_ROM_SYMBOL_CANONICAL_SHA256}, "
+        "got ${_goodix_rom_symbol_sha256}")
 endif()
-target_link_options(soc INTERFACE ${GOODIX_ROM_SYMBOL_FILE})
+unset(_goodix_rom_symbol_bare_cr)
+unset(_goodix_rom_symbol_canonical)
+unset(_goodix_rom_symbol_contents)
+unset(_goodix_rom_symbol_sha256)
+target_link_options(soc INTERFACE "${GOODIX_ROM_SYMBOL_FILE}")
 set_property(TARGET soc APPEND PROPERTY INTERFACE_LINK_DEPENDS
-    ${GOODIX_ROM_SYMBOL_FILE})
+    "${GOODIX_ROM_SYMBOL_FILE}")
 
 # Goodix SDK sources contain deprecated 'register' and sign-compare warnings.
 target_compile_options(soc

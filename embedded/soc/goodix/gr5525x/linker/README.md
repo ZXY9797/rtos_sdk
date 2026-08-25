@@ -7,13 +7,19 @@ official Goodix GR5525 SDK tag `v1.0.3_patch_2`, commit
 `platform/soc/linker/gcc/rom_symbol_gcc.txt`
 
 The SDK source is published at <https://github.com/goodix-ble/GR5525.SDK>.
-The imported file SHA-256 is:
+The imported file canonical SHA-256 is:
 
-`BD3721BDCF60399431B149D946E76AA65B1549B5ED21D14344C7892C0E0218AA`
+`A2F1AD8517F00398BB71938CC66F3162F3F082D38A47677D326A80762A1EC72D`
+
+CMake normalizes CRLF line endings to LF before hashing so Git checkout
+settings cannot change the integrity result. Bare CR line endings are rejected.
 
 The matching soft-float `libble_sdk.a` SHA-256 is:
 
 `9F3A6FEB733D691962AA44039D26187ADC28ED6877FDA599208EB0EE7B450E5B`
+
+All GR5525 images require GNU Arm C and C++ compiler version 9.3.1. CMake
+rejects other compiler versions even if they can link the precompiled library.
 
 CMake verifies both hashes during configuration. Updating either artifact
 requires importing the ROM symbol table and BLE library from the same official

@@ -54,6 +54,8 @@ def cmake_configure(
         "-UCONFIG_DIR",
         f"-Dp={product}",
         f"-DFIRMWARE_TYPE={firmware_type}",
+        ("-DPython3_EXECUTABLE="
+         f"{Path(sys.executable).absolute().as_posix()}"),
     ]
     if toolchain_path:
         cmd.append(f"-DARMGCC9_TOOLCHAIN_PATH={toolchain_path.as_posix()}")
