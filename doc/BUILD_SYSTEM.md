@@ -25,9 +25,15 @@ root/product Kconfig + prj.conf + optional EXTRA_CONF_FILE
   -> ELF -> BIN/HEX -> package
 ```
 
-生成器在配置阶段检查 Flash/RAM 范围、分区不重叠、erase/write 对齐、boot_ctrl 至少
-两个 erase block、镜像 header 空间和整数溢出。CMake、linker、固件常量、DTS overlay
-和打包脚本都消费同一份 layout，产品目录不再维护手写 flash-map 副本。
+相对路径形式的 `EXTRA_CONF_FILE` 优先按仓库根目录解析；若该文件不存在，再按当前产品
+配置目录解析，以兼容历史命令。CI 应优先使用仓库根目录相对路径，避免命令含义随产品
+切换而变化。
+
+生成器在配置阶段检查 Flash/RAM 范围、分区连续且不重叠、erase/write 对齐、boot_ctrl
+至少两个 erase block、scratch 恰好一个 erase block、镜像 header 空间和整数溢出。
+CMake、linker、固件常量、DTS overlay 和打包脚本都消费同一份 layout，产品目录不再
+维护手写 flash-map 副本。可交换应用上限统一取 `min(slot0, upgrade)`，链接断言和工厂
+打包都使用该上限，避免生成“能写入 slot0 但无法保留旧镜像”的包。
 
 ## 目标与依赖规则
 
@@ -63,6 +69,7 @@ loader 构建还强制：
 - loader 自有函数 `-Wstack-usage=768`；
 - objcopy 后按实际 BIN 再检查一次分区容量；
 - 生产模式禁止 direct overwrite，并要求 security/watchdog provider。
+- sector-swap 要求独立 scratch，并在 boot journal 持久化 SAVE/INSTALL/STORE phase。
 
 注意：链接器的 FLASH used size、压缩工具的 section size 和最终 BIN size含义不同。
 发布容量以最终 BIN 对物理分区的检查为准，map 用于确认符号和 section 是否真实进入
@@ -104,13 +111,30 @@ python bootloader\scripts\build_3in1.py demo `
   --public-key keys\app-p256.pub
 ```
 
+上述三合一/工厂包默认生成 `CONFIRMED` slot0 镜像。在线升级包必须额外传入
+`--pending`；staged loader 不接受 upgrade 分区中的预确认镜像。
+
 ## 自动验证
 
 ```powershell
 python -m unittest discover -s bootloader\scripts\tests `
   -p "test_*.py" -v
 python tools\scripts\tests\test_device_codegen.py -v
+cmake -S tests -B out\host_tests -GNinja
+cmake --build out\host_tests --parallel
+ctest --test-dir out\host_tests --output-on-failure
 ```
+
+应用固件链接后会自动运行 `tools/scripts/check_app_elf.py`，检查 C++ 构造数组、
+initcall、持久化 fault section、fatal 入口和未解析符号。这个检查是构建目标的一部分，
+不能通过跳过单独的 CI job 绕开。
+
+CI 同时构建两个产品的 FreeRTOS app、demo RT-Thread app，以及两个产品的
+preloader/loader/upgrade 矩阵；upgrade 构建显式嵌入同一轮刚生成的 loader BIN，禁止
+用占位 payload 或跨产品产物。CI 还会验证缺少 app watchdog、Link security 和 boot
+security/watchdog provider 时配置按预期失败。RT-Thread 参考配置位于
+`tests/config/rtthread.conf`，用于暴露公共头文件泄漏内核/SoC 私有依赖、后端 API
+语义漂移和配置符号不闭环等问题。
 
 发布前还应对每个最终 ELF 执行：
 

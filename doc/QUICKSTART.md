@@ -9,14 +9,14 @@ cmake (>= 3.20)   # 构建系统
 ninja             # 构建后端
 
 # ARM 交叉编译器（按项目选择）
-# demo (GD32):     arm-gnu-toolchain >= 13.x（支持 -std=c++20）
-# demo_ble (GR5525): xPack GCC 9.3.1（兼容 Goodix libble_sdk.a）
+# 默认/GR5525: xPack GCC 9.3.1（工程对该版本使用 -std=c++2a）
+# demo (GD32): 也可显式 -Dt=armgcc 使用现代 arm-gnu-toolchain
 ```
 
 ## 构建 Demo（GD32 FOC 电机控制）
 
 ```bash
-# 配置（默认 armgcc 工具链）
+# 配置（未指定 -Dt 时默认 armgcc9）
 cmake -B out -GNinja -Dp=demo
 
 # 编译
@@ -59,6 +59,7 @@ Demo BLE 源码在 `app/product/demo_ble/`，产品目录结构见 [APP_LAYOUT.m
 | `-Dt=<toolchain>` | 工具链（armgcc、armgcc9） | `-Dt=armgcc9` |
 | `-G<generator>` | 构建系统 | `-GNinja` |
 | `-DFIRMWARE_TYPE=<type>` | 固件类型：app/preloader/loader/upgrade | `-DFIRMWARE_TYPE=loader` |
+| `-DLOADER_PAYLOAD_FILE=<bin>` | 构建 upgrade 时必须指定同产品已构建 loader BIN | `-DLOADER_PAYLOAD_FILE=out/demo_loader/demo_loader.bin` |
 
 配置输入、DTS/Kconfig/CMake 职责和严格链接规则见
 [BUILD_SYSTEM.md](BUILD_SYSTEM.md)。

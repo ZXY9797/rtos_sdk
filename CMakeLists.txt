@@ -119,6 +119,18 @@ add_custom_command(
   COMMAND ${CMAKE_SIZE} --format=berkeley "$<TARGET_FILE:${PROJECT_NAME}>"
 )
 
+if(FIRMWARE_TYPE STREQUAL "app")
+    add_custom_command(
+      TARGET "${PROJECT_NAME}"
+      POST_BUILD
+      COMMAND ${PYTHON_EXECUTABLE} ${TOOLS_DIR}/scripts/check_app_elf.py
+              "$<TARGET_FILE:${PROJECT_NAME}>"
+              --nm ${CMAKE_NM}
+              --objdump ${CMAKE_OBJDUMP}
+      COMMENT "Checking application startup and fault-persistence ELF policy"
+    )
+endif()
+
 if(FIRMWARE_TYPE STREQUAL "loader")
     add_custom_command(
       TARGET "${PROJECT_NAME}"

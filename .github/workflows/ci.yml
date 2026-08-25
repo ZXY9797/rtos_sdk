@@ -1,0 +1,208 @@
+name: SDK CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  host-contracts:
+    name: Host contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out sources
+        # actions/checkout v6.1.0
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        # actions/setup-python v6.3.0
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+
+      - name: Run Python contract tests
+        run: |
+          python -m unittest discover -s bootloader/scripts/tests \
+            -p "test_*.py" -v
+          python -m unittest discover -s tools/scripts/tests \
+            -p "test_*.py" -v
+
+      - name: Configure C++ contract tests
+        run: cmake -S tests -B out/host-tests -G Ninja
+
+      - name: Build C++ contract tests
+        run: cmake --build out/host-tests --parallel
+
+      - name: Run C++ contract tests
+        run: |
+          ctest --test-dir out/host-tests --output-on-failure \
+            --no-tests=error
+
+  firmware-contracts:
+    name: Firmware contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out sources
+        # actions/checkout v6.1.0
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        # actions/setup-python v6.3.0
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+
+      - name: Install Python build dependencies
+        run: |
+          python -m pip install --disable-pip-version-check \
+            pyelftools==0.32
+
+      - name: Install ARM build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi ninja-build
+          arm-none-eabi-gcc --version
+          cmake --version
+          ninja --version
+
+      - name: Verify fail-closed configuration policies
+        run: |
+          mkdir -p out
+
+          expect_rejected() {
+            local name="$1"
+            local firmware_type="$2"
+            local config_file="$3"
+            local expected="$4"
+            local build_dir="out/${name}-negative"
+            local log_file="${build_dir}.log"
+
+            if cmake -S . -B "${build_dir}" -G Ninja \
+                -Dp=demo -Dt=armgcc \
+                "-DFIRMWARE_TYPE=${firmware_type}" \
+                "-DEXTRA_CONF_FILE=${config_file}" \
+                >"${log_file}" 2>&1; then
+              echo "::error title=${name} policy::configuration was accepted"
+              return 1
+            fi
+            if ! grep -Fq -- "${expected}" "${log_file}"; then
+              cat "${log_file}"
+              echo "::error title=${name} policy::wrong rejection reason"
+              return 1
+            fi
+            echo "Rejected ${name} as expected: ${expected}"
+          }
+
+          expect_rejected \
+            production-app app tests/config/production_app.conf \
+            "CONFIG_APP_WATCHDOG requires product provider"
+          expect_rejected \
+            secure-link app tests/config/link_secure.conf \
+            "CONFIG_LINK_SECURITY requires product provider"
+          expect_rejected \
+            production-boot loader tests/config/production_boot.conf \
+            "Production boot requires product security provider"
+
+      - name: Build FreeRTOS application
+        run: |
+          cmake -S . -B out/demo-freertos -G Ninja \
+            -Dp=demo -Dt=armgcc
+          cmake --build out/demo-freertos --parallel
+
+      - name: Build FreeRTOS BLE application
+        run: |
+          cmake -S . -B out/demo-ble -G Ninja \
+            -Dp=demo_ble -Dt=armgcc
+          cmake --build out/demo-ble --parallel
+
+      - name: Build RT-Thread application
+        run: |
+          cmake -S . -B out/demo-rtthread -G Ninja \
+            -Dp=demo -Dt=armgcc \
+            -DEXTRA_CONF_FILE=tests/config/rtthread.conf
+          cmake --build out/demo-rtthread --parallel
+
+      - name: Build boot-chain firmware matrix
+        run: |
+          for product in demo demo_ble; do
+            for image in preloader loader; do
+              build="out/${product}-${image}"
+              cmake -S . -B "${build}" -G Ninja \
+                "-Dp=${product}" -Dt=armgcc \
+                "-DFIRMWARE_TYPE=${image}"
+              cmake --build "${build}" --parallel
+            done
+
+            build="out/${product}-upgrade"
+            loader_bin="${PWD}/out/${product}-loader/${product}_loader.bin"
+            cmake -S . -B "${build}" -G Ninja \
+              "-Dp=${product}" -Dt=armgcc \
+              -DFIRMWARE_TYPE=upgrade \
+              "-DLOADER_PAYLOAD_FILE=${loader_bin}"
+            cmake --build "${build}" --parallel
+          done
+
+      - name: Build factory images
+        run: |
+          python bootloader/scripts/pack_image.py --layout demo \
+            --input out/demo-freertos/demo.bin \
+            --output out/demo-app.img
+          python bootloader/scripts/merge_firmware.py --layout demo \
+            --preloader out/demo-preloader/demo_preloader.bin \
+            --loader out/demo-loader/demo_loader.bin \
+            --app out/demo-app.img --output out/demo_3in1.bin
+          python bootloader/scripts/pack_image.py --layout demo_ble \
+            --input out/demo-ble/demo_ble.bin \
+            --output out/demo-ble-app.img
+          python bootloader/scripts/merge_firmware.py --layout demo_ble \
+            --preloader out/demo_ble-preloader/demo_ble_preloader.bin \
+            --loader out/demo_ble-loader/demo_ble_loader.bin \
+            --app out/demo-ble-app.img --output out/demo_ble_3in1.bin
+
+      - name: Record firmware checksums
+        run: |
+          sha256sum \
+            out/demo_3in1.bin \
+            out/demo_ble_3in1.bin \
+            >out/factory-images.sha256
+          {
+            echo "### Factory image SHA-256"
+            echo '```text'
+            cat out/factory-images.sha256
+            echo '```'
+          } >>"${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload development firmware outputs
+        # actions/upload-artifact v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: development-firmware-${{ github.sha }}
+          path: |
+            out/demo-freertos/demo.*
+            out/demo-rtthread/demo.*
+            out/demo-*/demo_*.*
+            out/demo_ble-*/demo_ble_*.*
+            out/demo-app.img
+            out/demo-ble-app.img
+            out/demo_3in1.bin
+            out/demo_ble_3in1.bin
+            out/factory-images.sha256
+          if-no-files-found: error
+          retention-days: 14

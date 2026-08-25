@@ -1,5 +1,8 @@
 # RTOS SDK
 
+> 产品化能力、必须提供的硬件适配和发布验收边界见
+> [产品级 RTOS 架构基线](doc/PRODUCT_RTOS.md)。
+
 <p align="center">
   <b>轻量级嵌入式开发框架 | 基于 Zephyr 精简 · 设备树驱动 · 编译期零开销 · 产品级 Bootloader</b>
 </p>
@@ -115,9 +118,11 @@ SDK 提供厂商无关的 BLE API（`ble::` 命名空间），当前实现基于
 
 详见 [doc/BLE.md](doc/BLE.md)
 
-### 6. OSAL — 头文件零 RTOS 依赖
+### 6. OSAL — 应用 API 隔离 RTOS 差异
 
-`osal.h` 是纯 C++ 接口，不包含任何 RTOS 特定宏。所有 OS 相关的类型定义和常量集中在各 RTOS 的 `osal_types.h` 中。
+应用只使用 `osal.h` 的统一 C++ API，不直接包含或调用内核接口。构建系统根据 Kconfig
+选择一个 backend，并由该 backend 的 `osal_types.h` 提供 native storage、优先级和容量
+常量；因此这是源码级接口隔离，不承诺 `osal.h` 可脱离所选 backend 独立编译。
 
 详见 [doc/OSAL.md](doc/OSAL.md)
 
@@ -135,7 +140,7 @@ SDK 提供厂商无关的 BLE API（`ble::` 命名空间），当前实现基于
 
 ### 9. Bootloader — 分阶段启动 + DFU + loader 自升级
 
-当前 boot 链路分为 `preloader`、`loader`、`upgrade` 和 `app`。`preloader` 是最小信任根，生产配置认证固定 loader；`loader` 负责 DFU、签名/防降级校验和可掉电恢复的 staged-copy 安装；`upgrade` 仅保留开发配置下的 loader 自升级执行；`app` 只通过公开 boot API 发布产品元数据和确认镜像。boot 控制日志使用独立分区，不与 NVS storage 复用。当前只有一个 app 执行槽，不具备新应用启动失败后的 A/B 自动回滚能力。
+当前 boot 链路分为 `preloader`、`loader`、`upgrade` 和 `app`。`preloader` 是最小信任根，生产配置认证固定 loader；`loader` 负责 DFU、签名/防降级校验以及单执行槽的掉电安全 sector-swap 安装；`upgrade` 仅保留开发配置下的 loader 自升级执行；`app` 只通过公开 boot API 发布产品元数据和确认镜像。boot 控制日志和单 sector scratch 使用独立分区，不与 NVS storage 复用。首次启动未确认时，loader 会把保存在 `upgrade` 的旧应用交换回 `slot0`；这提供单次 trial 自动回滚，但不是两个可独立启动执行槽的 A/B 方案。
 
 `boot_common` 提供 app、loader、preloader、upgrade 共享的镜像元数据、产品元数据、Flash 分区接口、镜像确认、SHA-256 和 DFU CRC。产品相关配置放在 `app/product/<product>` 和 `bootloader/product/<product>`，公共 bootloader 目录只保留跨产品源码。
 
@@ -187,7 +192,7 @@ rtos_sdk/
 ├── bootloader/                   # 启动与升级固件
 │   ├── include/boot/             # 公开 boot API
 │   ├── common/                   # app/loader/preloader/upgrade 共享实现
-│   ├── loader/                   # 启动决策、DFU、app 校验与 staged-copy
+│   ├── loader/                   # 启动决策、DFU、app 校验与 sector-swap
 │   ├── preloader/                # 第一阶段信任根与 loader 认证
 │   ├── upgrade/                  # loader 自升级执行固件
 │   ├── product/                  # 产品 boot 配置、linker 和分区实现
@@ -236,7 +241,7 @@ rtos_sdk/
 ## 快速开始
 
 ```bash
-# 配置（默认 armgcc 工具链）
+# 配置（未指定 -Dt 时默认 armgcc9）
 cmake -B out -GNinja -Dp=demo
 
 # 编译
