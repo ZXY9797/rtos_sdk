@@ -61,9 +61,16 @@ RTOS SDK 通过 `DeviceTrait<Ord>` 在编译期生成强类型设备实例；I2C
 `is_ready()` 还要求 `last_error() == Status::Ok`。驱动调用 `set_error()` 后会进入 `Error`
 状态，诊断表和上层代码都不能把它当成可用设备。
 
-生成的运行期诊断注册表只保存 `const void *` 和 const 就绪回调，不提供通过诊断
-接口修改设备的旁路。`device_get()` 仍返回编译期强类型引用；注册表不参与正常
+生成的运行期注册表保存类型擦除的就绪检查，以及仅供统一电源管理使用的
+`suspend/resume` 回调。普通诊断仍只读；只有同时实现成对 `suspend()`/`resume()` 的
+设备才标记为 PM capable。`device_get()` 仍返回编译期强类型引用；注册表不参与正常
 数据路径，也不能成为新的 service locator。
+
+注册表按 init level、priority、ordinal 排序。`hal::suspend_devices()` 逆初始化顺序
+挂起，失败时正向恢复已经挂起的设备；`hal::resume_devices()` 按初始化顺序恢复并记录
+失败 ordinal。PM 回调必须有界、不可阻塞且可幂等重试；`suspend()` 还必须具备失败
+原子性，返回失败时该设备仍处于 Active，不能把半配置状态交给框架回滚。tickless
+provider 负责在真实睡眠前后调用这两个入口。
 
 新增驱动时优先遵守以下规则：
 
@@ -169,9 +176,35 @@ decltype(device_get(led0)) status_led();
   不能用 no-op 伪装成功；能力由 `OSAL_HAS_THREADS` 在 Kconfig 阶段约束；
 - ISR 接收缓存满时必须计数丢包；UART 统计至少包括 TX timeout、RX drop 和硬件错误。
 
+统计快照必须无数据竞争：UART/I2C 使用原子计数，SPI 在 bus mutex 下读取和清零；
+`read_stats()` 默认非阻塞并显式报告总线正忙，诊断路径不能无限等待业务传输。
+CAN FD 长度必须通过统一 DLC 映射；接收 API 携带目标容量，backend 先接收到私有 64 B
+缓冲再校验和复制，禁止 HAL 直接写入未知容量的调用方缓冲。STM32 FDCAN 的 kernel
+clock、仲裁/数据 bitrate 和 timing 必须在 DTS/Config 中闭环并精确校验；不再接受
+忽略 bitrate 的硬编码时序或非法 port 取模回绕。GD32 classic CAN 同样从 DTS 读取
+kernel clock、prescaler、SEG1/SEG2/SJW 并验证精确 bitrate，不保留板级硬编码时钟。
+每个 CAN controller 的 init/start/stop/send/receive/deinit 由实例 mutex 串行化；接收
+同时返回标准/扩展帧类型，不能仅比较数值 ID。STM32 FDCAN 为每个 controller 分配互不
+重叠的 message RAM 窗口和有界 RX/TX FIFO，并在硬件过滤与软件接收两层拒绝 remote 帧。
+组件只能管理 start/stop；设备的 init/deinit 归生成 registry 生命周期所有，禁止组件
+绕过设备模型重复初始化或拆除驱动。
+CAN backend 负责控制器外设时钟生命周期；共享时钟域内的多个 controller 通过全局锁和
+初始化位图协调，最后一个 controller 释放时才关时钟。板级 DTS 仍必须提供经原理图确认
+的 `pinctrl-0`，并完成收发器使能、终端电阻和总线电气验证。框架不会根据 MCU 的可选
+复用脚猜测 PCB 走线；缺少这些板级信息时只能证明软件构建和控制器寄存器路径，不能
+宣称 CAN 已通过实板验收。
+
+STM32 FDCAN Kconfig 会自动选择对应 HAL 模块，当前只接受 CCU reset divider 1，其他
+`clk-divider` 在 DTS 校验阶段拒绝，避免静默忽略共享时钟配置。STM32 UART/SPI/PWM/I2C/
+Flash 直寄存器 backend 统一受 `CONFIG_STM32_DIRECT_REGISTER_DRIVERS` experimental
+门禁保护；在产品实现 clock/reset owner 并加入 STM32 全镜像 CI 前不得用于量产配置。
+I2C V2 还要求 DTS 提供非零 `timing`，生成设备注册表负责调用 `init(timing)`，不再生成
+“有设备实例但从不初始化”的伪就绪设备。
+
 异步日志只在 `OSAL_HAS_THREADS=y` 时可用。它采用静态有界队列和单消费者后端所有权；
 生产者在 ISR/队列满时丢弃并计数，不允许阻塞实时线程。`log_flush()` 只用于正常线程的
-有界收尾，fault handler 禁止调用日志系统。
+有界收尾，并通过同一 FIFO 中的 barrier 确认此前消息已完成后端发送；fault handler
+禁止调用日志系统。
 
 应用代码优先使用产品语义接口。只有板级门面和极少数底层适配文件应该直接调用
 `device_get(alias)`。

@@ -52,6 +52,9 @@ bit:  7..4      3..0
 
 - `0x00`：广播地址
 - `0xFF`：保留
+
+Router 只接受单播 sender；`0xFF` 不能作为 receiver。Router 尚未配置有效本机单播
+地址时禁止发送，也不会本地分发广播帧，避免启动/关闭窗口产生伪 ACK 或回环。
 - `host_idx=0xF`：同类型组播
 
 ---
@@ -103,10 +106,11 @@ frag_hdr: bit7 = 最后一片标志, bit6..0 = 片索引
 |------|-------------------|------|
 | CAN classic | 7 | 8B 帧 - 1B header |
 | CAN FD | 63 | 64B 帧 - 1B header |
-| BLE 4.x | 20 | MTU=23 - ATT 3B |
-| BLE 5.0 | 244 | MTU=247 - ATT 3B |
+| BLE 4.x | 19 | 20B ATT payload - 1B fragment header |
+| BLE 5.0 | 243 | 244B ATT payload - 1B fragment header |
 
-构造时可自定义：`CanLink(port, id, 63)` / `BleLink(244)`。
+当前 CAN backend 仅支持 classic CAN，构造时可在 `1..7` 范围调整；BLE 可通过
+`BleLink(243)` 适配 247-byte MTU。
 
 ### 数据流
 
@@ -123,7 +127,7 @@ frag_hdr: bit7 = 最后一片标志, bit6..0 = 片索引
 |------|-------------------|----------------|------|
 | UART | StreamBuffer（ISR 写） | 无 | 字节流协议，ISR 必须缓冲 |
 | CAN | 无（硬件 FIFO） | 无 | Link poll 直接读硬件 FIFO |
-| BLE | 无（协议栈回调） | StreamBuffer | on_receive 写入，poll 读出 |
+| BLE | 无（协议栈回调） | 静态完整帧队列 | 回调重组完整帧后入队，Router 逐字节消费 |
 
 **原则**：在数据进入的第一个点做缓冲，避免丢失。
 
@@ -141,16 +145,18 @@ static link::CanLink  g_can_link(0, 0x100);
 
 ### Router 自动初始化
 
-`SYS_INIT` 在 `POST_KERNEL` 阶段：
+`SYS_INIT` 在 `APPLICATION` 阶段、底层 Link 设备初始化之后：
 1. 从 `LinkRegistry` 拷贝已注册的链路
 2. 加载 `.link_handler` section 中的回调
-3. 创建周期任务（默认 1kHz），自动调用所有链路的 `poll()` + `Router::process()`
+3. 创建周期任务（默认 1kHz），由 `Router::process()` 轮询和处理所有链路
 
 任务频率通过 Kconfig 配置：
 ```
 CONFIG_LINK_PROCESS_HZ=1000    # 任务频率
-CONFIG_LINK_PROCESS_STACK=1024 # 栈大小
+CONFIG_LINK_PROCESS_STACK=2048 # 栈大小
 CONFIG_LINK_PROCESS_PRIO=5     # 优先级
+CONFIG_LINK_INIT_PRIORITY=95   # 生命周期顺序：设备之后、watchdog monitor 之前
+CONFIG_LINK_PROCESS_RX_BUDGET=1024 # 每链路、每周期最大接收字节数
 ```
 
 ---
@@ -168,7 +174,7 @@ CONFIG_LINK_PROCESS_PRIO=5     # 优先级
 
 ```cpp
 auto &router = link::Router::instance();
-router.set_self_addr(link::make_addr(0x10, 0));
+router.set_self_addr(link::make_addr(0x1, 0)); // 编码结果为 0x10
 
 static const link::RouteEntry routes[] = {
     link::make_route(link::route_by_host(0x10, 0xF0).to(1)),       // PC ↔ UART
@@ -205,7 +211,51 @@ LINK_HANDLER(0x01, 0x01, on_motor_cmd, nullptr);
 | Finish | 500ms | 2 | 等待执行完成 |
 | Progress | 2s | 1 | 长任务 |
 
-超时重发时 `cmd_type.retransmit` 位置 1，接收方可做丢包检测/去重。
+超时重发时 `cmd_type.retransmit` 位置 1。Router 使用固定容量 replay cache，以发送方、
+接收方、sequence、命令、除 retransmit 外的命令属性和完整受保护 payload 精确识别
+请求：完全相同的重传不会再次执行 handler，而是重放上次 ACK 状态；相同 key 但任何
+属性或 payload 冲突时，明文链路返回 `0xFD`，加密链路静默丢弃并计入安全统计，避免
+在原响应上下文下生成不同密文而重复使用 AEAD nonce。缓存不使用短 CRC 代替完整比较，
+避免碰撞后误判幂等。
+ACK 必须携带至少一个状态字节，并与待确认请求的物理链路、发送方、序列号及命令号
+全部匹配；不匹配的 ACK 不会清除 pending 项。16-bit 序列号回绕时也不会复用仍在等待
+确认的序列号。
+
+当前 section handler 是同步回调：回调返回即表示该命令处理完成。非广播请求只要
+`ack_mode != No`，Router 就在回调返回后发送最终状态；找不到 handler 时返回失败状态。
+异步长任务不得把回调返回误当作完成，应由后续异步 handler API 扩展后再使用
+`Finish/Progress` 语义。回调中的 `Frame::data` 只在本次回调期间有效，不得保存指针。
+
+### 安全命令
+
+启用 `CONFIG_LINK_SECURITY=y` 后，`LINK_SECURE_HANDLER()` 可逐命令要求认证加密；
+`CONFIG_LINK_REQUIRE_SECURE_COMMANDS=y` 可强制所有本机收发命令使用安全模式。开启全局
+策略会自动选择 `LINK_SECURITY`。任一安全模式下，产品必须提供：
+
+```text
+app/product/<product>/common/link_security.cc
+```
+
+并实现 `link::product_security_provider()`。Provider 必须使用真实 AEAD，把
+`SecurityContext` 全部字段绑定为 AAD，保证不同消息的 nonce 唯一、验 tag 后才释放明文，并从
+受保护存储获取密钥。仓库不提供默认密钥或伪加密；缺文件时 CMake 失败，返回空 provider
+时 Router 初始化失败。明文访问安全 handler 返回 `0xFE` 且不执行回调。
+
+`retransmit` 位不进入 AAD，因为发送端会在原始受保护帧上原地设置该位并重算帧 CRC；
+其余 ack mode、priority、地址、sequence 和命令字段都进入 AAD，不能被中间链路修改。
+
+重传复用原始受保护帧；接收端先用 replay cache 识别完全相同的副本，再决定是否调用
+Provider，因此既不会重复执行业务，也不会因 AEAD nonce replay 把合法 ACK 重传路径
+误判为新命令。同一请求的 ACK 重放会以相同 `SecurityContext` 和相同状态重新调用
+`protect()`；使用派生 nonce 的 provider 必须确定性地产生与首个 ACK 相同的受保护载荷，
+不得把它当作不同明文的 nonce 复用。重放缓存的静态 RAM 约为
+`LINK_REPLAY_CACHE_SIZE * LINK_MAX_FRAME_SIZE`，产品必须结合 map 文件配置条目数和帧长。
+缓存条目数还必须覆盖 retention 窗口内可能完成的唯一需应答请求数；安全 provider 自身
+仍必须拒绝缓存淘汰后的旧 nonce 重放。
+
+`Router::stats()` 原子快照接收帧、解码错误、转发/发送、安全丢弃、重复请求、冲突和
+ACK timeout。Link 处理线程使用调用方持有对象、静态栈和静态内核控制块，不占 RTOS
+heap；Router 使用的 mutex/semaphore 控制块同样内联在 OSAL 对象中。
 
 ---
 
@@ -222,10 +272,23 @@ config LINK_MAX_LINKS         # 最大链路数，默认 8
 config LINK_MAX_ROUTES        # 最大路由规则数，默认 16
 config LINK_MAX_PENDING       # 最大待确认帧数，默认 8
 config LINK_PROCESS_HZ        # 处理任务频率，默认 1000
-config LINK_PROCESS_STACK     # 处理任务栈大小，默认 1024
+config LINK_PROCESS_STACK     # 处理任务栈大小，默认 2048
 config LINK_PROCESS_PRIO      # 处理任务优先级，默认 5
+config LINK_INIT_PRIORITY     # 生命周期 init 优先级，默认 95
+config LINK_PROCESS_RX_BUDGET # 每链路/周期接收预算，默认 1024 字节
+config LINK_UART_TX_TIMEOUT_MS # UART 单帧有界发送窗口，默认 100ms
+config LINK_REPLAY_CACHE_SIZE  # 幂等请求缓存条目，默认 16
+config LINK_REPLAY_RETENTION_MS # replay 保留窗口，默认 10s
+config LINK_SECURITY             # 启用产品 AEAD provider
+config LINK_REQUIRE_SECURE_COMMANDS # 全局 fail-closed 安全策略
 endif
 ```
+
+`LINK_UART_TX_TIMEOUT_MS` 必须按产品波特率和最大帧长校核。UART 后端是有界同步发送，
+因此不会继续持有 Router 的 TX 缓冲；若产品需要在多链路大流量下消除队头阻塞，应在
+具体 Link 后端增加独立静态 TX 队列与 worker，而不是让驱动保存传入指针。
+`LINK_PROCESS_RX_BUDGET` 和 CAN 单次 poll 帧预算共同限制异常流量占用，未处理数据留到
+下一周期，避免饿死其他链路、ACK 超时检查和健康监控。
 
 关闭 `CONFIG_LINK=n` 时 link 库不参与编译，零开销。
 

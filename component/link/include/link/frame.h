@@ -6,6 +6,7 @@
 namespace link {
 
 inline constexpr uint8_t SOF = 0xAAU;
+inline constexpr uint8_t PROTOCOL_VERSION = 1U;
 inline constexpr size_t HEADER_SIZE = 11U;
 inline constexpr size_t CRC_SIZE = 2U;
 inline constexpr size_t MIN_FRAME_SIZE = HEADER_SIZE + CRC_SIZE;
@@ -13,6 +14,7 @@ inline constexpr size_t MIN_FRAME_SIZE = HEADER_SIZE + CRC_SIZE;
 // ver_len: reserved[15:12], version[11:10], total frame length[9:0].
 inline constexpr uint16_t VER_LEN_VER_MASK = 0x03U;
 inline constexpr uint16_t VER_LEN_LEN_MASK = 0x03FFU;
+inline constexpr uint16_t VER_LEN_RESERVED_MASK = 0xF000U;
 inline constexpr int VER_LEN_VER_SHIFT = 10;
 
 inline uint16_t pack_ver_len(uint8_t version, uint16_t total_len)
@@ -55,6 +57,7 @@ inline constexpr uint8_t CMD_TYPE_ACK_MODE_MASK = 0x03U;
 inline constexpr uint8_t CMD_TYPE_ENC_MODE_MASK = 0x03U;
 inline constexpr uint8_t CMD_TYPE_PRIORITY_MASK = 0x01U;
 inline constexpr uint8_t CMD_TYPE_RETRANSMIT_MASK = 0x01U;
+inline constexpr uint8_t CMD_TYPE_RESERVED_MASK = 0x80U;
 
 inline constexpr int CMD_TYPE_ACK_MODE_SHIFT = 1;
 inline constexpr int CMD_TYPE_ENC_MODE_SHIFT = 3;
@@ -98,6 +101,11 @@ inline bool cmd_type_retransmit(uint8_t value)
 
 inline constexpr uint8_t ADDR_BROADCAST = 0x00U;
 inline constexpr uint8_t ADDR_RESERVED = 0xFFU;
+
+inline bool is_unicast_addr(uint8_t addr)
+{
+    return addr != ADDR_BROADCAST && addr != ADDR_RESERVED;
+}
 
 inline uint8_t make_addr(uint8_t host_id, uint8_t host_idx)
 {
@@ -153,10 +161,24 @@ struct Handler {
     uint8_t cmd_id;
     void (*cb)(const Frame& frame, void* arg);
     void* arg;
+    uint8_t flags;
 };
+
+inline constexpr uint8_t HANDLER_REQUIRE_SECURE = 0x01U;
 
 #define LINK_HANDLER(set, id, cb, arg) \
     __attribute__((used, section(".link_handler"))) \
-    static const ::link::Handler _link_h_##set##_##id = {set, id, cb, arg}
+    static const ::link::Handler _link_h_##set##_##id = {set, id, cb, arg, 0U}
+
+#if defined(CONFIG_LINK_SECURITY)
+#define LINK_SECURE_HANDLER(set, id, cb, arg) \
+    __attribute__((used, section(".link_handler"))) \
+    static const ::link::Handler _link_h_##set##_##id = { \
+        set, id, cb, arg, ::link::HANDLER_REQUIRE_SECURE}
+#else
+#define LINK_SECURE_HANDLER(set, id, cb, arg) \
+    static_assert(false, \
+        "LINK_SECURE_HANDLER requires CONFIG_LINK_SECURITY=y")
+#endif
 
 } // namespace link

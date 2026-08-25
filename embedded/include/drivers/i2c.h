@@ -4,6 +4,7 @@
 #include <drivers/status.h>
 #include <osal.h>
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 
@@ -17,6 +18,14 @@ struct I2cStats {
     uint32_t nack_data_count {0U};
     uint32_t bus_error_count {0U};
     uint32_t timeout_count {0U};
+};
+
+struct I2cAtomicStats {
+    std::atomic<uint32_t> transfer_count {0U};
+    std::atomic<uint32_t> nack_addr_count {0U};
+    std::atomic<uint32_t> nack_data_count {0U};
+    std::atomic<uint32_t> bus_error_count {0U};
+    std::atomic<uint32_t> timeout_count {0U};
 };
 
 class I2cBase : public DeviceBase {
@@ -41,9 +50,22 @@ public:
                                uint32_t timeout_ms);
     void isr_handler(osal::IsrContext &context);
 
-    [[nodiscard]] I2cStats get_stats() const { return m_stats; }
-    I2cStats &stats() { return m_stats; }
-    void reset_stats() { m_stats = {}; }
+    [[nodiscard]] I2cStats get_stats() const {
+        return {
+            m_stats.transfer_count.load(std::memory_order_relaxed),
+            m_stats.nack_addr_count.load(std::memory_order_relaxed),
+            m_stats.nack_data_count.load(std::memory_order_relaxed),
+            m_stats.bus_error_count.load(std::memory_order_relaxed),
+            m_stats.timeout_count.load(std::memory_order_relaxed),
+        };
+    }
+    void reset_stats() {
+        m_stats.transfer_count.store(0U, std::memory_order_relaxed);
+        m_stats.nack_addr_count.store(0U, std::memory_order_relaxed);
+        m_stats.nack_data_count.store(0U, std::memory_order_relaxed);
+        m_stats.bus_error_count.store(0U, std::memory_order_relaxed);
+        m_stats.timeout_count.store(0U, std::memory_order_relaxed);
+    }
 
     osal::Mutex &bus_mutex() { return m_bus_mutex; }
     [[nodiscard]] uintptr_t base() const { return m_base; }
@@ -52,7 +74,7 @@ protected:
     explicit I2cBase(uintptr_t base) : m_base(base) {}
     uintptr_t m_base;
     osal::Mutex m_bus_mutex;
-    I2cStats m_stats {};
+    I2cAtomicStats m_stats {};
 };
 
 template <uintptr_t Base>

@@ -20,6 +20,11 @@ properties:
   pinctrl-names:
     required: true
 
+  timing:
+    type: int
+    required: true
+    description: Precomputed TIMINGR value for the configured peripheral clock.
+
   timings:
     type: array
     description: |
@@ -73,6 +78,7 @@ cxx-driver:
     header: device_adapters/i2c_dt.h
     macro: HAL_I2C_DT_ADAPT
   type-name: I2c
+  init: true
   interrupts:
     - name: event
       method: isr_event

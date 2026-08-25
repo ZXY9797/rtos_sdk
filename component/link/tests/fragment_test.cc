@@ -27,7 +27,7 @@ void test_streaming_read()
     }
 
     std::vector<Packet> packets;
-    const int sent = link::Fragmenter::send(
+    const int sent = link::Fragmenter::send<20U>(
         payload.data(), payload.size(), 20U,
         [&packets](const uint8_t *data, size_t len) {
             packets.emplace_back(data, data + len);
@@ -63,12 +63,28 @@ void test_out_of_order_is_discarded()
     CHECK(output == 0x33U);
 }
 
+void test_fragment_index_cannot_wrap()
+{
+    link::Reassembler reassembler;
+    const uint8_t payload = 0x5AU;
+    for (uint16_t index = 0U; index < 127U; ++index) {
+        CHECK(reassembler.append_fragment(
+            static_cast<uint8_t>(index), &payload, 1U, false));
+    }
+    CHECK(!reassembler.append_fragment(127U, &payload, 1U, false));
+    CHECK(reassembler.append_fragment(0U, &payload, 1U, true));
+    uint8_t output = 0U;
+    CHECK(reassembler.read(&output, 1U) == 1);
+    CHECK(output == payload);
+}
+
 } // namespace
 
 int main()
 {
     test_streaming_read();
     test_out_of_order_is_discarded();
+    test_fragment_index_cannot_wrap();
     std::puts("Link fragmentation tests passed");
     return 0;
 }

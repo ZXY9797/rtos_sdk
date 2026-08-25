@@ -16,6 +16,18 @@ properties:
     description: |
       Initial data phase bitrate in bit/s.  If this is unset, the initial data phase bitrate is set
       to CONFIG_CAN_DEFAULT_BITRATE_DATA.
+  data-prescaler:
+    type: int
+    description: Data phase clock prescaler.
+  data-time-seg1:
+    type: int
+    description: Data phase time segment 1 in time quanta.
+  data-time-seg2:
+    type: int
+    description: Data phase time segment 2 in time quanta.
+  data-sjw:
+    type: int
+    description: Data phase synchronization jump width in time quanta.
   sample-point-data:
     type: int
     description: |

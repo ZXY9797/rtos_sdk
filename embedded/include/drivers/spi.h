@@ -48,8 +48,26 @@ public:
     void dma_tx_isr(osal::IsrContext& context);
     void dma_rx_isr(osal::IsrContext& context);
 
-    [[nodiscard]] SpiStats get_stats() const { return m_stats; }
-    void reset_stats() { m_stats = {}; }
+    [[nodiscard]] bool read_stats(
+        SpiStats& stats, uint32_t timeout_ms = 0U) const {
+        osal::LockGuard lock(m_bus_mutex, timeout_ms);
+        if (!lock.owns_lock()) {
+            return false;
+        }
+        stats = m_stats;
+        return true;
+    }
+    [[nodiscard]] SpiStats get_stats() const {
+        SpiStats stats {};
+        (void)read_stats(stats);
+        return stats;
+    }
+    void reset_stats() {
+        osal::LockGuard lock(m_bus_mutex, 0U);
+        if (lock.owns_lock()) {
+            m_stats = {};
+        }
+    }
     [[nodiscard]] const SpiConfig& config() const { return m_config; }
     osal::Mutex& bus_mutex() { return m_bus_mutex; }
     osal::Semaphore& xfer_sem() { return m_xfer_sem; }
@@ -59,7 +77,7 @@ protected:
     explicit SpiBase(uintptr_t base) : m_base(base) {}
 
     uintptr_t m_base;
-    osal::Mutex m_bus_mutex;
+    mutable osal::Mutex m_bus_mutex;
     osal::Semaphore m_xfer_sem {0U, 2U};
     SpiStats m_stats {};
     SpiConfig m_config {};

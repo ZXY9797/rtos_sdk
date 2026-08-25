@@ -1,12 +1,14 @@
 menuconfig LINK
 	bool "Link 通信协议栈"
 	default y
+	depends on OSAL_HAS_THREADS
+	depends on OSAL_HAS_STATIC_PERIODIC_THREADS
 
 if LINK
 
 config LINK_MAX_FRAME_SIZE
 	int "最大帧长度 (字节)"
-	range 16 65535
+	range 16 1023
 	default 512
 
 config LINK_MAX_LINKS
@@ -24,23 +26,75 @@ config LINK_MAX_PENDING
 	range 1 1024
 	default 8
 
-config LINK_HANDLER_SECTION
-	bool "使用 section 注册回调"
-	default y
+config LINK_REPLAY_CACHE_SIZE
+	int "Acknowledged request replay-cache entries"
+	range 1 256
+	default 16
+	help
+	  Completed acknowledged requests are retained here so a retransmission
+	  replays the previous ACK without executing the command twice.
+
+config LINK_REPLAY_RETENTION_MS
+	int "Acknowledged request replay retention (ms)"
+	range 100 60000
+	default 10000
+	help
+	  Must exceed the longest sender retry horizon. Sequence reuse is accepted
+	  only after this interval has elapsed.
+
+config LINK_SECURITY
+    bool "Product-provided authenticated encryption"
+    default n
+    help
+      Compile and require app/product/<product>/common/link_security.cc.
+      Enable this for selective LINK_SECURE_HANDLER commands as well as the
+      global plaintext-rejection policy.
+
+config LINK_REQUIRE_SECURE_COMMANDS
+    bool "Reject all plaintext commands"
+    select LINK_SECURITY
+    default n
+    help
+      Require authenticated encryption for every locally handled command.
 
 config LINK_PROCESS_HZ
 	int "Link 处理任务频率 (Hz)"
-	range 1 1000000
+	range 1 SYS_CLOCK_TICKS_PER_SEC
 	default 1000
 
 config LINK_PROCESS_STACK
 	int "Link 处理任务栈大小 (字节)"
-	range 256 65536
-	default 1024
+	range 1024 65536
+	default 2048
 
 config LINK_PROCESS_PRIO
 	int "Link 处理任务优先级"
-	range 0 255
+	range 0 31
 	default 5
+
+config LINK_INIT_PRIORITY
+	int "Link lifecycle init priority"
+	range 81 98
+	default 95
+	help
+	  Router must start after all generated Link transport devices (currently
+	  priority 80 or lower) and before the system watchdog monitor at 99. This
+	  also guarantees reverse-order shutdown before those devices are deinit.
+
+config LINK_PROCESS_RX_BUDGET
+	int "Maximum received bytes per link and process cycle"
+	range 16 8192
+	default 1024
+	help
+	  Bounds one transport's work per Router cycle so malformed or continuous
+	  traffic cannot starve other links, ACK timeouts, or health monitoring.
+
+config LINK_UART_TX_TIMEOUT_MS
+	int "UART link bounded transmit timeout (ms)"
+	range 1 5000
+	default 100
+	help
+	  Maximum time the dedicated Link processing task may wait for one UART
+	  frame to finish. Size this from baud rate and LINK_MAX_FRAME_SIZE.
 
 endif

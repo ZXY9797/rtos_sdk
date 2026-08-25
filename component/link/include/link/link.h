@@ -16,7 +16,10 @@ public:
 
     virtual ~Link() = default;
 
-    // 发送原始字节流（完整帧已打包好）
+    // Sends one complete encoded frame. The implementation must consume or
+    // copy data before returning; retaining this pointer for asynchronous use
+    // violates the Link contract. The call must have a bounded completion
+    // time so one failed transport cannot hang the Router task.
     virtual int send(const uint8_t *data, size_t len) = 0;
 
     // 接收原始字节流（非阻塞，返回读取字节数）
@@ -53,7 +56,14 @@ inline LinkRegistry g_link_registry;
 
 // 注册函数（inline，Link 子类构造时调用）
 inline bool register_link(Link *link) {
-    if (g_link_registry.cnt >= CONFIG_LINK_MAX_LINKS) return false;
+    if (link == nullptr || g_link_registry.cnt >= CONFIG_LINK_MAX_LINKS) {
+        return false;
+    }
+    for (size_t index = 0U; index < g_link_registry.cnt; ++index) {
+        if (g_link_registry.links[index] == link) {
+            return false;
+        }
+    }
     g_link_registry.links[g_link_registry.cnt++] = link;
     return true;
 }

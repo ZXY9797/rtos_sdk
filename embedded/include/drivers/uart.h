@@ -6,6 +6,7 @@
 #include <irq.h>
 #include <osal.h>
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 
@@ -35,6 +36,16 @@ struct UartStats {
     uint32_t rx_dropped {0U};
 };
 
+struct UartAtomicStats {
+    std::atomic<uint32_t> tx_bytes {0U};
+    std::atomic<uint32_t> rx_bytes {0U};
+    std::atomic<uint32_t> overrun_count {0U};
+    std::atomic<uint32_t> framing_errors {0U};
+    std::atomic<uint32_t> parity_errors {0U};
+    std::atomic<uint32_t> tx_timeouts {0U};
+    std::atomic<uint32_t> rx_dropped {0U};
+};
+
 class UartBase : public DeviceBase {
 public:
     [[nodiscard]] Status init(const UartConfig &config);
@@ -48,14 +59,26 @@ public:
 
     [[nodiscard]] UartStats get_stats() const
     {
-        const IrqGuard guard;
-        return m_stats;
+        return {
+            m_stats.tx_bytes.load(std::memory_order_relaxed),
+            m_stats.rx_bytes.load(std::memory_order_relaxed),
+            m_stats.overrun_count.load(std::memory_order_relaxed),
+            m_stats.framing_errors.load(std::memory_order_relaxed),
+            m_stats.parity_errors.load(std::memory_order_relaxed),
+            m_stats.tx_timeouts.load(std::memory_order_relaxed),
+            m_stats.rx_dropped.load(std::memory_order_relaxed),
+        };
     }
 
     void reset_stats()
     {
-        const IrqGuard guard;
-        m_stats = {};
+        m_stats.tx_bytes.store(0U, std::memory_order_relaxed);
+        m_stats.rx_bytes.store(0U, std::memory_order_relaxed);
+        m_stats.overrun_count.store(0U, std::memory_order_relaxed);
+        m_stats.framing_errors.store(0U, std::memory_order_relaxed);
+        m_stats.parity_errors.store(0U, std::memory_order_relaxed);
+        m_stats.tx_timeouts.store(0U, std::memory_order_relaxed);
+        m_stats.rx_dropped.store(0U, std::memory_order_relaxed);
     }
 
     void isr_handler(osal::IsrContext &context);
@@ -67,7 +90,7 @@ protected:
     osal::StreamBuffer m_rx_stream;
     osal::Mutex m_tx_mutex;
     osal::Semaphore m_tx_sem {0U};
-    UartStats m_stats {};
+    UartAtomicStats m_stats {};
     DmaChannelConfig m_dma_tx {};
 };
 

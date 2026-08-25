@@ -9,6 +9,9 @@
 #if CONFIG_LINK_MAX_FRAME_SIZE > 1023
 #error "CONFIG_LINK_MAX_FRAME_SIZE exceeds the 10-bit wire length field"
 #endif
+#if CONFIG_LINK_MAX_FRAME_SIZE < 14
+#error "CONFIG_LINK_MAX_FRAME_SIZE cannot hold an ACK frame"
+#endif
 
 namespace link {
 
@@ -61,7 +64,7 @@ private:
     uint16_t expected_len_ {0};
 
     void prepare_next_frame();
-    void parse_header();
+    [[nodiscard]] bool parse_header();
     bool check_crc();
 };
 

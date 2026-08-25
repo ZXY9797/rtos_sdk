@@ -29,7 +29,7 @@ public:
     }
 
     int send(const uint8_t *data, size_t len) override {
-        return Fragmenter::send(data, len, frag_payload_,
+        return Fragmenter::send<7U>(data, len, frag_payload_,
             [this](const uint8_t *buf, size_t n) -> bool {
                 return can_.send(can_id_, buf, static_cast<uint8_t>(n), 0)
                        == hal::Status::Ok;
@@ -41,11 +41,12 @@ public:
     }
 
     bool is_ready() const override {
-        return valid_ && can_.is_initialized();
+        return valid_ && can_.is_initialized() && can_.is_started();
     }
 
 private:
     static constexpr uint8_t kMaxCanPorts = 2U;
+    static constexpr size_t kPollFrameBudget = 32U;
     inline static bool s_port_claimed_[kMaxCanPorts] {};
 
     hal::Can &can_;
@@ -57,9 +58,15 @@ private:
     static void poll_impl(void *arg) {
         auto *self = static_cast<CanLink *>(arg);
         uint32_t id;
+        bool is_extended = false;
         uint8_t data[64], len;
-        while (self->can_.get_rx_message(&id, data, &len) == hal::Status::Ok) {
-            if (id != self->can_id_) {
+        for (size_t frame = 0U; frame < kPollFrameBudget; ++frame) {
+            if (self->can_.get_rx_message(&id, data, sizeof(data), &len,
+                                          &is_extended)
+                != hal::Status::Ok) {
+                break;
+            }
+            if (is_extended || id != self->can_id_) {
                 continue;
             }
             if (Fragmenter::recv(data, len, self->reasm_)) {

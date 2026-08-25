@@ -72,7 +72,7 @@ void abort_transfer(I2cRegs &regs) {
     regs.ICR = kAllClearFlags;
 }
 
-Status record_result(PollResult result, I2cStats &stats,
+Status record_result(PollResult result, I2cAtomicStats &stats,
                      bool data_phase = false) {
     switch (result) {
     case PollResult::Ready:

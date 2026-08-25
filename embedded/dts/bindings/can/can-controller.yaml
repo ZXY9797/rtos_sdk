@@ -16,6 +16,21 @@ properties:
     description: |
       Initial bitrate in bit/s. If this is unset, the initial bitrate is set to
       CONFIG_CAN_DEFAULT_BITRATE.
+  clock-frequency:
+    type: int
+    description: Effective CAN kernel clock in Hz. C++ drivers fail closed if absent.
+  nominal-prescaler:
+    type: int
+    description: Nominal phase clock prescaler.
+  nominal-time-seg1:
+    type: int
+    description: Nominal phase time segment 1 in time quanta.
+  nominal-time-seg2:
+    type: int
+    description: Nominal phase time segment 2 in time quanta.
+  nominal-sjw:
+    type: int
+    description: Nominal phase synchronization jump width in time quanta.
   sample-point:
     type: int
     description: |

@@ -21,3 +21,12 @@ target_link_libraries(${MODULE_NAME}
         drivers
         soc
 )
+
+if(CONFIG_LINK_SECURITY)
+    set(LINK_SECURITY_SOURCE "${PROJECT_DIR}/common/link_security.cc")
+    if(NOT EXISTS "${LINK_SECURITY_SOURCE}")
+        message(FATAL_ERROR
+            "CONFIG_LINK_SECURITY requires product provider: ${LINK_SECURITY_SOURCE}")
+    endif()
+    target_sources(${MODULE_NAME} PRIVATE "${LINK_SECURITY_SOURCE}")
+endif()

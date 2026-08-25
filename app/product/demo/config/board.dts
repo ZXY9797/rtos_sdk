@@ -20,14 +20,26 @@
         compatible = "gd,gd32-pinctrl";
 
         usart0_tx_pa9: usart0_tx_pa9 {
-            pinmux = <GD32_PINMUX_AF(GD32_PORT_A, 9, 7,
+            pinmux = <GD32_PINMUX_AF(GD32_PORT_A, 9, 0,
                                       GD32_PULL_NONE,
                                       GD32_DRIVE_PUSH_PULL, 3)>;
         };
 
         usart0_rx_pa10: usart0_rx_pa10 {
-            pinmux = <GD32_PINMUX_AF(GD32_PORT_A, 10, 7,
+            pinmux = <GD32_PINMUX_AF(GD32_PORT_A, 10, 0,
                                       GD32_PULL_UP,
+                                      GD32_DRIVE_PUSH_PULL, 3)>;
+        };
+
+        can0_rx_pa11: can0_rx_pa11 {
+            pinmux = <GD32_PINMUX_AF(GD32_PORT_A, 11, 1,
+                                      GD32_PULL_UP,
+                                      GD32_DRIVE_PUSH_PULL, 3)>;
+        };
+
+        can0_tx_pa12: can0_tx_pa12 {
+            pinmux = <GD32_PINMUX_AF(GD32_PORT_A, 12, 1,
+                                      GD32_PULL_NONE,
                                       GD32_DRIVE_PUSH_PULL, 3)>;
         };
 
@@ -211,7 +223,13 @@
             interrupts = <19 6>;
             status = "okay";
             bitrate = <500000>;
-            irq-priority = <6>;
+            clock-frequency = <100000000>;
+            nominal-prescaler = <10>;
+            nominal-time-seg1 = <15>;
+            nominal-time-seg2 = <4>;
+            nominal-sjw = <1>;
+            pinctrl-0 = <&can0_rx_pa11 &can0_tx_pa12>;
+            pinctrl-names = "default";
             label = "CAN0";
         };
 

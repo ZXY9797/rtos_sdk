@@ -20,12 +20,18 @@ public:
     bool append_fragment(uint8_t index, const uint8_t *data, size_t len,
                          bool last) {
         if (ready_ || data == nullptr || len == 0U
-            || index != expected_index_ || widx_ + len > MAX_FRAME) {
+            || index != expected_index_ || len > MAX_FRAME - widx_) {
             reset();
             return false;
         }
         memcpy(buf_ + widx_, data, len);
         widx_ += len;
+        if (index == 0x7FU && !last) {
+            // The wire index has only seven bits. Continuing would make a
+            // wrapped fragment stream indistinguishable from a new frame.
+            reset();
+            return false;
+        }
         expected_index_ = static_cast<uint8_t>((expected_index_ + 1U) & 0x7FU);
         if (last) {
             ready_ = true;
@@ -72,11 +78,13 @@ class Fragmenter {
 public:
     // 分片发送：将 data 按 frag_payload 大小切片，逐片调用 send_fn
     // send_fn(frame_buf, frame_len) -> bool，返回 false 中断发送
-    template<typename SendFn>
+    template<size_t MaxFragmentPayload, typename SendFn>
     static int send(const uint8_t *data, size_t len, size_t frag_payload,
                     SendFn &&send_fn) {
+        static_assert(MaxFragmentPayload > 0U);
+        static_assert(MaxFragmentPayload <= Reassembler::MAX_FRAME);
         if ((len > 0U && data == nullptr) || len > Reassembler::MAX_FRAME
-            || frag_payload == 0U || frag_payload > Reassembler::MAX_FRAME
+            || frag_payload == 0U || frag_payload > MaxFragmentPayload
             || len > 128U * frag_payload) {
             return -1;
         }
@@ -85,7 +93,7 @@ public:
         while (off < len) {
             size_t n = len - off;
             if (n > frag_payload) n = frag_payload;
-            uint8_t frag[1 + Reassembler::MAX_FRAME];
+            uint8_t frag[1U + MaxFragmentPayload];
             frag[0] = idx | (off + n >= len ? 0x80 : 0);
             memcpy(frag + 1, data + off, n);
             if (!send_fn(frag, n + 1)) return static_cast<int>(off);
@@ -98,7 +106,7 @@ public:
     // 分片接收：从一帧中解析 frag header，追加到重组器
     // 返回 true 表示重组完成（最后一片已收到）
     static bool recv(const uint8_t *frame, size_t frame_len, Reassembler &reasm) {
-        if (frame_len < 2) return false;
+        if (frame == nullptr || frame_len < 2U) return false;
         const bool last = (frame[0] & 0x80U) != 0U;
         const uint8_t index = frame[0] & 0x7FU;
         return reasm.append_fragment(index, frame + 1U, frame_len - 1U, last)

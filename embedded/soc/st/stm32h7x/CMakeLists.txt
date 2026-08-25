@@ -32,7 +32,9 @@ target_sources_ifdef(CONFIG_USE_STM32_HAL_DTS ${MODULE_NAME} PRIVATE ${STM32_HAL
 target_sources_ifdef(CONFIG_USE_STM32_HAL_ETH ${MODULE_NAME} PRIVATE ${STM32_HAL_LIB_DIR}/drivers/src/stm32h7xx_hal_eth.c)
 target_sources_ifdef(CONFIG_USE_STM32_HAL_ETH_EX ${MODULE_NAME} PRIVATE ${STM32_HAL_LIB_DIR}/drivers/src/stm32h7xx_hal_eth_ex.c)
 target_sources_ifdef(CONFIG_USE_STM32_HAL_EXTI ${MODULE_NAME} PRIVATE ${STM32_HAL_LIB_DIR}/drivers/src/stm32h7xx_hal_exti.c)
-target_sources_ifdef(CONFIG_USE_STM32_HAL_FDCAN ${MODULE_NAME} PRIVATE ${STM32_HAL_LIB_DIR}/drivers/src/stm32h7xx_hal_fdcan.c)
+target_sources_ifdef(CONFIG_USE_STM32_HAL_FDCAN ${MODULE_NAME} PRIVATE
+  ${STM32_HAL_LIB_DIR}/drivers/src/stm32h7xx_hal.c
+  ${STM32_HAL_LIB_DIR}/drivers/src/stm32h7xx_hal_fdcan.c)
 target_sources_ifdef(CONFIG_USE_STM32_HAL_FLASH ${MODULE_NAME} PRIVATE ${STM32_HAL_LIB_DIR}/drivers/src/stm32h7xx_hal_flash.c)
 target_sources_ifdef(CONFIG_USE_STM32_HAL_FLASH_EX ${MODULE_NAME} PRIVATE ${STM32_HAL_LIB_DIR}/drivers/src/stm32h7xx_hal_flash_ex.c)
 target_sources_ifdef(CONFIG_USE_STM32_HAL_FMAC ${MODULE_NAME} PRIVATE ${STM32_HAL_LIB_DIR}/drivers/src/stm32h7xx_hal_fmac.c)

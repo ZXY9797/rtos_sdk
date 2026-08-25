@@ -68,7 +68,11 @@ void deinit_comm() {
 
 void set_comm_connected(bool connected) {
 #ifdef CONFIG_LINK
-    g_ble_link.set_connected(connected);
+    g_ble_link.set_connected(false);
+    g_ble_link.reset_rx();
+    if (connected) {
+        g_ble_link.set_connected(true);
+    }
 #else
     (void)connected;
 #endif

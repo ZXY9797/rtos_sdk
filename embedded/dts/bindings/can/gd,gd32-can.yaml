@@ -28,13 +28,15 @@ properties:
     type: array
     required: true
 
+  pinctrl-0:
+    required: true
+
+  pinctrl-names:
+    required: true
+
   bitrate:
     type: int
     default: 500000
-
-  irq-priority:
-    type: int
-    default: 8
 
   label:
     type: string

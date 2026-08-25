@@ -3,7 +3,7 @@
 #include <cstring>
 #include <algorithm>
 
-#if defined(CONFIG_CAN_GD32) || defined(HAL_CAN_MODULE_ENABLED)
+#if defined(CONFIG_CAN)
 #include <drivers/can.h>
 #endif
 
@@ -14,19 +14,13 @@ static void float_to_bytes(float val, uint8_t *data) {
 void CanHandler::init(uint32_t base_id, hal::Can &can) {
     deinit();
     base_id_ = base_id;
-#if defined(CONFIG_CAN_GD32) || defined(HAL_CAN_MODULE_ENABLED)
+#if defined(CONFIG_CAN)
     can_ = &can;
-    hal::Status init_status = hal::Status::Ok;
-    if (!can_->is_initialized()) {
-        hal::CanConfig cfg;
-        cfg.bitrate = 500000U;
-        init_status = can_->init(cfg);
-    }
-    if (init_status == hal::Status::Ok
-        && can_->start() == hal::Status::Ok) {
+    // Initialization/deinitialization belongs to the generated device
+    // lifecycle. This component only owns the operational start/stop state.
+    if (can_->is_initialized() && can_->start() == hal::Status::Ok) {
         ready_ = true;
     } else {
-        (void)can_->deinit();
         can_ = nullptr;
     }
 #else
@@ -35,12 +29,11 @@ void CanHandler::init(uint32_t base_id, hal::Can &can) {
 }
 
 void CanHandler::deinit() {
-#if defined(CONFIG_CAN_GD32) || defined(HAL_CAN_MODULE_ENABLED)
+#if defined(CONFIG_CAN)
     if (can_ != nullptr) {
         if (can_->is_initialized()) {
             (void)can_->stop();
         }
-        (void)can_->deinit();
     }
 #endif
     can_ = nullptr;
@@ -49,15 +42,17 @@ void CanHandler::deinit() {
 }
 
 bool CanHandler::process() {
-#if defined(CONFIG_CAN_GD32) || defined(HAL_CAN_MODULE_ENABLED)
+#if defined(CONFIG_CAN)
     if (!ready_ || !can_) return false;
 
     uint32_t id = 0;
+    bool is_extended = false;
     uint8_t data[8] = {};
     uint8_t len = 0;
 
-    if (can_->get_rx_message(&id, data, &len) == hal::Status::Ok) {
-        if (id == base_id_) {
+    if (can_->get_rx_message(&id, data, sizeof(data), &len, &is_extended)
+        == hal::Status::Ok) {
+        if (!is_extended && id == base_id_) {
             dispatch(id, data, len);
         }
         return true;
@@ -76,7 +71,7 @@ void CanHandler::dispatch(uint32_t id, const uint8_t *data, uint8_t len) {
 }
 
 bool CanHandler::send(uint32_t id, const uint8_t *data, uint8_t len) {
-#if defined(CONFIG_CAN_GD32) || defined(HAL_CAN_MODULE_ENABLED)
+#if defined(CONFIG_CAN)
     if (!ready_ || !can_) return false;
     return can_->send(id, data, len, 0) == hal::Status::Ok;
 #else

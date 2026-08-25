@@ -500,6 +500,7 @@
 			compatible = "st,stm32h7-fdcan";
 			reg = <0x4000a000 0x400>, <0x4000ac00 0x350>;
 			reg-names = "m_can", "message_ram";
+			port = <0>;
 			clocks = <&rcc STM32_CLOCK(APB1_2, 8)>;
 			interrupts = <19 0>, <21 0>, <63 0>;
 			interrupt-names = "int0", "int1", "calib";
@@ -511,6 +512,7 @@
 			compatible = "st,stm32h7-fdcan";
 			reg = <0x4000a400 0x400>, <0x4000ac00 0x6a0>;
 			reg-names = "m_can", "message_ram";
+			port = <1>;
 			clocks = <&rcc STM32_CLOCK(APB1_2, 8)>;
 			interrupts = <20 0>, <22 0>, <63 0>;
 			interrupt-names = "int0", "int1", "calib";

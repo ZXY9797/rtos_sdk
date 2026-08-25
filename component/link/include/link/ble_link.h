@@ -19,7 +19,9 @@ public:
         valid_ = frag_payload_ > 0U
             && frag_payload_ <= kMaxBleFragmentPayload
             && completed_frames_.create(kCompletedFrameDepth,
-                                        sizeof(RxFrame))
+                                        sizeof(RxFrame),
+                                        completed_frame_storage_,
+                                        sizeof(completed_frame_storage_))
             && register_link(this);
     }
 
@@ -35,12 +37,12 @@ public:
         if (lock.owns_lock()
             && rx_enabled_.load(std::memory_order_acquire)) {
             if (Fragmenter::recv(data, len, ingress_reasm_)) {
-                RxFrame frame {};
+                ingress_frame_ = {};
                 const int frame_len = ingress_reasm_.read(
-                    frame.data, sizeof(frame.data));
+                    ingress_frame_.data, sizeof(ingress_frame_.data));
                 if (frame_len > 0) {
-                    frame.len = static_cast<uint16_t>(frame_len);
-                    if (!completed_frames_.send(&frame, 0U)) {
+                    ingress_frame_.len = static_cast<uint16_t>(frame_len);
+                    if (!completed_frames_.send(&ingress_frame_, 0U)) {
                         rx_dropped_.fetch_add(1U, std::memory_order_relaxed);
                     }
                 }
@@ -53,7 +55,8 @@ public:
         if (!lock.owns_lock() || tx_func_ == nullptr || !is_ready()) {
             return -1;
         }
-        return Fragmenter::send(data, len, frag_payload_,
+        return Fragmenter::send<kMaxBleFragmentPayload>(
+            data, len, frag_payload_,
             [this](const uint8_t *buf, size_t n) -> bool {
                 return tx_func_(buf, n, tx_arg_);
             });
@@ -111,6 +114,7 @@ public:
         }
         ingress_reasm_.reset();
         (void)completed_frames_.reset();
+        ingress_frame_ = {};
         current_frame_ = {};
         read_idx_ = 0U;
         rx_dropped_.store(0U, std::memory_order_relaxed);
@@ -145,10 +149,15 @@ private:
     osal::Mutex ingress_mutex_;
     osal::Mutex rx_consumer_mutex_;
     osal::MessageQueue completed_frames_;
+    alignas(std::max_align_t)
+        uint8_t completed_frame_storage_[
+            osal::MessageQueue::storage_size<
+                RxFrame, kCompletedFrameDepth>()] {};
     osal::Mutex tx_config_mutex_;
     TxFunc tx_func_ {nullptr};
     void *tx_arg_ {nullptr};
     Reassembler ingress_reasm_;
+    RxFrame ingress_frame_ {};
     RxFrame current_frame_ {};
     size_t read_idx_ {0U};
 

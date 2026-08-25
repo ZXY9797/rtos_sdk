@@ -3,6 +3,10 @@
 #include "link.h"
 #include <drivers/uart.h>
 
+#ifndef CONFIG_LINK_UART_TX_TIMEOUT_MS
+#define CONFIG_LINK_UART_TX_TIMEOUT_MS 100
+#endif
+
 namespace link {
 
 class UartLink : public Link {
@@ -13,7 +17,8 @@ public:
 
     int send(const uint8_t *data, size_t len) override {
         size_t sent = 0;
-        (void)uart_.send(data, len, &sent, 0);
+        (void)uart_.send(data, len, &sent,
+                         CONFIG_LINK_UART_TX_TIMEOUT_MS);
         return static_cast<int>(sent);
     }
 

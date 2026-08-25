@@ -7,11 +7,13 @@
 
 extern "C" {
 #include "gd32f50x_can.h"
+#include "gd32f50x_rcu.h"
 }
 
 namespace hal {
 
 static constexpr uint8_t kMaxCans = 2;
+static constexpr uint8_t kCan1FilterStartBank = 14U;
 
 struct CanInstance {
     uint32_t base {0};
@@ -19,6 +21,25 @@ struct CanInstance {
 };
 
 static CanInstance s_instances[kMaxCans];
+static osal::Mutex s_hardware_mutex;
+static uint8_t s_initialized_mask = 0U;
+
+static void enable_can_clocks(uint8_t port) {
+    // CAN1 uses the filter block located in the CAN0 register window.
+    rcu_periph_clock_enable(RCU_CAN0);
+    if (port == 1U) {
+        rcu_periph_clock_enable(RCU_CAN1);
+    }
+}
+
+static void release_unused_can_clocks(uint8_t port) {
+    if (port == 1U) {
+        rcu_periph_clock_disable(RCU_CAN1);
+    }
+    if (s_initialized_mask == 0U) {
+        rcu_periph_clock_disable(RCU_CAN0);
+    }
+}
 
 static uint32_t can_base_from_port(uint8_t port) {
     switch (port) {
@@ -28,6 +49,26 @@ static uint32_t can_base_from_port(uint8_t port) {
     }
 }
 
+static bool timing_matches(const CanConfig &config) {
+    if (config.clock_hz == 0U || config.bitrate == 0U
+        || config.nominal_prescaler == 0U
+        || config.nominal_time_seg1 == 0U
+        || config.nominal_time_seg1 > 64U
+        || config.nominal_time_seg2 == 0U
+        || config.nominal_time_seg2 > 32U
+        || config.nominal_sjw == 0U
+        || config.nominal_sjw > 32U
+        || config.nominal_sjw > config.nominal_time_seg2) {
+        return false;
+    }
+    const uint64_t divisor = static_cast<uint64_t>(
+        config.nominal_prescaler)
+        * (1ULL + config.nominal_time_seg1
+           + config.nominal_time_seg2);
+    return static_cast<uint64_t>(config.bitrate) * divisor
+        == config.clock_hz;
+}
+
 Can &Can::instance(uint8_t port) {
     static Can insts[kMaxCans] = {Can(0), Can(1)};
     static Can invalid(kMaxCans);
@@ -35,27 +76,38 @@ Can &Can::instance(uint8_t port) {
 }
 
 Status Can::init(const CanConfig &config) {
+    osal::LockGuard lock(m_operation_mutex);
+    if (!lock.owns_lock()) return Status::Busy;
     uint32_t base = can_base_from_port(m_port);
-    if (!base || config.bitrate != 500000U) return Status::InvalidArgument;
+    if (!base || m_initialized.load(std::memory_order_acquire)
+        || !timing_matches(config)) {
+        return Status::InvalidArgument;
+    }
+    osal::LockGuard hardware_lock(s_hardware_mutex);
+    if (!hardware_lock.owns_lock()) return Status::Busy;
+    enable_can_clocks(m_port);
 
-    s_instances[m_port % kMaxCans].base = base;
+    s_instances[m_port].base = base;
 
     // Enter init mode
     if (can_working_mode_set(base, CAN_MODE_INITIALIZE) != SUCCESS) {
+        s_instances[m_port].base = 0U;
+        release_unused_can_clocks(m_port);
         return Status::HardwareError;
     }
 
     // Configure bit timing
-    // GD32 CAN clock = APB1 = 100MHz (200MHz / 2)
-    // 500kbps: prescaler=10, BS1=15, BS2=4 -> 100MHz/(10*(1+15+4)) = 500kbps
     can_parameter_struct params;
     can_struct_para_init(CAN_INIT_STRUCT, &params);
 
     params.working_mode = CAN_NORMAL_MODE;
-    params.prescaler = 10;
-    params.time_segment_1 = CAN_BT_BS1_15TQ;
-    params.time_segment_2 = CAN_BT_BS2_4TQ;
-    params.resync_jump_width = CAN_BT_SJW_1TQ;
+    params.prescaler = config.nominal_prescaler;
+    params.time_segment_1 = static_cast<uint8_t>(
+        config.nominal_time_seg1 - 1U);
+    params.time_segment_2 = static_cast<uint8_t>(
+        config.nominal_time_seg2 - 1U);
+    params.resync_jump_width = static_cast<uint8_t>(
+        config.nominal_sjw - 1U);
 
     params.time_triggered = DISABLE;
     params.auto_bus_off_recovery = ENABLE;
@@ -65,58 +117,95 @@ Status Can::init(const CanConfig &config) {
     params.trans_fifo_order = DISABLE;
 
     if (can_init(base, &params) != SUCCESS) {
+        can_deinit(base);
+        s_instances[m_port].base = 0U;
+        release_unused_can_clocks(m_port);
         return Status::HardwareError;
     }
 
-    // Configure filter 0: accept all standard IDs into FIFO0
-    can_filter_mask_mode_init(0, 0, CAN_STANDARD_FIFO0, 0);
+    // Split the shared filter bank deterministically between controllers.
+    can1_filter_start_bank(kCan1FilterStartBank);
+    const uint16_t filter = m_port == 0U ? 0U : kCan1FilterStartBank;
+    can_filter_mask_mode_init(0U, 0U, CAN_STANDARD_FIFO0, filter);
 
-    m_initialized = true;
+    s_initialized_mask |= static_cast<uint8_t>(1U << m_port);
+    m_initialized.store(true, std::memory_order_release);
     return Status::Ok;
 }
 
 Status Can::deinit() {
-    if (!m_initialized) return Status::Ok;
-    uint32_t base = s_instances[m_port % kMaxCans].base;
-    if (s_instances[m_port % kMaxCans].started) {
-        can_working_mode_set(base, CAN_MODE_SLEEP);
+    osal::LockGuard lock(m_operation_mutex);
+    if (!lock.owns_lock()) return Status::Busy;
+    if (!m_initialized.load(std::memory_order_acquire)) return Status::Ok;
+    osal::LockGuard hardware_lock(s_hardware_mutex);
+    if (!hardware_lock.owns_lock()) return Status::Busy;
+    uint32_t base = s_instances[m_port].base;
+    if (s_instances[m_port].started) {
+        if (can_working_mode_set(base, CAN_MODE_SLEEP) != SUCCESS) {
+            return Status::HardwareError;
+        }
     }
     can_deinit(base);
-    s_instances[m_port % kMaxCans].started = false;
-    m_initialized = false;
+    s_instances[m_port].started = false;
+    s_instances[m_port].base = 0U;
+    s_initialized_mask &= static_cast<uint8_t>(~(1U << m_port));
+    release_unused_can_clocks(m_port);
+    m_initialized.store(false, std::memory_order_release);
     return Status::Ok;
 }
 
+bool Can::is_started() const {
+    osal::LockGuard lock(m_operation_mutex, 0U);
+    return lock.owns_lock()
+        && m_initialized.load(std::memory_order_acquire) && m_port < kMaxCans
+        && s_instances[m_port].started;
+}
+
 Status Can::start() {
-    if (!m_initialized) return Status::InvalidArgument;
-    uint32_t base = s_instances[m_port % kMaxCans].base;
+    osal::LockGuard lock(m_operation_mutex);
+    if (!lock.owns_lock()) return Status::Busy;
+    if (!m_initialized.load(std::memory_order_acquire)) {
+        return Status::InvalidArgument;
+    }
+    if (s_instances[m_port].started) return Status::Ok;
+    uint32_t base = s_instances[m_port].base;
     if (can_working_mode_set(base, CAN_MODE_NORMAL) != SUCCESS) {
         return Status::HardwareError;
     }
-    s_instances[m_port % kMaxCans].started = true;
+    s_instances[m_port].started = true;
     return Status::Ok;
 }
 
 Status Can::stop() {
-    if (!m_initialized) return Status::InvalidArgument;
-    uint32_t base = s_instances[m_port % kMaxCans].base;
+    osal::LockGuard lock(m_operation_mutex);
+    if (!lock.owns_lock()) return Status::Busy;
+    if (!m_initialized.load(std::memory_order_acquire)) {
+        return Status::InvalidArgument;
+    }
+    if (!s_instances[m_port].started) return Status::Ok;
+    uint32_t base = s_instances[m_port].base;
     if (can_working_mode_set(base, CAN_MODE_SLEEP) != SUCCESS) {
         return Status::HardwareError;
     }
-    s_instances[m_port % kMaxCans].started = false;
+    s_instances[m_port].started = false;
     return Status::Ok;
 }
 
 Status Can::send(uint32_t id, const uint8_t *data, uint8_t len, uint32_t id_ext) {
-    HAL_ASSERT_MSG(m_initialized, "CAN not initialized");
-    if (!m_initialized || !data || len > 8
-        || !s_instances[m_port % kMaxCans].started
+    osal::LockGuard lock(m_operation_mutex);
+    if (!lock.owns_lock()) return Status::Busy;
+    HAL_ASSERT_MSG(m_initialized.load(std::memory_order_acquire),
+                   "CAN not initialized");
+    if (!m_initialized.load(std::memory_order_acquire)
+        || (len > 0U && data == nullptr) || len > 8U
+        || !s_instances[m_port].started
+        || id_ext > 1U
         || (id_ext == 0U && id > CAN_SFID_MASK)
         || (id_ext != 0U && id > CAN_EFID_MASK)) {
         return Status::InvalidArgument;
     }
 
-    uint32_t base = s_instances[m_port % kMaxCans].base;
+    uint32_t base = s_instances[m_port].base;
 
     can_transmit_message_struct tx_msg;
     memset(&tx_msg, 0, sizeof(tx_msg));
@@ -131,7 +220,9 @@ Status Can::send(uint32_t id, const uint8_t *data, uint8_t len, uint32_t id_ext)
 
     tx_msg.tx_ft = CAN_FT_DATA;
     tx_msg.tx_dlen = len;
-    memcpy(tx_msg.tx_data, data, len);
+    if (len > 0U) {
+        memcpy(tx_msg.tx_data, data, len);
+    }
 
     tx_msg.fd_flag = CAN_FDF_CLASSIC;
     tx_msg.fd_brs = CAN_BRS_DISABLE;
@@ -144,13 +235,19 @@ Status Can::send(uint32_t id, const uint8_t *data, uint8_t len, uint32_t id_ext)
     return Status::Ok;
 }
 
-Status Can::get_rx_message(uint32_t *id, uint8_t *data, uint8_t *len) {
-    if (!m_initialized || !id || !data || !len
-        || !s_instances[m_port % kMaxCans].started) {
+Status Can::get_rx_message(uint32_t *id, uint8_t *data,
+                           uint8_t capacity, uint8_t *len,
+                           bool *is_extended) {
+    osal::LockGuard lock(m_operation_mutex);
+    if (!lock.owns_lock()) return Status::Busy;
+    if (!m_initialized.load(std::memory_order_acquire)
+        || !id || !data || !len
+        || !s_instances[m_port].started) {
         return Status::InvalidArgument;
     }
+    *len = 0U;
 
-    uint32_t base = s_instances[m_port % kMaxCans].base;
+    uint32_t base = s_instances[m_port].base;
 
     // Check if FIFO0 has messages
     if (can_receive_message_length_get(base, CAN_FIFO0) == 0) {
@@ -162,17 +259,28 @@ Status Can::get_rx_message(uint32_t *id, uint8_t *data, uint8_t *len) {
 
     can_message_receive(base, CAN_FIFO0, &rx_msg);
 
-    if (rx_msg.rx_ff == CAN_FF_EXTENDED) {
+    if (rx_msg.rx_ft == CAN_FT_REMOTE
+        || (rx_msg.rx_ff != CAN_FF_STANDARD
+            && rx_msg.rx_ff != CAN_FF_EXTENDED)) {
+        return Status::HardwareError;
+    }
+    const bool extended = rx_msg.rx_ff == CAN_FF_EXTENDED;
+    if (extended) {
         *id = rx_msg.rx_efid;
     } else {
         *id = rx_msg.rx_sfid;
     }
+    if (is_extended != nullptr) {
+        *is_extended = extended;
+    }
 
     if (rx_msg.rx_dlen > 8U) {
-        *len = 0U;
         return Status::HardwareError;
     }
     *len = rx_msg.rx_dlen;
+    if (rx_msg.rx_dlen > capacity) {
+        return Status::NoMemory;
+    }
     memcpy(data, rx_msg.rx_data, rx_msg.rx_dlen);
 
     return Status::Ok;
