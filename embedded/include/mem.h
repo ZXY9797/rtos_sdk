@@ -1,21 +1,42 @@
 #ifndef RTOS_SDK_INCLUDE_MEM_H_
 #define RTOS_SDK_INCLUDE_MEM_H_
 
+#include <arch/arm/cortex_m/fault.h>
 #include <osal_types.h>
 #include <new>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
+
+namespace embedded_memory {
+
+[[noreturn]] inline void allocation_failed(size_t size,
+                                           const char *operation)
+{
+    constexpr size_t max_detail =
+        static_cast<size_t>(std::numeric_limits<int32_t>::max());
+    const int32_t detail = static_cast<int32_t>(
+        size <= max_detail ? size : max_detail);
+    hal::fault::panic(hal::fault::FatalReason::AllocationFailure,
+                      detail, operation, 0U);
+}
+
+} // namespace embedded_memory
 
 // ─── 全局 new/delete → RTOS 堆 ────────────────────────────────────
 
 inline void *operator new(size_t size) {
     void *ptr = rtos_malloc(size);
-    if (ptr == nullptr) __builtin_trap();
+    if (ptr == nullptr) {
+        embedded_memory::allocation_failed(size, "operator_new");
+    }
     return ptr;
 }
 inline void *operator new[](size_t size) {
     void *ptr = rtos_malloc(size);
-    if (ptr == nullptr) __builtin_trap();
+    if (ptr == nullptr) {
+        embedded_memory::allocation_failed(size, "operator_new_array");
+    }
     return ptr;
 }
 inline void *operator new(size_t size, const std::nothrow_t &) noexcept { return rtos_malloc(size); }

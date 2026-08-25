@@ -22,6 +22,18 @@ inline constexpr Priority kPriorityMin = 0U;
 inline constexpr Priority kDefaultThreadPriority =
     static_cast<Priority>(kPriorityMax / 3U);
 
+struct MemoryStats {
+    bool available {false};
+    size_t free_bytes {0U};
+    size_t minimum_free_bytes {0U};
+};
+
+struct StackStats {
+    bool available {false};
+    size_t total_bytes {0U};
+    size_t minimum_free_bytes {0U};
+};
+
 struct ThreadConfig {
     const char* name = "thread";
     Priority priority = kDefaultThreadPriority;
@@ -44,6 +56,7 @@ public:
     static bool in_isr();
     static uint32_t tick_count();
     static uint32_t uptime_ms();
+    [[nodiscard]] static MemoryStats memory_stats();
     static void suspend_scheduler();
     static bool resume_scheduler();
 };
@@ -120,7 +133,11 @@ public:
 
 private:
     osal_sem_t handle_ {};
+    alignas(std::max_align_t)
+        std::byte control_storage_[kSemaphoreControlBytes] {};
     uint32_t max_count_ {};
+    std::atomic<uint32_t> token_count_ {0U};
+    bool is_static_ {false};
 };
 
 class Mutex {
@@ -142,6 +159,9 @@ public:
 
 private:
     osal_mutex_t handle_ {};
+    alignas(std::max_align_t)
+        std::byte control_storage_[kMutexControlBytes] {};
+    bool is_static_ {false};
 };
 
 class [[nodiscard]] LockGuard {
@@ -185,14 +205,16 @@ public:
     Thread(const Thread&) = delete;
     Thread& operator=(const Thread&) = delete;
 
-    [[nodiscard]] static Thread* create(const char* name,
-                                        Entry entry,
-                                        void* param,
-                                        size_t stack_size,
-                                        int32_t priority,
-                                        int32_t time_slice_ticks = 0);
+    [[nodiscard]] static Thread* create(
+        Entry entry, void* context, const ThreadConfig& config = {});
 
     [[nodiscard]] bool start(Entry entry, void* context, const ThreadConfig& config = {});
+    void request_stop();
+    [[nodiscard]] bool stop_requested() const {
+        return stop_requested_.load(std::memory_order_acquire);
+    }
+    [[nodiscard]] bool join(Milliseconds timeout_ms = 100U);
+    [[nodiscard]] bool shutdown(Milliseconds timeout_ms = 100U);
     void destroy();
 
     [[nodiscard]] int startup();
@@ -205,6 +227,7 @@ public:
     [[nodiscard]] State get_state() const;
     [[nodiscard]] const char* get_name() const;
     [[nodiscard]] bool abort_delay();
+    [[nodiscard]] StackStats stack_stats() const;
 
     [[nodiscard]] bool is_valid() const { return handle_.handle != nullptr; }
     [[nodiscard]] osal_thread_t* handle() { return &handle_; }
@@ -213,8 +236,15 @@ public:
 private:
     struct PrivateTag {};
     explicit Thread(PrivateTag) : handle_{} {}
+    static void threadEntry(void* context);
 
     osal_thread_t handle_ {};
+    Entry entry_ {nullptr};
+    void* context_ {nullptr};
+    std::atomic<bool> stop_requested_ {false};
+    std::atomic<bool> started_ {false};
+    std::atomic<bool> exited_ {false};
+    size_t stack_size_bytes_ {0U};
 };
 
 struct PeriodicStats {
@@ -231,9 +261,24 @@ public:
     virtual bool enable_update_irq(IrqCallback cb, void *arg) = 0;
 };
 
-enum class PeriodicTrigger {
+enum class PeriodicTrigger : uint8_t {
     Tick,
     External,
+};
+
+struct PeriodicThreadConfig {
+    const char* name {"periodic"};
+    PeriodicEntry entry {nullptr};
+    void* context {nullptr};
+    size_t stack_size_bytes {kDefaultThreadStackBytes};
+    // Optional caller-owned stack. When provided, no task stack/TCB heap
+    // allocation is performed and the buffer must outlive the thread.
+    void* stack_buffer {nullptr};
+    Priority priority {kDefaultThreadPriority};
+    uint32_t frequency_hz {0U};
+    PeriodicTrigger trigger {PeriodicTrigger::Tick};
+    IrqTimer* timer {nullptr};
+    bool register_isr_trigger {true};
 };
 
 /// ISR 静态触发表 — 通过 ID 在 ISR 中触发回调，无需持有任务 handle。
@@ -263,35 +308,31 @@ private:
 
 class PeriodicThread {
 public:
+    PeriodicThread();
     ~PeriodicThread();
 
     PeriodicThread(const PeriodicThread&) = delete;
     PeriodicThread& operator=(const PeriodicThread&) = delete;
 
-    [[nodiscard]] static PeriodicThread* create(const char* name,
-                                                PeriodicEntry entry,
-                                                void* param,
-                                                size_t stack_size,
-                                                int32_t priority,
-                                                uint32_t frequency_hz,
-                                                PeriodicTrigger trigger,
-                                                IrqTimer *timer = nullptr,
-                                                bool register_isr_trigger = true);
+    [[nodiscard]] static PeriodicThread* create(
+        const PeriodicThreadConfig& config);
+    [[nodiscard]] bool start(const PeriodicThreadConfig& config);
 
     [[nodiscard]] int startup();
     [[nodiscard]] int stop();
+    [[nodiscard]] bool shutdown(Milliseconds timeout_ms = 100U);
+    void destroy();
     [[nodiscard]] int notify_from_isr(uint32_t events = 1U);
     [[nodiscard]] uint32_t missed() const {
         return missed_.load(std::memory_order_relaxed);
     }
+    [[nodiscard]] StackStats stack_stats() const;
 
     /// External 模式下分配的 IsrTrigger slot ID，供 core 层 ISR 通过 fire(id) 触发。
     /// Tick 模式返回 -1。
     [[nodiscard]] int trigger_id() const { return trigger_id_; }
 
 private:
-    struct PrivateTag {};
-    explicit PeriodicThread(PrivateTag);
     static void threadEntry(void* parameter);
     static uint32_t nextDelayTicks(uint32_t tick_rate, uint32_t frequency_hz,
                                    uint32_t& phase);
@@ -300,6 +341,9 @@ private:
 
     osal_thread_t thread_ {};
     osal_sem_t sem_ {nullptr};
+    alignas(std::max_align_t)
+        std::byte sem_storage_[kSemaphoreControlBytes] {};
+    bool sem_is_static_ {false};
     PeriodicEntry entry_ {nullptr};
     void* param_ {nullptr};
     IrqTimer *timer_ {nullptr};
@@ -311,7 +355,10 @@ private:
     std::atomic<uint32_t> missed_ {0U};
     std::atomic<uint32_t> pending_ {0U};
     std::atomic<bool> running_ {false};
+    std::atomic<bool> terminate_ {false};
+    std::atomic<bool> exited_ {false};
     bool started_ {false};
+    size_t stack_size_bytes_ {0U};
 };
 
 class EventGroup {
@@ -346,6 +393,13 @@ private:
     void* native_handle_ {};
 };
 
+struct MessageQueueStats {
+    uint32_t capacity {0U};
+    uint32_t current_depth {0U};
+    uint32_t high_water_mark {0U};
+    uint32_t send_failures {0U};
+};
+
 class MessageQueue {
 public:
     MessageQueue() = default;
@@ -353,6 +407,25 @@ public:
 
     MessageQueue(const MessageQueue&) = delete;
     MessageQueue& operator=(const MessageQueue&) = delete;
+
+    template <typename Item, size_t Length>
+    [[nodiscard]] static constexpr size_t storage_size()
+    {
+        static_assert(kMessageQueueItemAlignment > 0U);
+        static_assert(
+            (kMessageQueueItemAlignment
+             & (kMessageQueueItemAlignment - 1U)) == 0U);
+        static_assert(
+            sizeof(Item) <= SIZE_MAX - (kMessageQueueItemAlignment - 1U));
+        constexpr size_t stride =
+            (sizeof(Item) + kMessageQueueItemAlignment - 1U)
+            & ~(kMessageQueueItemAlignment - 1U);
+        static_assert(stride <= SIZE_MAX - kMessageQueueItemOverhead);
+        constexpr size_t slot_size =
+            stride + kMessageQueueItemOverhead;
+        static_assert(slot_size > 0U && Length <= SIZE_MAX / slot_size);
+        return Length * slot_size;
+    }
 
     [[nodiscard]] bool create(uint32_t length,
                               size_t item_size,
@@ -365,12 +438,20 @@ public:
     [[nodiscard]] bool reset();
     [[nodiscard]] uint32_t count() const;
     [[nodiscard]] uint32_t free_slots() const;
+    [[nodiscard]] MessageQueueStats stats() const;
+    void reset_stats();
     [[nodiscard]] bool is_valid() const { return native_handle_ != nullptr; }
 
 private:
+    void record_send(bool succeeded);
     void* native_handle_ {};
     void* control_block_buffer_ {};
+    alignas(std::max_align_t)
+        std::byte control_storage_[kMessageQueueControlBytes] {};
     size_t item_size_ {};
+    uint32_t length_ {};
+    std::atomic<uint32_t> high_water_mark_ {0U};
+    std::atomic<uint32_t> send_failures_ {0U};
     bool owns_control_block_buffer_ {};
 };
 
@@ -379,9 +460,12 @@ public:
     StreamBuffer() = default;
     ~StreamBuffer();
 
-    /// 动态分配
-    [[nodiscard]] bool create(size_t buf_size, size_t trigger_level = 1);
-    /// 静态分配（外部提供存储，StreamBuffer 不负责释放）
+    /// Creates a dynamically allocated byte stream.
+    [[nodiscard]] bool create(size_t buf_size,
+                              size_t trigger_level = 1);
+    /// Uses caller-owned storage; no hidden data/control allocation occurs.
+    /// One byte is reserved to distinguish full from empty, so the usable
+    /// capacity is storage_size - 1.
     [[nodiscard]] bool create(uint8_t *storage, size_t storage_size,
                               size_t trigger_level = 1);
     void destroy();
@@ -389,17 +473,22 @@ public:
     StreamBuffer(const StreamBuffer&) = delete;
     StreamBuffer& operator=(const StreamBuffer&) = delete;
 
-    /// 发送数据（阻塞直到写入或超时）
+    /// Sends bytes, waiting for space until the timeout expires.
+    ///
+    /// As with native FreeRTOS stream buffers, each instance supports one
+    /// producer and one consumer. Multiple producers or consumers require
+    /// external serialization.
     [[nodiscard]] size_t send(const uint8_t *data, size_t len,
                               Milliseconds timeout_ms = kWaitForever);
-    /// ISR 安全发送
+    /// ISR-safe send for the instance's single producer.
     [[nodiscard]] size_t send_from_isr(const uint8_t *data, size_t len,
                                        IsrContext& context);
 
-    /// 接收数据（阻塞直到 trigger_level 字节可用或超时）
+    /// Receives bytes. A receiver that blocks on an empty stream is woken
+    /// after trigger_level bytes become available, or on timeout.
     [[nodiscard]] size_t receive(uint8_t *data, size_t len,
                                  Milliseconds timeout_ms = kWaitForever);
-    /// ISR 安全接收
+    /// ISR-safe receive for the instance's single consumer.
     [[nodiscard]] size_t receive_from_isr(uint8_t *data, size_t len,
                                           IsrContext& context);
 
@@ -411,6 +500,8 @@ public:
 private:
     void *handle_ {};
     void *control_block_ {};
+    alignas(std::max_align_t)
+        std::byte control_storage_[kStreamBufferControlBytes] {};
     bool owns_storage_ {};
 };
 

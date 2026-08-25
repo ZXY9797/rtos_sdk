@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ble/ble_stack.h>
+#include <atomic>
 #include <cstdint>
 
 namespace ble {
@@ -22,7 +23,12 @@ public:
     /// 存储 DTS 配置，不启动协议栈
     int init(const StackConfig &cfg) {
         cfg_ = cfg;
+        configured_.store(true, std::memory_order_release);
         return 0;
+    }
+
+    [[nodiscard]] bool is_initialized() const {
+        return configured_.load(std::memory_order_acquire);
     }
 
     /// 应用层调用：启动 BLE 协议栈
@@ -40,6 +46,7 @@ public:
 private:
     StackConfig cfg_{};
     BleStack stack_;
+    std::atomic<bool> configured_ {false};
 };
 
 } // namespace ble

@@ -15,7 +15,8 @@ public:
         osal::PeriodicEntry entry {nullptr};
         void *param {nullptr};
         size_t stack_size {2048};
-        int32_t priority {5};
+        void *stack_buffer {nullptr};
+        osal::Priority priority {5U};
         uint32_t frequency_hz {1000};
         osal::IrqTimer *timer {nullptr};        // 硬件定时器触发源
         ReadFn read_fn {nullptr};               // 可选：周期线程中调用的传感器读取
@@ -23,12 +24,16 @@ public:
         uint32_t divider {1};                   // 分频系数
     };
 
+    SensorCore() = default;
     explicit SensorCore(const Config &cfg);
     ~SensorCore();
 
     SensorCore(const SensorCore&) = delete;
     SensorCore& operator=(const SensorCore&) = delete;
 
+    // Reconfiguration is accepted only while fully stopped. This lets a
+    // product own SensorCore statically without retaining stale ISR targets.
+    [[nodiscard]] bool configure(const Config &cfg);
     [[nodiscard]] int start();
     [[nodiscard]] int stop();
     [[nodiscard]] osal::PeriodicThread* thread() const {
@@ -49,6 +54,7 @@ private:
     static void thread_entry(
         void *arg, const osal::PeriodicStats& stats);
     Config cfg_;
+    osal::PeriodicThread periodic_thread_;
     std::atomic<osal::PeriodicThread *> thread_ {nullptr};
     std::atomic<bool> timer_attached_ {false};
     std::atomic<uint32_t> fire_count_ {0U};

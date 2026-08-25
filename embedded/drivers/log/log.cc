@@ -24,6 +24,7 @@ constexpr size_t kMaxBackends = 4U;
 constexpr size_t kLogBufferSize = 256U;
 
 struct LogMessage {
+    uint32_t flush_ticket;
     uint16_t length;
     char text[kLogBufferSize];
 };
@@ -34,17 +35,24 @@ std::atomic<uint8_t> s_level {static_cast<uint8_t>(LogLevel::Info)};
 std::atomic<uint32_t> s_enqueued {0U};
 std::atomic<uint32_t> s_dropped {0U};
 std::atomic<uint32_t> s_backend_errors {0U};
-std::atomic<bool> s_backend_active {false};
 std::atomic_flag s_dispatch_lock = ATOMIC_FLAG_INIT;
 
 #if defined(CONFIG_LOG_ASYNC)
 osal::MessageQueue s_log_queue;
 osal::Thread s_log_thread;
 alignas(std::max_align_t)
-uint8_t s_queue_storage[CONFIG_LOG_QUEUE_DEPTH * sizeof(LogMessage)] {};
+uint8_t s_queue_storage[
+    osal::MessageQueue::storage_size<
+        LogMessage, CONFIG_LOG_QUEUE_DEPTH>()] {};
 alignas(std::max_align_t)
 uint8_t s_thread_stack[CONFIG_LOG_THREAD_STACK_SIZE] {};
-std::atomic<bool> s_async_started {false};
+constexpr uint8_t kAsyncStopped = 0U;
+constexpr uint8_t kAsyncStarting = 1U;
+constexpr uint8_t kAsyncStarted = 2U;
+std::atomic<uint8_t> s_async_state {kAsyncStopped};
+osal::Mutex s_flush_mutex;
+std::atomic<uint32_t> s_next_flush_ticket {1U};
+std::atomic<uint32_t> s_completed_flush_ticket {0U};
 #endif
 
 bool backend_equal(const LogBackend &lhs, const LogBackend &rhs) {
@@ -65,14 +73,12 @@ bool dispatch_message(const LogMessage &message) {
     }
     LogBackend snapshot[kMaxBackends] {};
     const size_t count = copy_backends(snapshot);
-    s_backend_active.store(true, std::memory_order_release);
     for (size_t index = 0U; index < count; ++index) {
         if (!snapshot[index].write(snapshot[index].context,
                                    message.text, message.length)) {
             s_backend_errors.fetch_add(1U, std::memory_order_relaxed);
         }
     }
-    s_backend_active.store(false, std::memory_order_release);
     s_dispatch_lock.clear(std::memory_order_release);
     return true;
 }
@@ -80,18 +86,42 @@ bool dispatch_message(const LogMessage &message) {
 #if defined(CONFIG_LOG_ASYNC)
 void log_worker(void *) {
     LogMessage message {};
-    for (;;) {
-        if (s_log_queue.receive(&message, osal::kWaitForever)) {
-            (void)dispatch_message(message);
+    while (!s_log_thread.stop_requested()) {
+        if (s_log_queue.receive(&message, 10U)) {
+            if (message.flush_ticket != 0U) {
+                s_completed_flush_ticket.store(
+                    message.flush_ticket, std::memory_order_release);
+            } else {
+                (void)dispatch_message(message);
+            }
         }
     }
 }
 
 bool ensure_async_started() {
-    if (s_async_started.load(std::memory_order_acquire)) return true;
-    if (!osal::Kernel::is_running()) return false;
+    if (s_async_state.load(std::memory_order_acquire) == kAsyncStarted) {
+        return true;
+    }
+    if (!osal::Kernel::is_running()) {
+        return false;
+    }
+    uint8_t expected = kAsyncStopped;
+    if (!s_async_state.compare_exchange_strong(
+            expected, kAsyncStarting, std::memory_order_acq_rel)) {
+        osal::Deadline deadline(100U);
+        while (s_async_state.load(std::memory_order_acquire)
+               == kAsyncStarting) {
+            if (deadline.expired()) {
+                return false;
+            }
+            osal::this_thread::sleep_for(1U);
+        }
+        return s_async_state.load(std::memory_order_acquire)
+            == kAsyncStarted;
+    }
     if (!s_log_queue.create(CONFIG_LOG_QUEUE_DEPTH, sizeof(LogMessage),
                             s_queue_storage, sizeof(s_queue_storage))) {
+        s_async_state.store(kAsyncStopped, std::memory_order_release);
         return false;
     }
 
@@ -102,16 +132,17 @@ bool ensure_async_started() {
     config.stack_buffer = s_thread_stack;
     if (!s_log_thread.start(log_worker, nullptr, config)) {
         s_log_queue.destroy();
+        s_async_state.store(kAsyncStopped, std::memory_order_release);
         return false;
     }
 
-    s_async_started.store(true, std::memory_order_release);
     if (s_log_thread.startup() != 0) {
-        s_async_started.store(false, std::memory_order_release);
         s_log_thread.destroy();
         s_log_queue.destroy();
+        s_async_state.store(kAsyncStopped, std::memory_order_release);
         return false;
     }
+    s_async_state.store(kAsyncStarted, std::memory_order_release);
     return true;
 }
 #else
@@ -213,9 +244,13 @@ void log_write(LogLevel level, const char *tag, const char *fmt, ...) {
         return;
     }
 
+    if (osal::Kernel::in_isr()) {
+        s_dropped.fetch_add(1U, std::memory_order_relaxed);
+        return;
+    }
+
 #if defined(CONFIG_LOG_ASYNC)
-    if (!s_async_started.load(std::memory_order_acquire)
-        || osal::Kernel::in_isr()) {
+    if (s_async_state.load(std::memory_order_acquire) != kAsyncStarted) {
         s_dropped.fetch_add(1U, std::memory_order_relaxed);
         return;
     }
@@ -261,14 +296,30 @@ void log_write(LogLevel level, const char *tag, const char *fmt, ...) {
 
 bool log_flush(uint32_t timeout_ms) {
 #if defined(CONFIG_LOG_ASYNC)
-    if (!s_async_started.load(std::memory_order_acquire)
+    if (s_async_state.load(std::memory_order_acquire) != kAsyncStarted
         || osal::Kernel::in_isr()) {
         return false;
     }
     osal::Deadline deadline(timeout_ms);
-    while (s_log_queue.count() != 0U
-           || s_backend_active.load(std::memory_order_acquire)) {
-        if (deadline.expired()) return false;
+    osal::LockGuard flush_lock(s_flush_mutex, deadline.remaining());
+    if (!flush_lock.owns_lock()) {
+        return false;
+    }
+    uint32_t ticket = 0U;
+    while (ticket == 0U) {
+        ticket = s_next_flush_ticket.fetch_add(
+            1U, std::memory_order_relaxed);
+    }
+    LogMessage marker {};
+    marker.flush_ticket = ticket;
+    if (!s_log_queue.send(&marker, deadline.remaining())) {
+        return false;
+    }
+    while (s_completed_flush_ticket.load(std::memory_order_acquire)
+           != ticket) {
+        if (deadline.expired()) {
+            return false;
+        }
         osal::this_thread::sleep_for(1U);
     }
 #else

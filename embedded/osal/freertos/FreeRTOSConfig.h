@@ -12,7 +12,7 @@
 #define configUSE_PREEMPTION                     1
 #define configUSE_PORT_OPTIMISED_TASK_SELECTION  1
 #define configCPU_CLOCK_HZ                       SystemCoreClock
-#define configTICK_RATE_HZ                       1000
+#define configTICK_RATE_HZ                       CONFIG_SYS_CLOCK_TICKS_PER_SEC
 #define configMAX_PRIORITIES                     32
 #define configMINIMAL_STACK_SIZE                 128
 #define configMAX_TASK_NAME_LEN                  16
@@ -20,11 +20,16 @@
 #define configIDLE_SHOULD_YIELD                  1
 #define configTASK_NOTIFICATION_ARRAY_ENTRIES    4
 #define configQUEUE_REGISTRY_SIZE                0
+#if defined(CONFIG_OSAL_TICKLESS_IDLE)
+#define configUSE_TICKLESS_IDLE                  1
+#else
+#define configUSE_TICKLESS_IDLE                  0
+#endif
 
 /* Memory */
 #define configSUPPORT_STATIC_ALLOCATION          1
 #define configSUPPORT_DYNAMIC_ALLOCATION         1
-#define configTOTAL_HEAP_SIZE                    (32 * 1024)
+#define configTOTAL_HEAP_SIZE                    CONFIG_FREERTOS_HEAP_SIZE
 
 /* Hook functions */
 #define configUSE_IDLE_HOOK                      0
@@ -54,15 +59,38 @@
 #define configUSE_RECURSIVE_MUTEXES              0
 #define configUSE_COUNTING_SEMAPHORES            1
 
-/* Interrupt nesting - STM32H7 has 4 priority bits */
-#define configPRIO_BITS                          4
-#define configLIBRARY_LOWEST_INTERRUPT_PRIORITY         15
+/* Interrupt priorities are derived from the selected SoC CMSIS contract. */
+#define configPRIO_BITS                          CONFIG_NUM_IRQ_PRIO_BITS
+#define configLIBRARY_LOWEST_INTERRUPT_PRIORITY \
+    ((1UL << configPRIO_BITS) - 1UL)
+#if configPRIO_BITS == 8
+/* CM4 PRIGROUP always consumes bit 0 when all eight bits are implemented. */
+#define configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY    4
+#else
 #define configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY    5
+#endif
 #define configKERNEL_INTERRUPT_PRIORITY         (configLIBRARY_LOWEST_INTERRUPT_PRIORITY << (8 - configPRIO_BITS))
 #define configMAX_SYSCALL_INTERRUPT_PRIORITY    (configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY << (8 - configPRIO_BITS))
 
-/* Assert */
-#define configASSERT(x) if (!(x)) { taskDISABLE_INTERRUPTS(); for(;;); }
+#if (configPRIO_BITS == 0) || (configPRIO_BITS > 8)
+#error "Invalid CONFIG_NUM_IRQ_PRIO_BITS for the FreeRTOS Cortex-M port"
+#endif
+#if configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY \
+    >= configLIBRARY_LOWEST_INTERRUPT_PRIORITY
+#error "FreeRTOS syscall interrupt priority leaves no callable IRQ range"
+#endif
+
+/* Route kernel contract violations through the persistent fatal path. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+void osal_freertos_assert_failed(const char *file, unsigned int line);
+#ifdef __cplusplus
+}
+#endif
+#define configASSERT(x) do { \
+    if (!(x)) { osal_freertos_assert_failed(__FILE__, __LINE__); } \
+} while (0)
 
 /* Map FreeRTOS port interrupt handlers to SDK vector table names */
 #define vPortSVCHandler     SVC_Handler

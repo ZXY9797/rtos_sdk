@@ -1,14 +1,26 @@
 #include <sensor_core.h>
+#include <arch/arm/cortex_m/fault.h>
 #include <irq.h>
 
 SensorCore::SensorCore(const Config &cfg) : cfg_(cfg) {}
+
+bool SensorCore::configure(const Config &cfg)
+{
+    if (thread_.load(std::memory_order_acquire) != nullptr
+        || timer_attached_.load(std::memory_order_acquire)) {
+        return false;
+    }
+    cfg_ = cfg;
+    return true;
+}
 
 SensorCore::~SensorCore()
 {
     if (stop() != 0) {
         // Continuing destruction would leave an ISR callback targeting freed
         // storage. Stop the system at the ownership boundary instead.
-        __builtin_trap();
+        hal::fault::panic(hal::fault::FatalReason::ThreadShutdownTimeout,
+                          0, "sensor_core_stop", 0U);
     }
 }
 
@@ -19,20 +31,28 @@ int SensorCore::start()
         || cfg_.frequency_hz == 0U || cfg_.divider == 0U) {
         return -1;
     }
-    osal::PeriodicThread *thread = osal::PeriodicThread::create(
-        cfg_.name, thread_entry, this, cfg_.stack_size, cfg_.priority,
-        cfg_.frequency_hz, osal::PeriodicTrigger::External, nullptr, false);
-    if (thread == nullptr) return -1;
+    osal::PeriodicThreadConfig thread_config {};
+    thread_config.name = cfg_.name;
+    thread_config.entry = thread_entry;
+    thread_config.context = this;
+    thread_config.stack_buffer = cfg_.stack_buffer;
+    thread_config.stack_size_bytes = cfg_.stack_size;
+    thread_config.priority = cfg_.priority;
+    thread_config.frequency_hz = cfg_.frequency_hz;
+    thread_config.trigger = osal::PeriodicTrigger::External;
+    thread_config.register_isr_trigger = false;
+    osal::PeriodicThread *thread = &periodic_thread_;
+    if (!thread->start(thread_config)) return -1;
 
     if (thread->startup() != 0) {
-        delete thread;
+        thread->destroy();
         return -1;
     }
 
     thread_.store(thread, std::memory_order_release);
     if (!cfg_.timer->enable_update_irq(timer_callback, this)) {
         thread_.store(nullptr, std::memory_order_release);
-        delete thread;
+        thread->destroy();
         return -1;
     }
     timer_attached_.store(true, std::memory_order_release);
@@ -53,7 +73,9 @@ int SensorCore::stop()
         timer_attached_.store(false, std::memory_order_release);
         thread = thread_.exchange(nullptr, std::memory_order_acq_rel);
     }
-    delete thread;
+    if (thread != nullptr) {
+        thread->destroy();
+    }
     fire_count_.store(0U, std::memory_order_relaxed);
     return 0;
 }

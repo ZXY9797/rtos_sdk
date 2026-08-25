@@ -1,6 +1,7 @@
 #pragma once
 
 #include <drivers/status.h>
+#include <atomic>
 #include <cstdint>
 
 namespace hal {
@@ -24,44 +25,51 @@ enum class DeviceState : uint8_t {
  */
 class DeviceBase {
 public:
-    constexpr DeviceBase() = default;
+    DeviceBase() = default;
 
-    const char *name() const { return name_; }
+    const char *name() const { return name_.load(std::memory_order_acquire); }
 
-    DeviceState state() const { return state_; }
+    DeviceState state() const { return state_.load(std::memory_order_acquire); }
 
-    Status last_error() const { return last_error_; }
-
-    bool is_initialized() const {
-        return state_ == DeviceState::Initialized ||
-               state_ == DeviceState::Open;
+    Status last_error() const {
+        return last_error_.load(std::memory_order_acquire);
     }
 
-    bool is_open() const { return state_ == DeviceState::Open; }
+    bool is_initialized() const {
+        const DeviceState current = state();
+        return current == DeviceState::Initialized ||
+               current == DeviceState::Open;
+    }
+
+    bool is_open() const { return state() == DeviceState::Open; }
 
     bool is_ready() const {
-        return is_initialized() && last_error_ == Status::Ok;
+        return is_initialized() && last_error() == Status::Ok;
     }
 
 protected:
-    void set_name(const char *name) { name_ = name; }
+    void set_name(const char *name) {
+        name_.store(name, std::memory_order_release);
+    }
 
     void set_state(DeviceState state) {
-        state_ = state;
+        state_.store(state, std::memory_order_release);
         if (state != DeviceState::Error) {
-            last_error_ = Status::Ok;
+            last_error_.store(Status::Ok, std::memory_order_release);
         }
     }
 
     void set_error(Status error) {
-        last_error_ = (error == Status::Ok) ? Status::HardwareError : error;
-        state_ = DeviceState::Error;
+        last_error_.store(
+            (error == Status::Ok) ? Status::HardwareError : error,
+            std::memory_order_release);
+        state_.store(DeviceState::Error, std::memory_order_release);
     }
 
 private:
-    const char *name_ = nullptr;
-    DeviceState state_ = DeviceState::Created;
-    Status last_error_ = Status::Ok;
+    std::atomic<const char *> name_ {nullptr};
+    std::atomic<DeviceState> state_ {DeviceState::Created};
+    std::atomic<Status> last_error_ {Status::Ok};
 };
 
 } // namespace hal

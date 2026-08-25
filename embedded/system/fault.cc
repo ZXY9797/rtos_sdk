@@ -18,7 +18,14 @@ namespace hal::fault {
 #if !defined(CONFIG_FAULT_UART_BACKEND)
 [[gnu::weak]] void putc(char c) { (void)c; }
 #endif
-void print(const char *s) { while (*s) putc(*s++); }
+void print(const char *s) {
+    if (s == nullptr) {
+        s = "?";
+    }
+    while (*s != '\0') {
+        putc(*s++);
+    }
+}
 
 void printHex(uint32_t val) {
     print("0x");
@@ -66,6 +73,12 @@ static void printNamedHex(const char *name, uint32_t value) {
 }
 
 static void printRecord(const FaultRecord &rec) {
+    printNamedHex("REASON: ", static_cast<uint32_t>(rec.reason));
+    printNamedHex("DETAIL: ", static_cast<uint32_t>(rec.detail));
+    printNamedHex("LINE: ", rec.line);
+    print("CONTEXT: ");
+    print(rec.context);
+    putc('\n');
     printNamedHex("R0 : ", rec.frame.r0);
     printNamedHex("R1 : ", rec.frame.r1);
     printNamedHex("R2 : ", rec.frame.r2);
@@ -361,6 +374,34 @@ static void captureStackSnapshot(uint32_t sp, FaultRecord &rec) {
 
 static FaultRecord s_activeFaultRecord;
 
+static void copyContext(FaultRecord &rec, const char *context) {
+    constexpr size_t maxSourceLength = 128U;
+    constexpr uint32_t fnvOffset = 2166136261U;
+    constexpr uint32_t fnvPrime = 16777619U;
+    const char *source = context != nullptr ? context : "?";
+    const char *basename = source;
+    uint32_t hash = fnvOffset;
+    size_t sourceLength = 0U;
+    while (sourceLength < maxSourceLength && source[sourceLength] != '\0') {
+        const char character = source[sourceLength];
+        hash = (hash ^ static_cast<uint8_t>(character)) * fnvPrime;
+        if (character == '/' || character == '\\') {
+            basename = &source[sourceLength + 1U];
+        }
+        ++sourceLength;
+    }
+
+    size_t index = 0U;
+    while (index + 1U < FaultRecord::CONTEXT_SIZE
+           && &basename[index] < &source[sourceLength]
+           && basename[index] != '\0') {
+        rec.context[index] = basename[index];
+        ++index;
+    }
+    rec.context[index] = '\0';
+    rec.contextHash = hash;
+}
+
 static void buildRecord(FaultRecord &rec, const Frame *frame,
                         uint32_t excReturn, uint32_t activeSp) {
     const bool usedPsp = (excReturn & 0x04) != 0;
@@ -369,6 +410,8 @@ static void buildRecord(FaultRecord &rec, const Frame *frame,
 
     rec = {};
     rec.magic      = FaultRecord::MAGIC;
+    rec.reason     = FatalReason::Exception;
+    copyContext(rec, "exception");
     rec.cfsr       = SCB->CFSR;
     rec.hfsr       = SCB->HFSR;
     rec.mmfar      = SCB->MMFAR;
@@ -403,6 +446,47 @@ static void buildRecord(FaultRecord &rec, const Frame *frame,
     rec.crc32 = rec.calculateCrc();
 }
 
+static void buildPanicRecord(FaultRecord &rec, FatalReason reason,
+                             int32_t detail, const char *context,
+                             uint32_t line) {
+    rec = {};
+    rec.magic = FaultRecord::MAGIC;
+    rec.reason = reason;
+    rec.detail = detail;
+    rec.line = line;
+    copyContext(rec, context);
+    rec.msp = __get_MSP();
+    rec.psp = __get_PSP();
+    rec.frame.pc = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(
+        __builtin_return_address(0)));
+    rec.frame.lr = rec.frame.pc;
+
+#ifdef CONFIG_FAULT_STACK_SNAPSHOT
+    const uint32_t activeSp = (__get_CONTROL() & CONTROL_SPSEL_Msk) != 0U
+        ? rec.psp : rec.msp;
+    captureStackSnapshot(activeSp, rec);
+#endif
+    rec.crc32 = rec.calculateCrc();
+}
+
+[[noreturn]] static void terminate(const FaultRecord &record) {
+    __disable_irq();
+    notifyFault(record);
+    __DSB();
+    __ISB();
+    NVIC_SystemReset();
+    for (;;) {
+        __WFI();
+    }
+}
+
+[[noreturn]] void panic(FatalReason reason, int32_t detail,
+                        const char *context, uint32_t line) {
+    __disable_irq();
+    buildPanicRecord(s_activeFaultRecord, reason, detail, context, line);
+    terminate(s_activeFaultRecord);
+}
+
 } // namespace hal::fault
 
 // ============================================================
@@ -421,14 +505,10 @@ void arm_fault_handler(const hal::fault::Frame *frame, uint32_t excReturn,
     buildRecord(s_activeFaultRecord, frame, excReturn, activeSp);
 
     // 2. 遍历所有后端
-    notifyFault(s_activeFaultRecord);
+    terminate(s_activeFaultRecord);
 
     // 3. Stop all normal execution. WFI keeps the failed system quiescent
     // while still allowing a debugger to inspect the captured record.
-    __DSB();
-    for (;;) {
-        __WFI();
-    }
 }
 
 void assert_print(const char *fmt, ...) {
@@ -441,15 +521,6 @@ void assert_print(const char *fmt, ...) {
 
 [[gnu::weak]] void
 assert_post_action(const char *file, unsigned int line) {
-    using namespace hal::fault;
-    print("ASSERT FAIL @ ");
-    print(file);
-    print(":");
-    printDec(line);
-    putc('\n');
-    __disable_irq();
-    __DSB();
-    for (;;) {
-        __WFI();
-    }
+    hal::fault::panic(hal::fault::FatalReason::Assert,
+                      static_cast<int32_t>(line), file, line);
 }

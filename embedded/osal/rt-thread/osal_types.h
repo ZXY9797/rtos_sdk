@@ -39,7 +39,19 @@ static inline void  rtos_free(void *ptr) { if (ptr) rt_free(ptr); }
 namespace osal {
 inline constexpr uint32_t kSemaphoreMaxCount = RT_SEM_VALUE_MAX;
 inline constexpr uint32_t kMinRtosCallableIrqPriority = 0U;
+inline constexpr uint32_t kLowestIrqPriority =
+    (1UL << CONFIG_NUM_IRQ_PRIO_BITS) - 1UL;
 inline constexpr uint8_t  kPriorityMax =
     static_cast<uint8_t>((RT_THREAD_PRIORITY_MAX > 0) ? (RT_THREAD_PRIORITY_MAX - 1) : 0);
 inline constexpr size_t   kDefaultThreadStackBytes = CONFIG_MAIN_STACK_SIZE;
+inline constexpr size_t kMessageQueueControlBytes =
+    sizeof(struct rt_messagequeue);
+inline constexpr size_t kSemaphoreControlBytes =
+    sizeof(struct rt_semaphore);
+inline constexpr size_t kMutexControlBytes = sizeof(struct rt_mutex);
+inline constexpr size_t kMessageQueueItemAlignment = RT_ALIGN_SIZE;
+// rt_mq_init stores one private next pointer before every payload slot.
+inline constexpr size_t kMessageQueueItemOverhead = sizeof(void*);
+// Includes the ring state and one statically initialized RT-Thread semaphore.
+inline constexpr size_t kStreamBufferControlBytes = 192U;
 }  // namespace osal

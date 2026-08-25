@@ -7,7 +7,9 @@ target_sources(${MODULE_NAME}
     PRIVATE
         init.cc
         assert.cc
+        device_pm.cc
         sensor_core.cc
+        watchdog.cc
 )
 target_sources(system_fault PRIVATE fault.cc)
 
@@ -33,3 +35,12 @@ target_link_libraries(system_fault
         osal
         soc
 )
+
+if(CONFIG_APP_WATCHDOG)
+    set(APP_WATCHDOG_SOURCE "${PROJECT_DIR}/common/app_watchdog.cc")
+    if(NOT EXISTS "${APP_WATCHDOG_SOURCE}")
+        message(FATAL_ERROR
+            "CONFIG_APP_WATCHDOG requires product provider: ${APP_WATCHDOG_SOURCE}")
+    endif()
+    target_sources(${MODULE_NAME} PRIVATE "${APP_WATCHDOG_SOURCE}")
+endif()

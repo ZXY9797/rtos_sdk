@@ -219,6 +219,8 @@ class GeneratedCodeTest(unittest.TestCase):
             'readiness=is-initialized requires a const ', header)
         self.assertIn('(void)instance;', header)
         self.assertIn('bool _check_test1(const void *instance)', header)
+        self.assertIn('int _suspend_test1(void *instance)', header)
+        self.assertIn('.supports_power_management = ', header)
 
     def test_empty_registry_is_safe(self):
         header = render_header([], set())
@@ -236,7 +238,27 @@ class GeneratedCodeTest(unittest.TestCase):
             'device_base': False,
         })
         report = render_report([spec])
-        self.assertIn('"schema": "rtos-sdk.devices.v5"', report)
+        self.assertIn('"schema": "rtos-sdk.devices.v6"', report)
+
+    def test_registry_is_sorted_by_init_order(self):
+        late = fake_spec()
+        late.update({'ord': 3, 'alias': 'late',
+                     'init_level': 'application', 'init_priority': 50})
+        early = fake_spec()
+        early.update({'ord': 2, 'alias': 'early',
+                      'init_level': 'pre-kernel-1', 'init_priority': 10})
+        header = render_header(
+            [late, early], {'device_adapters/test_dt.h'})
+        self.assertLess(header.index('.alias = "early"'),
+                        header.index('.alias = "late"'))
+
+    def test_registry_requires_paired_power_callbacks(self):
+        header = render_header(
+            [fake_spec(has_init=False)],
+            {'device_adapters/test_dt.h'})
+        self.assertIn(
+            'device power management requires paired suspend()/resume()',
+            header)
 
     def test_drivers_do_not_declare_vector_handlers(self):
         repo_root = Path(SCRIPT_DIR).parents[1]

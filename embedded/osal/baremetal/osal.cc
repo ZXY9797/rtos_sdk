@@ -1,4 +1,5 @@
 #include <osal.h>
+#include <soc.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -17,6 +18,9 @@ struct osal_bare_mutex {
 };
 
 namespace {
+
+static_assert(CONFIG_NUM_IRQ_PRIO_BITS == __NVIC_PRIO_BITS,
+              "Kconfig/CMSIS NVIC priority-bit mismatch");
 
 constexpr size_t kMaxSemaphores = 16;
 constexpr size_t kMaxMutexes = 8;
@@ -38,6 +42,7 @@ uint32_t g_scheduler_suspend_depth;
 struct StreamState {
     uint8_t *buf;
     size_t size;
+    size_t trigger;
     volatile size_t head;
     volatile size_t tail;
     volatile size_t count;
@@ -139,7 +144,8 @@ extern "C" void SysTick_Handler(void) {
 }
 
 int osal_start(void (*entry)(void)) {
-    if (entry) entry();
+    if (entry == nullptr) return -1;
+    entry();
     return 0;
 }
 
@@ -171,6 +177,8 @@ uint32_t Kernel::uptime_ms() {
     return static_cast<uint32_t>(
         (ticks * 1000U) / CONFIG_SYS_CLOCK_TICKS_PER_SEC);
 }
+
+MemoryStats Kernel::memory_stats() { return {}; }
 
 void Kernel::suspend_scheduler() {
     if (g_scheduler_suspend_depth == UINT32_MAX) {
@@ -302,16 +310,32 @@ int Mutex::unlock() {
 
 Thread::Thread() = default;
 
+void Thread::threadEntry(void *) {
+}
+
 Thread::~Thread() {
     destroy();
 }
 
-Thread *Thread::create(const char *, Entry, void *, size_t, int32_t, int32_t) {
+Thread *Thread::create(Entry, void *, const ThreadConfig &) {
     return nullptr;
 }
 
 bool Thread::start(Entry, void *, const ThreadConfig &) {
     return false;
+}
+
+void Thread::request_stop() {
+    stop_requested_.store(true, std::memory_order_release);
+}
+
+bool Thread::join(Milliseconds) {
+    return true;
+}
+
+bool Thread::shutdown(Milliseconds) {
+    destroy();
+    return true;
 }
 
 void Thread::destroy() {
@@ -328,6 +352,7 @@ Priority Thread::get_priority() const { return kPriorityMin; }
 Thread::State Thread::get_state() const { return State::Invalid; }
 const char *Thread::get_name() const { return nullptr; }
 bool Thread::abort_delay() { return false; }
+StackStats Thread::stack_stats() const { return {}; }
 
 IsrTrigger::Slot IsrTrigger::s_slots[kMaxSlots];
 
@@ -358,7 +383,7 @@ void IsrTrigger::fire(int id) {
     }
 }
 
-PeriodicThread::PeriodicThread(PrivateTag) {
+PeriodicThread::PeriodicThread() {
 }
 
 PeriodicThread::~PeriodicThread() {
@@ -385,15 +410,18 @@ void PeriodicThread::timer_isr_callback(void *arg) {
 void PeriodicThread::threadEntry(void *) {
 }
 
-PeriodicThread *PeriodicThread::create(const char *, PeriodicEntry, void *,
-                                       size_t, int32_t, uint32_t,
-                                       PeriodicTrigger, IrqTimer *, bool) {
+PeriodicThread *PeriodicThread::create(const PeriodicThreadConfig &) {
     return nullptr;
 }
 
+bool PeriodicThread::start(const PeriodicThreadConfig &) { return false; }
+
 int PeriodicThread::startup() { return -1; }
 int PeriodicThread::stop() { return 0; }
+bool PeriodicThread::shutdown(Milliseconds) { return true; }
+void PeriodicThread::destroy() {}
 int PeriodicThread::notify_from_isr(uint32_t) { return -1; }
+StackStats PeriodicThread::stack_stats() const { return {}; }
 
 EventGroup::~EventGroup() {
     destroy();
@@ -420,6 +448,8 @@ MessageQueue::~MessageQueue() {
 
 bool MessageQueue::create(uint32_t, size_t, void *, size_t) {
     item_size_ = 0U;
+    length_ = 0U;
+    reset_stats();
     native_handle_ = nullptr;
     return false;
 }
@@ -427,22 +457,45 @@ bool MessageQueue::create(uint32_t, size_t, void *, size_t) {
 void MessageQueue::destroy() {
     native_handle_ = nullptr;
     item_size_ = 0;
+    length_ = 0U;
+    reset_stats();
 }
 
-bool MessageQueue::send(const void *, Milliseconds) { return false; }
+bool MessageQueue::send(const void *, Milliseconds) {
+    record_send(false);
+    return false;
+}
 bool MessageQueue::receive(void *, Milliseconds) { return false; }
 bool MessageQueue::reset() { return true; }
 uint32_t MessageQueue::count() const { return 0; }
 uint32_t MessageQueue::free_slots() const { return 0; }
+void MessageQueue::record_send(bool succeeded) {
+    if (!succeeded) {
+        send_failures_.fetch_add(1U, std::memory_order_relaxed);
+    }
+}
+MessageQueueStats MessageQueue::stats() const {
+    return {length_, 0U,
+            high_water_mark_.load(std::memory_order_relaxed),
+            send_failures_.load(std::memory_order_relaxed)};
+}
+void MessageQueue::reset_stats() {
+    high_water_mark_.store(0U, std::memory_order_relaxed);
+    send_failures_.store(0U, std::memory_order_relaxed);
+}
 
 StreamBuffer::~StreamBuffer() {
     destroy();
 }
 
-bool StreamBuffer::create(size_t buf_size, size_t) {
-    auto *buf = static_cast<uint8_t *>(rtos_malloc(buf_size));
+bool StreamBuffer::create(size_t buf_size, size_t trigger_level) {
+    if (buf_size == 0U || trigger_level == 0U
+        || trigger_level > buf_size || buf_size == SIZE_MAX) {
+        return false;
+    }
+    auto *buf = static_cast<uint8_t *>(rtos_malloc(buf_size + 1U));
     if (!buf) return false;
-    if (!create(buf, buf_size, 1U)) {
+    if (!create(buf, buf_size + 1U, trigger_level)) {
         rtos_free(buf);
         return false;
     }
@@ -450,9 +503,13 @@ bool StreamBuffer::create(size_t buf_size, size_t) {
     return true;
 }
 
-bool StreamBuffer::create(uint8_t *storage, size_t storage_size, size_t) {
+bool StreamBuffer::create(uint8_t *storage, size_t storage_size,
+                          size_t trigger_level) {
     destroy();
-    if (!storage || storage_size == 0) return false;
+    if (!storage || storage_size <= 1U || trigger_level == 0U
+        || trigger_level >= storage_size) {
+        return false;
+    }
 
     const uintptr_t irq_state = irq_lock();
     auto *state = alloc_slot(g_streams);
@@ -460,7 +517,8 @@ bool StreamBuffer::create(uint8_t *storage, size_t storage_size, size_t) {
     if (!state) return false;
 
     state->buf = storage;
-    state->size = storage_size;
+    state->size = storage_size - 1U;
+    state->trigger = trigger_level;
     handle_ = state;
     control_block_ = state;
     owns_storage_ = false;
@@ -480,7 +538,16 @@ void StreamBuffer::destroy() {
     if (release_storage) rtos_free(storage);
 }
 
-size_t StreamBuffer::send(const uint8_t *data, size_t len, Milliseconds) {
+size_t StreamBuffer::send(const uint8_t *data, size_t len,
+                          Milliseconds timeout_ms) {
+    auto *state = static_cast<StreamState *>(control_block_);
+    if (!state || !data || len == 0U) return 0U;
+
+    const uint32_t start = Kernel::uptime_ms();
+    while (state->count == state->size) {
+        if (wait_expired(start, timeout_ms)) return 0U;
+    }
+
     IsrContext context;
     return send_from_isr(data, len, context);
 }
@@ -509,8 +576,13 @@ size_t StreamBuffer::receive(uint8_t *data, size_t len,
     if (!state || !data || len == 0) return 0;
 
     const uint32_t start = Kernel::uptime_ms();
-    while (state->count == 0U) {
-        if (wait_expired(start, timeout_ms)) return 0;
+    if (state->count == 0U) {
+        while (state->count < state->trigger) {
+            if (wait_expired(start, timeout_ms)) {
+                if (state->count == 0U) return 0U;
+                break;
+            }
+        }
     }
 
     IsrContext context;

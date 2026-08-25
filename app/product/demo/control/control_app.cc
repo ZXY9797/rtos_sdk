@@ -19,8 +19,10 @@
 #include <drivers_generated.h>
 #include <boot_layout.h>
 #include <log.h>
+#include <init.h>
 #include <osal.h>
 #include <sensor_core.h>
+#include <system/watchdog.h>
 #include <irq.h>
 
 #include <nvs/nvs.h>
@@ -34,11 +36,11 @@
 #endif
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 #include <cstdint>
 #include <cmath>
-#include <new>
 
 // Constants
 
@@ -67,6 +69,20 @@ constexpr int32_t CTRL_LOOP_PRIO = 3;
 constexpr size_t CLI_BUF_SIZE = 128;
 
 constexpr float TWO_PI = 2.0f * 3.14159265358979323846f;
+
+#if defined(CONFIG_APP_WATCHDOG)
+system_watchdog::ClientId g_control_watchdog =
+    system_watchdog::kInvalidClient;
+
+int register_control_watchdog()
+{
+    g_control_watchdog = system_watchdog::register_client(
+        "control", CONFIG_APP_WATCHDOG_TIMEOUT_MS);
+    return g_control_watchdog != system_watchdog::kInvalidClient ? 0 : -1;
+}
+
+SYS_INIT(register_control_watchdog, INITCALL_LEVEL_APPLICATION, 90);
+#endif
 
 // DM-4340 parameters
 
@@ -97,6 +113,19 @@ static const NtcPoint NTC_TABLE[] = {
 static MotorContext g_motors[MAX_MOTORS];
 static uint8_t g_motor_count = 0;
 static std::atomic<uint8_t> g_active_motor {0U};
+struct MotorRuntimeStorage {
+    osal::PeriodicThread speed_thread;
+    osal::PeriodicThread position_thread;
+    osal::PeriodicThread slow_thread;
+    SensorCore sensor_core;
+    alignas(std::max_align_t) uint8_t speed_stack[SPEED_LOOP_STACK] {};
+    alignas(std::max_align_t) uint8_t position_stack[POS_LOOP_STACK] {};
+    alignas(std::max_align_t) uint8_t slow_stack[SLOW_LOOP_STACK] {};
+    alignas(std::max_align_t) uint8_t sensor_stack[CTRL_LOOP_STACK] {};
+};
+static MotorRuntimeStorage g_motor_runtime[MAX_MOTORS];
+static osal::PeriodicThread g_led_thread_storage;
+alignas(std::max_align_t) static uint8_t g_led_stack[LED_STACK] {};
 static osal::PeriodicThread *g_led_thread = nullptr;
 
 // IMU data updated by the SensorCore worker thread.
@@ -432,6 +461,12 @@ static void pos_loop_entry(void *arg, const osal::PeriodicStats &) {
 
 static void slow_loop_entry(void *arg, const osal::PeriodicStats &stats) {
     auto &ctx = *static_cast<MotorContext *>(arg);
+#if defined(CONFIG_APP_WATCHDOG)
+    if (&ctx == &g_motors[0]
+        && !system_watchdog::heartbeat(g_control_watchdog)) {
+        return;
+    }
+#endif
     if (!ctx.motor) return;
 
     ctx.motor->slow_loop();
@@ -964,8 +999,10 @@ static void cli_process(const char *cmd) {
 
 static void destroy_periodic_thread(osal::PeriodicThread *&thread)
 {
-    delete thread;
-    thread = nullptr;
+    if (thread != nullptr) {
+        thread->destroy();
+        thread = nullptr;
+    }
 }
 
 static void rollback_motor_runtime(MotorContext &ctx)
@@ -973,8 +1010,10 @@ static void rollback_motor_runtime(MotorContext &ctx)
     if (ctx.motor != nullptr) {
         ctx.motor->disable();
     }
-    delete ctx.imu_core;
-    ctx.imu_core = nullptr;
+    if (ctx.imu_core != nullptr) {
+        HAL_ASSERT(ctx.imu_core->stop() == 0);
+        ctx.imu_core = nullptr;
+    }
     destroy_periodic_thread(ctx.slow_loop);
     destroy_periodic_thread(ctx.pos_loop);
     destroy_periodic_thread(ctx.speed_loop);
@@ -982,29 +1021,25 @@ static void rollback_motor_runtime(MotorContext &ctx)
 }
 
 static bool start_periodic_thread(osal::PeriodicThread *&thread,
-                                  const char *name,
-                                  osal::PeriodicEntry entry,
-                                  void *parameter,
-                                  size_t stack_size,
-                                  int32_t priority,
-                                  uint32_t frequency_hz,
-                                  osal::PeriodicTrigger trigger,
-                                  osal::IrqTimer *timer = nullptr)
+                                  osal::PeriodicThread &storage,
+                                  const osal::PeriodicThreadConfig& config)
 {
-    thread = osal::PeriodicThread::create(
-        name, entry, parameter, stack_size, priority, frequency_hz,
-        trigger, timer);
-    if (thread == nullptr) {
+    if (thread != nullptr || !storage.start(config)) {
         return false;
     }
-    if (thread->startup() == 0) {
+    if (storage.startup() == 0) {
+        thread = &storage;
         return true;
     }
-    destroy_periodic_thread(thread);
+    storage.destroy();
     return false;
 }
 
 static int init_motor(MotorContext &ctx, uint8_t motor_idx) {
+    if (motor_idx >= MAX_MOTORS) {
+        return -1;
+    }
+    MotorRuntimeStorage &runtime = g_motor_runtime[motor_idx];
     char spd_name[16], pos_name[16], slw_name[16];
     snprintf(spd_name, sizeof(spd_name), "spd_%d", motor_idx);
     snprintf(pos_name, sizeof(pos_name), "pos_%d", motor_idx);
@@ -1138,31 +1173,50 @@ static int init_motor(MotorContext &ctx, uint8_t motor_idx) {
 
     // Speed loop thread, driven by hardware timer TIMER5 (4 kHz).
     auto &speed_tim = app::board::speed_timer();
-    if (!start_periodic_thread(ctx.speed_loop, spd_name,
-                              speed_loop_entry, &ctx,
-                              SPEED_LOOP_STACK, SPEED_LOOP_PRIO,
-                              SPEED_LOOP_HZ, osal::PeriodicTrigger::External,
-                              &speed_tim)) {
+    osal::PeriodicThreadConfig speed_config {};
+    speed_config.name = spd_name;
+    speed_config.entry = speed_loop_entry;
+    speed_config.context = &ctx;
+    speed_config.stack_size_bytes = SPEED_LOOP_STACK;
+    speed_config.stack_buffer = runtime.speed_stack;
+    speed_config.priority = static_cast<osal::Priority>(SPEED_LOOP_PRIO);
+    speed_config.frequency_hz = SPEED_LOOP_HZ;
+    speed_config.trigger = osal::PeriodicTrigger::External;
+    speed_config.timer = &speed_tim;
+    if (!start_periodic_thread(ctx.speed_loop, runtime.speed_thread,
+                               speed_config)) {
         LOGE("foc", "failed to start speed loop for motor %d", motor_idx);
         rollback_motor_runtime(ctx);
         return -1;
     }
 
     // Position loop thread
-    if (!start_periodic_thread(ctx.pos_loop, pos_name,
-                              pos_loop_entry, &ctx,
-                              POS_LOOP_STACK, POS_LOOP_PRIO,
-                              POS_LOOP_HZ, osal::PeriodicTrigger::Tick)) {
+    osal::PeriodicThreadConfig position_config {};
+    position_config.name = pos_name;
+    position_config.entry = pos_loop_entry;
+    position_config.context = &ctx;
+    position_config.stack_size_bytes = POS_LOOP_STACK;
+    position_config.stack_buffer = runtime.position_stack;
+    position_config.priority = static_cast<osal::Priority>(POS_LOOP_PRIO);
+    position_config.frequency_hz = POS_LOOP_HZ;
+    if (!start_periodic_thread(ctx.pos_loop, runtime.position_thread,
+                               position_config)) {
         LOGE("foc", "failed to start pos loop for motor %d", motor_idx);
         rollback_motor_runtime(ctx);
         return -1;
     }
 
     // Slow loop thread
-    if (!start_periodic_thread(ctx.slow_loop, slw_name,
-                              slow_loop_entry, &ctx,
-                              SLOW_LOOP_STACK, SLOW_LOOP_PRIO,
-                              SLOW_LOOP_HZ, osal::PeriodicTrigger::Tick)) {
+    osal::PeriodicThreadConfig slow_config {};
+    slow_config.name = slw_name;
+    slow_config.entry = slow_loop_entry;
+    slow_config.context = &ctx;
+    slow_config.stack_size_bytes = SLOW_LOOP_STACK;
+    slow_config.stack_buffer = runtime.slow_stack;
+    slow_config.priority = static_cast<osal::Priority>(SLOW_LOOP_PRIO);
+    slow_config.frequency_hz = SLOW_LOOP_HZ;
+    if (!start_periodic_thread(ctx.slow_loop, runtime.slow_thread,
+                               slow_config)) {
         LOGE("foc", "failed to start slow loop for motor %d", motor_idx);
         rollback_motor_runtime(ctx);
         return -1;
@@ -1177,7 +1231,8 @@ static int init_motor(MotorContext &ctx, uint8_t motor_idx) {
         sc_cfg.entry = ctrl_loop_entry;
         sc_cfg.param = &ctx;
         sc_cfg.stack_size = CTRL_LOOP_STACK;
-        sc_cfg.priority = CTRL_LOOP_PRIO;
+        sc_cfg.stack_buffer = runtime.sensor_stack;
+        sc_cfg.priority = static_cast<osal::Priority>(CTRL_LOOP_PRIO);
         sc_cfg.frequency_hz = CTRL_LOOP_HZ;
         sc_cfg.timer = &imu_tim;
 // IMU data updated by the SensorCore worker thread.
@@ -1185,12 +1240,13 @@ static int init_motor(MotorContext &ctx, uint8_t motor_idx) {
         sc_cfg.read_fn = imu_read_sample;
         sc_cfg.divider = 8;
 #endif
-        ctx.imu_core = new (std::nothrow) SensorCore(sc_cfg);
-        if (ctx.imu_core == nullptr || ctx.imu_core->start() != 0) {
+        if (!runtime.sensor_core.configure(sc_cfg)
+            || runtime.sensor_core.start() != 0) {
             LOGE("foc", "failed to start imu core for motor %d", motor_idx);
             rollback_motor_runtime(ctx);
             return -1;
         }
+        ctx.imu_core = &runtime.sensor_core;
     }
 
     if (!ctx.current_calib.calib_done || !ctx.pos_sensor.is_calibrated()) {
@@ -1246,10 +1302,15 @@ int start_control() {
     // if (init_motor(ctx1, 1) != 0) return -1;
 
     // LED heartbeat
-    if (!start_periodic_thread(g_led_thread, "led_hb",
-                               led_heartbeat_entry, nullptr,
-                               LED_STACK, LED_PRIO,
-                               LED_HZ, osal::PeriodicTrigger::Tick)) {
+    osal::PeriodicThreadConfig led_config {};
+    led_config.name = "led_hb";
+    led_config.entry = led_heartbeat_entry;
+    led_config.stack_size_bytes = LED_STACK;
+    led_config.stack_buffer = g_led_stack;
+    led_config.priority = static_cast<osal::Priority>(LED_PRIO);
+    led_config.frequency_hz = LED_HZ;
+    if (!start_periodic_thread(g_led_thread, g_led_thread_storage,
+                               led_config)) {
         LOGE("foc", "failed to start LED thread");
 #ifdef CONFIG_LINK
         comm_deinit();

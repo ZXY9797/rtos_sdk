@@ -99,18 +99,28 @@ set(
 # merge_config_files, which is a mix of absolute and relative paths.
 set(merge_config_files_with_absolute_paths "")
 foreach(f ${merge_config_files})
-  if(IS_ABSOLUTE ${f})
-    set(path ${f})
+  if(IS_ABSOLUTE "${f}")
+    set(path "${f}")
   else()
-    set(path ${APPLICATION_CONFIG_DIR}/${f})
+    set(top_path "${TOP_DIR}/${f}")
+    set(product_path "${APPLICATION_CONFIG_DIR}/${f}")
+    if(EXISTS "${top_path}")
+      # Prefer repository-relative fragments for reproducible CI commands.
+      set(path "${top_path}")
+    elseif(EXISTS "${product_path}")
+      # Preserve compatibility with product-config-relative fragments.
+      set(path "${product_path}")
+    else()
+      set(path "${top_path}")
+    endif()
   endif()
 
-  list(APPEND merge_config_files_with_absolute_paths ${path})
+  list(APPEND merge_config_files_with_absolute_paths "${path}")
 endforeach()
 set(merge_config_files ${merge_config_files_with_absolute_paths})
 
 foreach(f ${merge_config_files})
-  if(NOT EXISTS ${f} OR IS_DIRECTORY ${f})
+  if(NOT EXISTS "${f}" OR IS_DIRECTORY "${f}")
     message(FATAL_ERROR "File not found: ${f}")
   endif()
 endforeach()
@@ -119,7 +129,7 @@ endforeach()
 # to re-generate .config
 set(merge_config_files_checksum "")
 foreach(f ${merge_config_files})
-  file(MD5 ${f} checksum)
+  file(MD5 "${f}" checksum)
   set(merge_config_files_checksum
       "${merge_config_files_checksum}${f}:${checksum}\n")
 endforeach()
@@ -127,15 +137,15 @@ endforeach()
 # Add to the checksum all the Kconfig files which were used last time
 set(merge_kconfig_checksum "")
 set(kconfig_checksum_inputs ${kconfig_source_candidates})
-if(EXISTS ${PARSED_KCONFIG_SOURCES_TXT})
-  file(STRINGS ${PARSED_KCONFIG_SOURCES_TXT} parsed_kconfig_sources_list ENCODING UTF-8)
+if(EXISTS "${PARSED_KCONFIG_SOURCES_TXT}")
+  file(STRINGS "${PARSED_KCONFIG_SOURCES_TXT}" parsed_kconfig_sources_list ENCODING UTF-8)
   list(APPEND kconfig_checksum_inputs ${parsed_kconfig_sources_list})
 endif()
 list(REMOVE_DUPLICATES kconfig_checksum_inputs)
 list(SORT kconfig_checksum_inputs)
 foreach(f ${kconfig_checksum_inputs})
-  if(EXISTS ${f})
-    file(MD5 ${f} checksum)
+  if(EXISTS "${f}")
+    file(MD5 "${f}" checksum)
     set(merge_kconfig_checksum
         "${merge_kconfig_checksum}${f}:${checksum}\n")
   endif()
@@ -147,15 +157,15 @@ set(merge_config_files_checksum_file ${PROJECT_BINARY_DIR}/.cmake.dotconfig.chec
 set(CREATE_NEW_DOTCONFIG 1)
 # Check if the checksum file exists too before trying to open it, though it
 # should under normal circumstances
-if(EXISTS ${DOTCONFIG} AND EXISTS ${merge_config_files_checksum_file})
+if(EXISTS "${DOTCONFIG}" AND EXISTS "${merge_config_files_checksum_file}")
   # Read out what the checksum was previously
   file(READ
-    ${merge_config_files_checksum_file}
+    "${merge_config_files_checksum_file}"
     merge_config_files_checksum_prev
     )
   if(
-      ${merge_config_files_checksum}${merge_kconfig_checksum} STREQUAL
-      ${merge_config_files_checksum_prev}
+      "${merge_config_files_checksum}${merge_kconfig_checksum}" STREQUAL
+      "${merge_config_files_checksum_prev}"
       )
     # Checksum is the same as before
     set(CREATE_NEW_DOTCONFIG 0)
@@ -170,8 +180,8 @@ else()
 endif()
 
 cmake_path(GET AUTOCONF_H PARENT_PATH autoconf_h_path)
-if(NOT EXISTS ${autoconf_h_path})
-  file(MAKE_DIRECTORY ${autoconf_h_path})
+if(NOT EXISTS "${autoconf_h_path}")
+  file(MAKE_DIRECTORY "${autoconf_h_path}")
 endif()
 
 execute_process(
@@ -195,7 +205,7 @@ if(NOT "${ret}" STREQUAL "0")
 endif()
 
 # Read out the list of 'Kconfig' sources that were used by the engine.
-file(STRINGS ${PARSED_KCONFIG_SOURCES_TXT} parsed_kconfig_sources_list ENCODING UTF-8)
+file(STRINGS "${PARSED_KCONFIG_SOURCES_TXT}" parsed_kconfig_sources_list ENCODING UTF-8)
 
 # Recalculate the Kconfig files' checksum, since the list of files may have
 # changed.
@@ -206,7 +216,7 @@ set(kconfig_checksum_inputs
 list(REMOVE_DUPLICATES kconfig_checksum_inputs)
 list(SORT kconfig_checksum_inputs)
 foreach(f ${kconfig_checksum_inputs})
-  file(MD5 ${f} checksum)
+  file(MD5 "${f}" checksum)
   set(merge_kconfig_checksum
       "${merge_kconfig_checksum}${f}:${checksum}\n")
 endforeach()
@@ -225,8 +235,8 @@ if(CREATE_NEW_DOTCONFIG)
   # Write the new configuration fragment checksum. Only do this if kconfig.py
   # succeeds, to avoid marking zephyr/.config as up-to-date when it hasn't been
   # regenerated.
-  file(WRITE ${merge_config_files_checksum_file}
-             ${merge_config_files_checksum}${merge_kconfig_checksum})
+  file(WRITE "${merge_config_files_checksum_file}"
+             "${merge_config_files_checksum}${merge_kconfig_checksum}")
 endif()
 
 add_custom_target(config-twister DEPENDS ${DOTCONFIG})

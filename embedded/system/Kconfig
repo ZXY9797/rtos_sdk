@@ -1,0 +1,43 @@
+menu "System Reliability"
+
+config APP_PRODUCTION
+    bool "Production application policy"
+    depends on OSAL_HAS_THREADS
+    depends on OSAL_HAS_STATIC_THREADS
+    default n
+    select APP_WATCHDOG
+    select FAULT_NOINIT_BACKEND
+    help
+      Fail-closed application profile. Enabling it requires a product hardware
+      watchdog provider and persistent fatal diagnostics. Product release jobs
+      should enable this symbol in a release-only configuration fragment.
+
+config APP_WATCHDOG
+    bool "Application health watchdog"
+    depends on OSAL_HAS_THREADS
+    depends on OSAL_HAS_STATIC_THREADS
+    default n
+    help
+      Start a hardware watchdog and feed it only from the health-monitor task.
+      The product must provide common/app_watchdog.cc. A scheduler deadlock or
+      an expired registered client therefore stops feeding the hardware.
+
+config APP_WATCHDOG_TIMEOUT_MS
+    int "Hardware watchdog timeout in milliseconds"
+    depends on APP_WATCHDOG
+    default 5000
+    range 500 60000
+
+config APP_WATCHDOG_CHECK_MS
+    int "Health-monitor period in milliseconds"
+    depends on APP_WATCHDOG
+    default 100
+    range 10 1000
+
+config APP_WATCHDOG_STACK_SIZE
+    int "Health-monitor stack size in bytes"
+    depends on APP_WATCHDOG
+    default 768
+    range 512 4096
+
+endmenu

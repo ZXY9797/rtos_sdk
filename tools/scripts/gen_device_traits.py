@@ -358,8 +358,12 @@ def check_init_dependencies(specs):
 
 
 def append_registry(lines, specs):
-    enabled_specs = [
-        spec for spec in specs if spec['enabled']]
+    enabled_specs = sorted(
+        (spec for spec in specs if spec['enabled']),
+        key=lambda spec: (
+            INIT_LEVEL_ORDER[resolve_init_level_key(spec)],
+            resolve_init_priority(spec),
+            spec['ord']))
     if not enabled_specs:
         lines.extend([
             'inline const DeviceInfo *get_device_registry(size_t *count) {',
@@ -404,7 +408,24 @@ def append_registry(lines, specs):
                 ])
             else:
                 lines.append('    return detail::device_ready(*device);')
-        lines.append('}')
+        lines.extend([
+            '}',
+            f'using _pm_type_{identifier} = '
+            f'DeviceTrait<{ordinal}>::type;',
+            f'static_assert(detail::HasSuspend<_pm_type_{identifier}>::value '
+            f'== detail::HasResume<_pm_type_{identifier}>::value,',
+            '    "device power management requires paired suspend()/resume()");',
+            f'inline int _suspend_{identifier}(void *instance) {{',
+            f'    using Type = DeviceTrait<{ordinal}>::type;',
+            '    auto *device = static_cast<Type *>(instance);',
+            '    return detail::device_suspend(*device);',
+            '}',
+            f'inline int _resume_{identifier}(void *instance) {{',
+            f'    using Type = DeviceTrait<{ordinal}>::type;',
+            '    auto *device = static_cast<Type *>(instance);',
+            '    return detail::device_resume(*device);',
+            '}',
+        ])
 
     lines.extend([
         '// Device registry for diagnostics and runtime enumeration.',
@@ -415,11 +436,18 @@ def append_registry(lines, specs):
         alias = spec['alias'] or f'ord{ordinal}'
         type_name = spec['type'].split('::')[-1]
         check = f'_check_{str_to_identifier(alias)}'
+        suspend = f'_suspend_{str_to_identifier(alias)}'
+        resume = f'_resume_{str_to_identifier(alias)}'
+        init_priority = resolve_init_priority(spec)
         lines.append(
             f'    {{ .ord = {ordinal}, .alias = "{alias}", '
             f'.type_name = "{type_name}", '
             f'.instance = &DeviceTrait<{ordinal}>::instance, '
-            f'.is_ready = {check} }},')
+            f'.is_ready = {check}, .suspend = {suspend}, '
+            f'.resume = {resume}, .init_priority = {init_priority}U, '
+            f'.supports_power_management = '
+            f'detail::HasSuspend<DeviceTrait<{ordinal}>::type>::value && '
+            f'detail::HasResume<DeviceTrait<{ordinal}>::type>::value }},')
 
     lines.extend([
         '};',
@@ -555,6 +583,12 @@ def render_source(specs):
                         'call OSAL ISR APIs");',
                     ])
                 lines.extend([
+                    f'    static_assert({priority}U <= '
+                    'osal::kLowestIrqPriority,',
+                    f'                  "IRQ {irq} priority exceeds the '
+                    'selected SoC range");',
+                ])
+                lines.extend([
                     f'    Irq::disable({irq});',
                     f'    Irq::connect({irq}, IRQ{irq}_Handler);',
                     f'    Irq::setPriority({irq}, {priority}U);',
@@ -685,7 +719,7 @@ def render_report(specs):
         })
 
     report = {
-        'schema': 'rtos-sdk.devices.v5',
+        'schema': 'rtos-sdk.devices.v6',
         'device_count': len(devices),
         'enabled_count': sum(
             1 for device in devices if device['enabled']),

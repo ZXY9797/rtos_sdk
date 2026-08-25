@@ -28,6 +28,14 @@ void rtos_free(void *ptr);
 namespace osal {
 inline constexpr uint32_t kSemaphoreMaxCount = 0xFFFFU;
 inline constexpr uint32_t kMinRtosCallableIrqPriority = 0U;
+inline constexpr uint32_t kLowestIrqPriority =
+    (1UL << CONFIG_NUM_IRQ_PRIO_BITS) - 1UL;
 inline constexpr uint8_t kPriorityMax = 31U;
 inline constexpr size_t kDefaultThreadStackBytes = 1024U;
+inline constexpr size_t kMessageQueueControlBytes = 1U;
+inline constexpr size_t kSemaphoreControlBytes = 1U;
+inline constexpr size_t kMutexControlBytes = 1U;
+inline constexpr size_t kMessageQueueItemAlignment = 1U;
+inline constexpr size_t kMessageQueueItemOverhead = 0U;
+inline constexpr size_t kStreamBufferControlBytes = 1U;
 } // namespace osal

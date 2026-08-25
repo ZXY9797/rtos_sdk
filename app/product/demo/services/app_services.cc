@@ -12,7 +12,10 @@
 #include <drivers/uart.h>
 #include <drivers_generated.h>
 #include <log.h>
+#include <init.h>
 #include <osal.h>
+#include <system/watchdog.h>
+#include <arch/arm/cortex_m/fault.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -21,7 +24,23 @@ namespace {
 
 constexpr size_t CLI_POLL_STACK = 512;
 constexpr int32_t CLI_POLL_PRIO = 8;
+osal::PeriodicThread g_cli_thread_storage;
+alignas(std::max_align_t) uint8_t g_cli_stack[CLI_POLL_STACK] {};
 osal::PeriodicThread *g_cli_thread = nullptr;
+
+#if defined(CONFIG_APP_WATCHDOG)
+system_watchdog::ClientId g_main_watchdog =
+    system_watchdog::kInvalidClient;
+
+int register_main_watchdog()
+{
+    g_main_watchdog = system_watchdog::register_client(
+        "main", CONFIG_APP_WATCHDOG_TIMEOUT_MS);
+    return g_main_watchdog != system_watchdog::kInvalidClient ? 0 : -1;
+}
+
+SYS_INIT(register_main_watchdog, INITCALL_LEVEL_APPLICATION, 90);
+#endif
 
 // 产品信息标记区：app 偏移 1KB 处，用于启动加载器校验防误升级。
 __attribute__((section(".product_info"), used))
@@ -79,25 +98,38 @@ void assert_required_devices() {
 
 int start_cli_poll() {
     if (g_cli_thread != nullptr) return 0;
-    g_cli_thread = osal::PeriodicThread::create("cli_poll",
-        cli_poll_entry, nullptr,
-        CLI_POLL_STACK, CLI_POLL_PRIO,
-        100, osal::PeriodicTrigger::Tick);
-    if (g_cli_thread == nullptr) return -1;
-    if (g_cli_thread->startup() != 0) {
-        delete g_cli_thread;
-        g_cli_thread = nullptr;
+    osal::PeriodicThreadConfig config {};
+    config.name = "cli_poll";
+    config.entry = cli_poll_entry;
+    config.stack_size_bytes = CLI_POLL_STACK;
+    config.stack_buffer = g_cli_stack;
+    config.priority = static_cast<osal::Priority>(CLI_POLL_PRIO);
+    config.frequency_hz = 100U;
+    if (!g_cli_thread_storage.start(config)) {
         return -1;
     }
+    if (g_cli_thread_storage.startup() != 0) {
+        g_cli_thread_storage.destroy();
+        return -1;
+    }
+    g_cli_thread = &g_cli_thread_storage;
     return 0;
 }
 
 void stop_cli_poll() {
-    delete g_cli_thread;
-    g_cli_thread = nullptr;
+    if (g_cli_thread != nullptr) {
+        g_cli_thread->destroy();
+        g_cli_thread = nullptr;
+    }
 }
 
 void print_periodic_diagnostics(uint32_t loop_count) {
+#if defined(CONFIG_APP_WATCHDOG)
+    if (!system_watchdog::heartbeat(g_main_watchdog)) {
+        hal::fault::panic(hal::fault::FatalReason::WatchdogExpired,
+                          g_main_watchdog, "main_heartbeat", 0U);
+    }
+#endif
     if (loop_count % 1000 == 0) {
         print_uart_stats(app::board::console());
     }

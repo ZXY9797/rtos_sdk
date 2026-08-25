@@ -33,6 +33,23 @@ template <typename T>
 struct HasDeinit<T, std::void_t<decltype(std::declval<T &>().deinit())>>
     : std::true_type {};
 
+template <typename T, typename = void>
+struct HasSuspend : std::false_type {};
+
+template <typename T>
+struct HasSuspend<T, std::void_t<decltype(std::declval<T &>().suspend())>>
+    : std::true_type {};
+
+template <typename T, typename = void>
+struct HasResume : std::false_type {};
+
+template <typename T>
+struct HasResume<T, std::void_t<decltype(std::declval<T &>().resume())>>
+    : std::true_type {};
+
+template <typename>
+struct AlwaysFalse : std::false_type {};
+
 /**
  * 统一设备就绪判定。
  *
@@ -49,7 +66,10 @@ inline bool device_ready(T &dev) {
     } else if constexpr (HasIsInitialized<T>::value) {
         return dev.is_initialized();
     } else {
-        return true;
+        static_assert(AlwaysFalse<DeviceType>::value,
+            "Device readiness is undefined: provide is_ready()/"
+            "is_initialized() or declare readiness=always-ready in binding");
+        return false;
     }
 }
 
@@ -63,6 +83,34 @@ inline int device_deinit(T &dev) {
         return 0;
     } else {
         return static_cast<int>(dev.deinit());
+    }
+}
+
+template <typename T>
+inline int device_suspend(T &dev) {
+    if constexpr (!HasSuspend<T>::value) {
+        return 0;
+    } else if constexpr (std::is_void_v<decltype(dev.suspend())>) {
+        dev.suspend();
+        return 0;
+    } else if constexpr (std::is_same_v<decltype(dev.suspend()), bool>) {
+        return dev.suspend() ? 0 : -1;
+    } else {
+        return static_cast<int>(dev.suspend());
+    }
+}
+
+template <typename T>
+inline int device_resume(T &dev) {
+    if constexpr (!HasResume<T>::value) {
+        return 0;
+    } else if constexpr (std::is_void_v<decltype(dev.resume())>) {
+        dev.resume();
+        return 0;
+    } else if constexpr (std::is_same_v<decltype(dev.resume()), bool>) {
+        return dev.resume() ? 0 : -1;
+    } else {
+        return static_cast<int>(dev.resume());
     }
 }
 
@@ -110,11 +158,15 @@ inline auto &device_get();
  * @brief 设备信息结构 — 用于运行时枚举
  */
 struct DeviceInfo {
-    int ord;                ///< 设备 ordinal
-    const char *alias;      ///< 设备别名（如 "uart0"）
-    const char *type_name;  ///< 驱动类型名（如 "Uart"）
-    const void *instance;   ///< 只读设备实例指针
-    bool (*is_ready)(const void *inst);  ///< 类型擦除的就绪检查
+    int ord;
+    const char *alias;
+    const char *type_name;
+    void *instance;
+    bool (*is_ready)(const void *inst);
+    int (*suspend)(void *inst);
+    int (*resume)(void *inst);
+    uint16_t init_priority;
+    bool supports_power_management;
 };
 
 /**

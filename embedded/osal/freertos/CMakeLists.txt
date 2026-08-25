@@ -8,7 +8,8 @@ elseif(CONFIG_CPU_CORTEX_M4)
 elseif(CONFIG_CPU_CORTEX_M33)
     set(FREERTOS_PORT_DIR "GCC/ARM_CM33_NTZ/non_secure")
 else()
-    set(FREERTOS_PORT_DIR "GCC/ARM_CM7/r0p1")
+    message(FATAL_ERROR
+        "FreeRTOS has no validated port for the selected CPU core")
 endif()
 
 set(FREERTOS_PORT_SOURCES
@@ -44,3 +45,12 @@ target_include_directories(${MODULE_NAME}
 )
 
 target_link_libraries(${MODULE_NAME} PUBLIC soc)
+
+if(CONFIG_OSAL_TICKLESS_IDLE)
+    set(OSAL_LOW_POWER_SOURCE "${PROJECT_DIR}/common/osal_low_power.cc")
+    if(NOT EXISTS "${OSAL_LOW_POWER_SOURCE}")
+        message(FATAL_ERROR
+            "CONFIG_OSAL_TICKLESS_IDLE requires product provider: ${OSAL_LOW_POWER_SOURCE}")
+    endif()
+    target_sources(${MODULE_NAME} PRIVATE "${OSAL_LOW_POWER_SOURCE}")
+endif()

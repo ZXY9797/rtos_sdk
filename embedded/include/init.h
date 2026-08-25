@@ -20,14 +20,16 @@ struct initcall_entry {
 /*
  * Initcall levels.
  *
- * PRE_KERNEL levels run before osal_init(), so they must not use RTOS services.
+ * PRE_KERNEL levels run after the OSAL kernel substrate and C++ runtime have
+ * been initialized, but before scheduling starts. They must not block.
  *   EARLY        - earliest hardware setup
  *   PRE_KERNEL_1 - core pre-kernel infrastructure
  *   PRE_KERNEL_2 - low-level HAL/bus controllers, such as UART/SPI/DMA
  *   PRE_KERNEL_3 - devices that depend on PRE_KERNEL_2 drivers but do not
  *                  need RTOS services, such as simple SPI/I2C sensors
  *
- * POST_KERNEL levels run after osal_init().
+ * POST_KERNEL levels run in the initial application thread after scheduling
+ * starts.
  *   POST_KERNEL  - drivers that need RTOS services
  *   APPLICATION  - application-level initialization
  */

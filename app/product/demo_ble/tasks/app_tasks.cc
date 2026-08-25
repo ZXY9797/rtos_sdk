@@ -4,27 +4,54 @@
 #include "services/ble_app.h"
 
 #include <drivers/gpio.h>
+#include <init.h>
 #include <log.h>
 #include <osal.h>
+#include <system/watchdog.h>
 
 namespace app {
 namespace {
 
-osal::Thread *s_sched_task = nullptr;
-osal::Thread *s_hid_task = nullptr;
-osal::Thread *s_uart_task = nullptr;
+osal::Thread s_sched_task;
+osal::Thread s_hid_task;
+osal::Thread s_uart_task;
+alignas(std::max_align_t) uint8_t s_sched_stack[512U] {};
+alignas(std::max_align_t) uint8_t s_hid_stack[1024U] {};
+alignas(std::max_align_t) uint8_t s_uart_stack[1024U] {};
 
-bool start_task(osal::Thread *&task, const char *name,
-                osal::Thread::Entry entry, size_t stack_size,
+#if defined(CONFIG_APP_WATCHDOG)
+system_watchdog::ClientId s_main_watchdog =
+    system_watchdog::kInvalidClient;
+system_watchdog::ClientId s_ble_sched_watchdog =
+    system_watchdog::kInvalidClient;
+
+int register_watchdog_clients()
+{
+    s_main_watchdog = system_watchdog::register_client(
+        "main", CONFIG_APP_WATCHDOG_TIMEOUT_MS);
+    s_ble_sched_watchdog = system_watchdog::register_client(
+        "ble_sched", CONFIG_APP_WATCHDOG_TIMEOUT_MS);
+    return s_main_watchdog != system_watchdog::kInvalidClient
+            && s_ble_sched_watchdog != system_watchdog::kInvalidClient
+        ? 0 : -1;
+}
+
+SYS_INIT(register_watchdog_clients, INITCALL_LEVEL_APPLICATION, 90);
+#endif
+
+bool start_task(osal::Thread &task, const char *name,
+                osal::Thread::Entry entry, void *stack, size_t stack_size,
                 int32_t priority)
 {
-    task = osal::Thread::create(
-        name, entry, nullptr, stack_size, priority, 0);
-    if (task != nullptr && task->startup() == 0) {
+    osal::ThreadConfig config {};
+    config.name = name;
+    config.priority = static_cast<osal::Priority>(priority);
+    config.stack_buffer = stack;
+    config.stack_size_bytes = stack_size;
+    if (task.start(entry, nullptr, config) && task.startup() == 0) {
         return true;
     }
-    delete task;
-    task = nullptr;
+    task.destroy();
     return false;
 }
 
@@ -37,7 +64,7 @@ void hid_task_entry(void *) {
     static constexpr uint8_t KEY_A = 0x04;
     bool prev_pressed = false;
 
-    while (true) {
+    while (!s_hid_task.stop_requested()) {
         bool pressed = (key.get() == 0);
 
         if (pressed && !prev_pressed && ble_is_connected()) {
@@ -59,7 +86,7 @@ void uart_task_entry(void *) {
     auto &uart = board::uart();
 
     uint8_t temp[256];
-    while (true) {
+    while (!s_uart_task.stop_requested()) {
         size_t bytes_read = 0;
         if (uart.recv(temp, sizeof(temp), &bytes_read, 10) == hal::Status::Ok
             && bytes_read > 0) {
@@ -72,7 +99,12 @@ void uart_task_entry(void *) {
 }
 
 void ble_sched_task_entry(void *) {
-    while (true) {
+    while (!s_sched_task.stop_requested()) {
+#if defined(CONFIG_APP_WATCHDOG)
+        if (!system_watchdog::heartbeat(s_ble_sched_watchdog)) {
+            return;
+        }
+#endif
         run_ble_scheduler();
         osal::this_thread::sleep_for(1);
     }
@@ -81,19 +113,21 @@ void ble_sched_task_entry(void *) {
 } // namespace
 
 int start_app_tasks() {
-    if (s_sched_task != nullptr || s_hid_task != nullptr
-        || s_uart_task != nullptr) {
+    if (s_sched_task.is_valid() || s_hid_task.is_valid()
+        || s_uart_task.is_valid()) {
         return -1;
     }
     if (!start_task(s_sched_task, "ble_sched", ble_sched_task_entry,
-                    512U, 1)) {
+                    s_sched_stack, sizeof(s_sched_stack), 1)) {
         return -1;
     }
-    if (!start_task(s_hid_task, "hid", hid_task_entry, 1024U, 5)) {
+    if (!start_task(s_hid_task, "hid", hid_task_entry,
+                    s_hid_stack, sizeof(s_hid_stack), 5)) {
         stop_app_tasks();
         return -1;
     }
-    if (!start_task(s_uart_task, "uart", uart_task_entry, 1024U, 4)) {
+    if (!start_task(s_uart_task, "uart", uart_task_entry,
+                    s_uart_stack, sizeof(s_uart_stack), 4)) {
         stop_app_tasks();
         return -1;
     }
@@ -101,22 +135,31 @@ int start_app_tasks() {
 }
 
 void stop_app_tasks() {
-    delete s_uart_task;
-    s_uart_task = nullptr;
-    delete s_hid_task;
-    s_hid_task = nullptr;
-    delete s_sched_task;
-    s_sched_task = nullptr;
+    s_uart_task.destroy();
+    s_hid_task.destroy();
+    s_sched_task.destroy();
 }
 
 void run_heartbeat() {
     auto &led = board::status_led();
     (void)led.configure(GPIO_OUTPUT_LOW);
 
+#if defined(CONFIG_APP_WATCHDOG)
+    constexpr uint32_t heartbeat_period_ms =
+        CONFIG_APP_WATCHDOG_TIMEOUT_MS / 4U;
+#else
+    constexpr uint32_t heartbeat_period_ms = 2000U;
+#endif
+
     while (true) {
+#if defined(CONFIG_APP_WATCHDOG)
+        if (!system_watchdog::heartbeat(s_main_watchdog)) {
+            return;
+        }
+#endif
         led.toggle();
         LOGI("demo", "heartbeat");
-        osal::this_thread::sleep_for(2000);
+        osal::this_thread::sleep_for(heartbeat_period_ms);
     }
 }
 

@@ -42,7 +42,16 @@ namespace osal {
 inline constexpr uint32_t kSemaphoreMaxCount = 0xFFFFU;
 inline constexpr uint32_t kMinRtosCallableIrqPriority =
     configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY;
+inline constexpr uint32_t kLowestIrqPriority =
+    configLIBRARY_LOWEST_INTERRUPT_PRIORITY;
 inline constexpr uint8_t  kPriorityMax =
     static_cast<uint8_t>((configMAX_PRIORITIES > 0) ? (configMAX_PRIORITIES - 1) : 0);
 inline constexpr size_t   kDefaultThreadStackBytes = 1024U;
+inline constexpr size_t kMessageQueueControlBytes = sizeof(StaticQueue_t);
+inline constexpr size_t kSemaphoreControlBytes = sizeof(StaticSemaphore_t);
+inline constexpr size_t kMutexControlBytes = sizeof(StaticSemaphore_t);
+inline constexpr size_t kMessageQueueItemAlignment = 1U;
+inline constexpr size_t kMessageQueueItemOverhead = 0U;
+inline constexpr size_t kStreamBufferControlBytes =
+    sizeof(StaticStreamBuffer_t);
 }  // namespace osal

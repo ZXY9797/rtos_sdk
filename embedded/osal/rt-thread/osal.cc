@@ -3,17 +3,28 @@
 
 #include <mem.h>
 #include <osal.h>
+#include <arch/arm/cortex_m/fault.h>
+#include <soc.h>
 #include <rthw.h>
 #include <rtthread.h>
 
 #include <cstddef>
 #include <cstdint>
+
+static_assert(CONFIG_NUM_IRQ_PRIO_BITS == __NVIC_PRIO_BITS,
+              "Kconfig/CMSIS NVIC priority-bit mismatch");
 #include <cstring>
 
 ALIGN(8)
 static rt_uint8_t main_stack[RT_MAIN_THREAD_STACK_SIZE];
 static struct rt_thread main_thread;
 static void (*g_user_entry)(void);
+
+static constexpr rt_uint8_t native_priority(osal::Priority priority)
+{
+    return static_cast<rt_uint8_t>(
+        (RT_THREAD_PRIORITY_MAX - 1U) - priority);
+}
 
 static void main_thread_wrapper(void* parameter)
 {
@@ -22,7 +33,7 @@ static void main_thread_wrapper(void* parameter)
 }
 
 #ifdef RT_USING_HEAP
-static rt_uint8_t rt_heap_pool[32 * 1024];
+static rt_uint8_t rt_heap_pool[CONFIG_RTTHREAD_HEAP_SIZE];
 #endif
 
 int osal_init()
@@ -54,20 +65,29 @@ extern "C" int cpu_usage_init(void);
 
 int osal_start(void (*entry)(void))
 {
+    if (entry == nullptr) {
+        return -1;
+    }
     g_user_entry = entry;
 
     rt_thread_t tid = &main_thread;
-    rt_err_t result = rt_thread_init(tid, "main", main_thread_wrapper, nullptr,
-                                     main_stack, sizeof(main_stack),
-                                     RT_MAIN_THREAD_PRIORITY, 20);
-    RT_ASSERT(result == RT_EOK);
-    (void)result;
-
-    rt_thread_startup(tid);
-    cpu_usage_init();
+    const rt_err_t init_result = rt_thread_init(
+        tid, "main", main_thread_wrapper, nullptr,
+        main_stack, sizeof(main_stack),
+        native_priority(osal::kDefaultThreadPriority), 20U);
+    if (init_result != RT_EOK) {
+        return -1;
+    }
+    if (rt_thread_startup(tid) != RT_EOK) {
+        (void)rt_thread_detach(tid);
+        return -1;
+    }
+    if (cpu_usage_init() != 0) {
+        (void)rt_thread_detach(tid);
+        return -1;
+    }
     rt_system_scheduler_start();
-
-    return 0;
+    return -1;
 }
 
 namespace {
@@ -96,8 +116,10 @@ rt_tick_t period_ms_to_ticks(uint32_t period_ms)
     if (period_ms == 0U) {
         return 1;
     }
-
-    rt_tick_t ticks = rt_tick_from_millisecond(static_cast<rt_int32_t>(period_ms));
+    const uint32_t bounded_period = period_ms > INT32_MAX
+        ? static_cast<uint32_t>(INT32_MAX) : period_ms;
+    rt_tick_t ticks = rt_tick_from_millisecond(
+        static_cast<rt_int32_t>(bounded_period));
     return ticks == 0 ? 1 : ticks;
 }
 
@@ -153,6 +175,19 @@ uint32_t Kernel::uptime_ms()
     return rt_tick_get_millisecond();
 }
 
+MemoryStats Kernel::memory_stats()
+{
+    rt_size_t total = 0U;
+    rt_size_t used = 0U;
+    rt_size_t maximum_used = 0U;
+    rt_memory_info(&total, &used, &maximum_used);
+    if (used > total || maximum_used > total) {
+        return {};
+    }
+    return {true, static_cast<size_t>(total - used),
+            static_cast<size_t>(total - maximum_used)};
+}
+
 void Kernel::suspend_scheduler()
 {
     rt_enter_critical();
@@ -174,17 +209,29 @@ Semaphore::Semaphore(uint32_t initial, uint32_t max_count)
     }
 
     max_count_ = max_count;
-    handle_ = rt_sem_create("sem", initial, RT_IPC_FLAG_FIFO);
-    if (handle_ == nullptr) {
+    // The native semaphore is a wake event. token_count_ is authoritative so
+    // the caller-selected maximum remains exact across task/ISR races.
+    auto* const storage = reinterpret_cast<struct rt_semaphore*>(
+        control_storage_);
+    if (rt_sem_init(storage, "sem", 0U, RT_IPC_FLAG_FIFO) != RT_EOK) {
         max_count_ = 0U;
+    } else {
+        handle_ = storage;
+        is_static_ = true;
+        token_count_.store(initial, std::memory_order_relaxed);
     }
 }
 
 Semaphore::~Semaphore()
 {
     if (handle_ != nullptr) {
-        rt_sem_delete(handle_);
+        if (is_static_) {
+            (void)rt_sem_detach(handle_);
+        } else {
+            (void)rt_sem_delete(handle_);
+        }
         handle_ = nullptr;
+        is_static_ = false;
     }
 }
 
@@ -193,7 +240,25 @@ int Semaphore::take(uint32_t timeout_ms)
     if (handle_ == nullptr) {
         return -1;
     }
-    return rt_sem_take(handle_, timeout_ms_to_ticks(timeout_ms)) == RT_EOK ? 0 : -1;
+    Deadline deadline(timeout_ms);
+    for (;;) {
+        uint32_t count = token_count_.load(std::memory_order_acquire);
+        while (count > 0U) {
+            if (token_count_.compare_exchange_weak(
+                    count, count - 1U, std::memory_order_acq_rel)) {
+                (void)rt_sem_take(handle_, 0);
+                return 0;
+            }
+        }
+        if (deadline.expired()) {
+            return -1;
+        }
+        const rt_err_t wait_result = rt_sem_take(
+            handle_, timeout_ms_to_ticks(deadline.remaining()));
+        if (wait_result != RT_EOK && deadline.expired()) {
+            return -1;
+        }
+    }
 }
 
 int Semaphore::release()
@@ -202,15 +267,30 @@ int Semaphore::release()
         return -1;
     }
 
-    rt_base_t level = rt_hw_interrupt_disable();
-    const bool full = rt_list_isempty(&handle_->parent.suspend_thread) &&
-                      handle_->value >= max_count_;
-    rt_hw_interrupt_enable(level);
-    if (full) {
-        return -1;
+    uint32_t count = token_count_.load(std::memory_order_acquire);
+    do {
+        if (count >= max_count_) {
+            return -1;
+        }
+    } while (!token_count_.compare_exchange_weak(
+        count, count + 1U, std::memory_order_acq_rel));
+
+    const rt_err_t release_result = rt_sem_release(handle_);
+    if (release_result == RT_EOK || release_result == -RT_EFULL) {
+        // A full native semaphore already contains enough wake events. The
+        // logical token remains valid and must not be rolled back.
+        return 0;
     }
 
-    return rt_sem_release(handle_) == RT_EOK ? 0 : -1;
+    count = token_count_.load(std::memory_order_acquire);
+    while (count > 0U) {
+        if (token_count_.compare_exchange_weak(
+                count, count - 1U, std::memory_order_acq_rel)) {
+            return -1;
+        }
+    }
+    // A concurrent taker consumed the logical token, so no rollback remains.
+    return 0;
 }
 
 int Semaphore::release_from_isr(IsrContext& context)
@@ -225,10 +305,7 @@ uint32_t Semaphore::count() const
         return 0U;
     }
 
-    rt_base_t level = rt_hw_interrupt_disable();
-    const uint32_t value = handle_->value;
-    rt_hw_interrupt_enable(level);
-    return value;
+    return token_count_.load(std::memory_order_acquire);
 }
 
 Mutex::Mutex()
@@ -246,15 +323,26 @@ bool Mutex::create()
     if (handle_ != nullptr) {
         return true;
     }
-    handle_ = rt_mutex_create("mtx", RT_IPC_FLAG_FIFO);
-    return handle_ != nullptr;
+    auto* const storage = reinterpret_cast<struct rt_mutex*>(
+        control_storage_);
+    if (rt_mutex_init(storage, "mtx", RT_IPC_FLAG_FIFO) != RT_EOK) {
+        return false;
+    }
+    handle_ = storage;
+    is_static_ = true;
+    return true;
 }
 
 void Mutex::destroy()
 {
     if (handle_ != nullptr) {
-        rt_mutex_delete(handle_);
+        if (is_static_) {
+            (void)rt_mutex_detach(handle_);
+        } else {
+            (void)rt_mutex_delete(handle_);
+        }
         handle_ = nullptr;
+        is_static_ = false;
     }
 }
 
@@ -286,23 +374,39 @@ Thread::Thread() = default;
 
 Thread::~Thread()
 {
-    destroy();
+    if (!shutdown(0U)) {
+        hal::fault::panic(hal::fault::FatalReason::ThreadShutdownTimeout,
+                          0, "thread_destructor", 0U);
+    }
 }
 
-Thread* Thread::create(const char* name, Entry entry, void* param,
-                       size_t stack_size, int32_t prio, int32_t tick)
+void Thread::threadEntry(void* context)
+{
+    auto* thread = static_cast<Thread*>(context);
+    while (!thread->started_.load(std::memory_order_acquire)
+           && !thread->stop_requested()) {
+        (void)rt_thread_suspend(rt_thread_self());
+        rt_schedule();
+    }
+    if (!thread->stop_requested()) {
+        thread->entry_(thread->context_);
+    }
+    thread->exited_.store(true, std::memory_order_release);
+    for (;;) {
+        (void)rt_thread_suspend(rt_thread_self());
+        rt_schedule();
+    }
+}
+
+Thread* Thread::create(Entry entry, void* context,
+                       const ThreadConfig& config)
 {
     auto* thread = new (std::nothrow) Thread(PrivateTag {});
     if (thread == nullptr) {
         return nullptr;
     }
 
-    ThreadConfig config {};
-    config.name = name;
-    config.priority = static_cast<Priority>(prio);
-    config.stack_size_bytes = stack_size;
-    config.time_slice_ticks = static_cast<uint32_t>(tick);
-    if (!thread->start(entry, param, config)) {
+    if (!thread->start(entry, context, config)) {
         delete thread;
         return nullptr;
     }
@@ -312,16 +416,29 @@ Thread* Thread::create(const char* name, Entry entry, void* param,
 
 bool Thread::start(Entry entry, void* context, const ThreadConfig& config)
 {
-    if (entry == nullptr || handle_.handle != nullptr) {
+    if (entry == nullptr || handle_.handle != nullptr
+        || config.priority >= RT_THREAD_PRIORITY_MAX
+        || config.stack_size_bytes < RT_ALIGN_SIZE
+        || (config.stack_size_bytes % RT_ALIGN_SIZE) != 0U) {
         return false;
     }
 
     const char* name = config.name != nullptr ? config.name : "thread";
-    const rt_uint8_t prio = static_cast<rt_uint8_t>(config.priority);
+    const rt_uint8_t prio = native_priority(config.priority);
     const rt_uint32_t tick = config.time_slice_ticks == 0U ? 20U : config.time_slice_ticks;
 
+    entry_ = entry;
+    context_ = context;
+    stop_requested_.store(false, std::memory_order_relaxed);
+    started_.store(false, std::memory_order_relaxed);
+    exited_.store(false, std::memory_order_relaxed);
+
     if (config.stack_buffer != nullptr) {
-        rt_err_t ret = rt_thread_init(&handle_.tcb, name, entry, context,
+        if ((reinterpret_cast<uintptr_t>(config.stack_buffer)
+             % RT_ALIGN_SIZE) != 0U) {
+            return false;
+        }
+        rt_err_t ret = rt_thread_init(&handle_.tcb, name, threadEntry, this,
                                       config.stack_buffer,
                                       static_cast<rt_uint32_t>(config.stack_size_bytes),
                                       prio, tick);
@@ -330,10 +447,11 @@ bool Thread::start(Entry entry, void* context, const ThreadConfig& config)
         }
         handle_.handle = &handle_.tcb;
         handle_.flags = kThreadFlagStatic;
+        stack_size_bytes_ = config.stack_size_bytes;
         return true;
     }
 
-    rt_thread_t thread = rt_thread_create(name, entry, context,
+    rt_thread_t thread = rt_thread_create(name, threadEntry, this,
                                           static_cast<rt_uint32_t>(config.stack_size_bytes),
                                           prio, tick);
     if (thread == nullptr) {
@@ -342,37 +460,93 @@ bool Thread::start(Entry entry, void* context, const ThreadConfig& config)
     handle_.handle = thread;
 
     handle_.flags = kThreadFlagDynamic;
+    stack_size_bytes_ = config.stack_size_bytes;
     return true;
 }
 
 void Thread::destroy()
 {
+    if (!shutdown()) {
+        hal::fault::panic(hal::fault::FatalReason::ThreadShutdownTimeout,
+                          0, get_name(), 0U);
+    }
+}
+
+void Thread::request_stop()
+{
+    stop_requested_.store(true, std::memory_order_release);
+    if (handle_.handle != nullptr) {
+        (void)rt_thread_resume(handle_.handle);
+    }
+}
+
+bool Thread::join(Milliseconds timeout_ms)
+{
+    if (handle_.handle == nullptr || exited_.load(std::memory_order_acquire)) {
+        return true;
+    }
+    Deadline deadline(timeout_ms);
+    while (!exited_.load(std::memory_order_acquire)) {
+        if (deadline.expired()) {
+            return false;
+        }
+        (void)rt_thread_mdelay(1U);
+    }
+    return true;
+}
+
+bool Thread::shutdown(Milliseconds timeout_ms)
+{
     if (handle_.handle == nullptr) {
-        return;
+        return true;
     }
-
-    if ((handle_.flags & kThreadFlagDynamic) != 0U) {
-        (void)rt_thread_delete(handle_.handle);
-    } else {
-        (void)rt_thread_detach(handle_.handle);
+    if (rt_thread_self() == handle_.handle) {
+        return false;
     }
-
+    if (started_.load(std::memory_order_acquire)) {
+        request_stop();
+        if (!join(timeout_ms)) {
+            return false;
+        }
+    }
+    const rt_err_t release_result =
+        ((handle_.flags & kThreadFlagDynamic) != 0U)
+        ? rt_thread_delete(handle_.handle)
+        : rt_thread_detach(handle_.handle);
+    if (release_result != RT_EOK) {
+        return false;
+    }
     handle_.handle = nullptr;
     handle_.flags = 0U;
+    entry_ = nullptr;
+    context_ = nullptr;
+    stack_size_bytes_ = 0U;
+    return true;
 }
 
 int Thread::startup()
 {
-    if (handle_.handle == nullptr) {
+    if (handle_.handle == nullptr
+        || exited_.load(std::memory_order_acquire)) {
         return -1;
     }
 
     const rt_uint8_t stat = handle_.handle->stat & RT_THREAD_STAT_MASK;
     if (stat == RT_THREAD_INIT) {
-        return rt_thread_startup(handle_.handle) == RT_EOK ? 0 : -1;
+        started_.store(true, std::memory_order_release);
+        const bool started = rt_thread_startup(handle_.handle) == RT_EOK;
+        if (!started) {
+            started_.store(false, std::memory_order_release);
+        }
+        return started ? 0 : -1;
     }
     if (stat == RT_THREAD_SUSPEND) {
-        return rt_thread_resume(handle_.handle) == RT_EOK ? 0 : -1;
+        started_.store(true, std::memory_order_release);
+        const bool resumed = rt_thread_resume(handle_.handle) == RT_EOK;
+        if (!resumed) {
+            started_.store(false, std::memory_order_release);
+        }
+        return resumed ? 0 : -1;
     }
     return 0;
 }
@@ -404,14 +578,17 @@ bool Thread::set_priority(Priority priority)
         return false;
     }
 
-    rt_uint8_t native_priority = priority;
+    rt_uint8_t native = native_priority(priority);
     return rt_thread_control(handle_.handle, RT_THREAD_CTRL_CHANGE_PRIORITY,
-                             &native_priority) == RT_EOK;
+                             &native) == RT_EOK;
 }
 
 Priority Thread::get_priority() const
 {
-    return handle_.handle != nullptr ? handle_.handle->current_priority : kPriorityMin;
+    return handle_.handle != nullptr
+        ? static_cast<Priority>(
+            kPriorityMax - handle_.handle->current_priority)
+        : kPriorityMin;
 }
 
 Thread::State Thread::get_state() const
@@ -431,6 +608,22 @@ bool Thread::abort_delay()
         return false;
     }
     return rt_thread_resume(handle_.handle) == RT_EOK;
+}
+
+StackStats Thread::stack_stats() const
+{
+    if (handle_.handle == nullptr || handle_.handle->stack_addr == nullptr) {
+        return {};
+    }
+    const auto* stack = static_cast<const uint8_t*>(
+        handle_.handle->stack_addr);
+    const size_t total = static_cast<size_t>(handle_.handle->stack_size);
+    size_t free_bytes = 0U;
+    while (free_bytes < total && stack[free_bytes] == '#') {
+        ++free_bytes;
+    }
+    return {true, stack_size_bytes_,
+            free_bytes < stack_size_bytes_ ? free_bytes : stack_size_bytes_};
 }
 
 // ─── IsrTrigger ──────────────────────────────────────────────────
@@ -508,9 +701,14 @@ void PeriodicThread::threadEntry(void* parameter)
 {
     auto* thread = static_cast<PeriodicThread*>(parameter);
 
-    for (;;) {
-        while (!thread->running_) {
+    while (!thread->terminate_.load(std::memory_order_acquire)) {
+        while (!thread->running_
+               && !thread->terminate_.load(std::memory_order_acquire)) {
             periodic_wait_stopped();
+        }
+
+        if (thread->terminate_.load(std::memory_order_acquire)) {
+            break;
         }
 
         if (thread->trigger_ == PeriodicTrigger::Tick) {
@@ -550,13 +748,25 @@ void PeriodicThread::threadEntry(void* parameter)
             }
         }
     }
+    thread->exited_.store(true, std::memory_order_release);
+    for (;;) {
+        periodic_wait_stopped();
+    }
 }
 
-PeriodicThread::PeriodicThread(PrivateTag)
+PeriodicThread::PeriodicThread()
 {
 }
 
 PeriodicThread::~PeriodicThread()
+{
+    if (!shutdown(0U)) {
+        hal::fault::panic(hal::fault::FatalReason::ThreadShutdownTimeout,
+                          0, "periodic_destructor", 0U);
+    }
+}
+
+bool PeriodicThread::shutdown(Milliseconds timeout_ms)
 {
     (void)stop();
     if (timer_attached_) {
@@ -567,99 +777,184 @@ PeriodicThread::~PeriodicThread()
         }
         rt_hw_interrupt_enable(level);
         if (!detached) {
-            __builtin_trap();
+            return false;
         }
     }
     IsrTrigger::unregister_slot(trigger_id_);
     trigger_id_ = -1;
     if (thread_.handle != nullptr) {
-        rt_thread_delete(thread_.handle);
+        if (rt_thread_self() == thread_.handle) {
+            hal::fault::panic(hal::fault::FatalReason::ThreadShutdownTimeout,
+                              0, "periodic_self_delete", 0U);
+        }
+        if (started_) {
+            terminate_.store(true, std::memory_order_release);
+            running_.store(false, std::memory_order_release);
+            if (sem_ != nullptr) {
+                (void)rt_sem_release(sem_);
+            }
+            (void)rt_thread_resume(thread_.handle);
+            Deadline deadline(timeout_ms);
+            while (!exited_.load(std::memory_order_acquire)) {
+                if (deadline.expired()) {
+                    return false;
+                }
+                (void)rt_thread_mdelay(1U);
+            }
+        }
+        const rt_err_t release_result =
+            ((thread_.flags & kThreadFlagDynamic) != 0U)
+            ? rt_thread_delete(thread_.handle)
+            : rt_thread_detach(thread_.handle);
+        if (release_result != RT_EOK) {
+            return false;
+        }
         thread_.handle = nullptr;
+        thread_.flags = 0U;
+        started_ = false;
+        stack_size_bytes_ = 0U;
     }
     if (sem_ != nullptr) {
-        rt_sem_delete(sem_);
+        const rt_err_t release_result = sem_is_static_
+            ? rt_sem_detach(sem_)
+            : rt_sem_delete(sem_);
+        if (release_result != RT_EOK) {
+            return false;
+        }
         sem_ = nullptr;
+        sem_is_static_ = false;
+    }
+    return true;
+}
+
+void PeriodicThread::destroy()
+{
+    if (!shutdown()) {
+        hal::fault::panic(hal::fault::FatalReason::ThreadShutdownTimeout,
+                          0, "periodic_destroy", 0U);
     }
 }
 
-PeriodicThread* PeriodicThread::create(const char* name,
-                                       PeriodicEntry entry,
-                                       void* param,
-                                       size_t stack_size,
-                                       int32_t prio,
-                                       uint32_t frequency_hz,
-                                       PeriodicTrigger trigger,
-                                       IrqTimer *timer,
-                                       bool register_isr_trigger)
+PeriodicThread* PeriodicThread::create(
+    const PeriodicThreadConfig& config)
 {
-    if (entry == nullptr || frequency_hz == 0U) {
-        return nullptr;
-    }
-    if (trigger == PeriodicTrigger::Tick && frequency_hz > RT_TICK_PER_SECOND) {
-        return nullptr;
-    }
-
-    auto* thread = new (std::nothrow) PeriodicThread(PrivateTag {});
+    auto* thread = new (std::nothrow) PeriodicThread();
     if (thread == nullptr) {
         return nullptr;
     }
+    if (!thread->start(config)) {
+        delete thread;
+        return nullptr;
+    }
+    return thread;
+}
 
-    thread->entry_ = entry;
-    thread->param_ = param;
-    thread->frequency_hz_ = frequency_hz;
-    thread->trigger_ = trigger;
+bool PeriodicThread::start(const PeriodicThreadConfig& config)
+{
+    if (config.entry == nullptr || config.frequency_hz == 0U
+        || config.stack_size_bytes < RT_ALIGN_SIZE
+        || (config.stack_size_bytes % RT_ALIGN_SIZE) != 0U
+        || config.priority >= RT_THREAD_PRIORITY_MAX
+        || thread_.handle != nullptr || sem_ != nullptr
+        || (config.trigger != PeriodicTrigger::Tick
+            && config.trigger != PeriodicTrigger::External)
+        || (config.trigger == PeriodicTrigger::Tick
+            && config.timer != nullptr)
+        || (config.stack_buffer != nullptr
+            && (reinterpret_cast<uintptr_t>(config.stack_buffer)
+                % RT_ALIGN_SIZE) != 0U)) {
+        return false;
+    }
+    if (config.trigger == PeriodicTrigger::Tick
+        && config.frequency_hz > RT_TICK_PER_SECOND) {
+        return false;
+    }
+
+    entry_ = config.entry;
+    param_ = config.context;
+    frequency_hz_ = config.frequency_hz;
+    trigger_ = config.trigger;
+    sequence_.store(0U, std::memory_order_relaxed);
+    missed_.store(0U, std::memory_order_relaxed);
+    pending_.store(0U, std::memory_order_relaxed);
+    running_.store(false, std::memory_order_relaxed);
+    terminate_.store(false, std::memory_order_relaxed);
+    exited_.store(false, std::memory_order_relaxed);
+    started_ = false;
 
     // External 模式：注册到 IsrTrigger 静态触发表
-    if (trigger == PeriodicTrigger::External && timer == nullptr
-        && register_isr_trigger) {
-        thread->trigger_id_ = IsrTrigger::register_slot(
-            timer_isr_callback, thread);
-        if (thread->trigger_id_ < 0) {
-            delete thread;
-            return nullptr;
+    if (config.trigger == PeriodicTrigger::External
+        && config.timer == nullptr && config.register_isr_trigger) {
+        trigger_id_ = IsrTrigger::register_slot(timer_isr_callback, this);
+        if (trigger_id_ < 0) {
+            return false;
         }
     }
 
     // 如果传入了硬件定时器，自动连接 ISR 回调
-    if (timer != nullptr) {
-        thread->timer_ = timer;
-        if (!timer->enable_update_irq(timer_isr_callback, thread)) {
-            delete thread;
-            return nullptr;
+    if (config.timer != nullptr) {
+        timer_ = config.timer;
+        if (!config.timer->enable_update_irq(timer_isr_callback, this)) {
+            IsrTrigger::unregister_slot(trigger_id_);
+            trigger_id_ = -1;
+            timer_ = nullptr;
+            return false;
         }
-        thread->timer_attached_ = true;
+        timer_attached_ = true;
     }
 
-    if (trigger == PeriodicTrigger::External) {
-        thread->sem_ = rt_sem_create("per", 0U, RT_IPC_FLAG_FIFO);
-        if (thread->sem_ == nullptr) {
-            delete thread;
-            return nullptr;
+    if (config.trigger == PeriodicTrigger::External) {
+        auto* const storage = reinterpret_cast<struct rt_semaphore*>(
+            sem_storage_);
+        if (rt_sem_init(storage, "per", 0U, RT_IPC_FLAG_FIFO) != RT_EOK) {
+            (void)shutdown(0U);
+            return false;
         }
+        sem_ = storage;
+        sem_is_static_ = true;
     }
 
-    rt_thread_t h = rt_thread_create(name, PeriodicThread::threadEntry, thread,
-                                     static_cast<rt_uint32_t>(stack_size),
-                                     static_cast<rt_uint8_t>(prio), 20U);
-    if (h == nullptr) {
-        delete thread;
-        return nullptr;
+    const char* name = config.name != nullptr ? config.name : "periodic";
+    if (config.stack_buffer != nullptr) {
+        const rt_err_t result = rt_thread_init(
+            &thread_.tcb, name, PeriodicThread::threadEntry, this,
+            config.stack_buffer,
+            static_cast<rt_uint32_t>(config.stack_size_bytes),
+            native_priority(config.priority), 20U);
+        if (result == RT_EOK) {
+            thread_.handle = &thread_.tcb;
+            thread_.flags = kThreadFlagStatic;
+        }
+    } else {
+        thread_.handle = rt_thread_create(
+            name, PeriodicThread::threadEntry, this,
+            static_cast<rt_uint32_t>(config.stack_size_bytes),
+            native_priority(config.priority), 20U);
+        if (thread_.handle != nullptr) {
+            thread_.flags = kThreadFlagDynamic;
+        }
     }
-    thread->thread_.handle = h;
-    thread->thread_.flags = kThreadFlagDynamic;
-    return thread;
+    if (thread_.handle == nullptr) {
+        (void)shutdown(0U);
+        return false;
+    }
+    stack_size_bytes_ = config.stack_size_bytes;
+    return true;
 }
 
 int PeriodicThread::startup()
 {
-    if (thread_.handle == nullptr) {
+    if (thread_.handle == nullptr
+        || terminate_.load(std::memory_order_acquire)
+        || exited_.load(std::memory_order_acquire)) {
         return -1;
     }
 
     running_ = true;
     if (!started_) {
-        started_ = true;
-        return rt_thread_startup(thread_.handle) == RT_EOK ? 0 : -1;
+        const bool started = rt_thread_startup(thread_.handle) == RT_EOK;
+        started_ = started;
+        return started ? 0 : -1;
     }
 
     return rt_thread_resume(thread_.handle) == RT_EOK ? 0 : -1;
@@ -696,6 +991,22 @@ int PeriodicThread::notify_from_isr(uint32_t events)
         return -1;
     }
     return 0;
+}
+
+StackStats PeriodicThread::stack_stats() const
+{
+    if (thread_.handle == nullptr || thread_.handle->stack_addr == nullptr) {
+        return {};
+    }
+    const auto* stack = static_cast<const uint8_t*>(
+        thread_.handle->stack_addr);
+    const size_t total = static_cast<size_t>(thread_.handle->stack_size);
+    size_t free_bytes = 0U;
+    while (free_bytes < total && stack[free_bytes] == '#') {
+        ++free_bytes;
+    }
+    return {true, stack_size_bytes_,
+            free_bytes < stack_size_bytes_ ? free_bytes : stack_size_bytes_};
 }
 
 EventGroup::~EventGroup()
@@ -810,19 +1121,39 @@ bool MessageQueue::create(uint32_t length,
     item_size_ = item_size;
 
     if (storage_buffer != nullptr) {
-        auto* mq = static_cast<rt_mq_t>(rtos_malloc(sizeof(struct rt_messagequeue)));
-        if (mq == nullptr) {
+        constexpr size_t alignment = RT_ALIGN_SIZE;
+        if (item_size > SIZE_MAX - (alignment - 1U)) {
             return false;
         }
+        const size_t aligned_item_size =
+            (item_size + alignment - 1U) & ~(alignment - 1U);
+        if (aligned_item_size
+            > SIZE_MAX - kMessageQueueItemOverhead) {
+            return false;
+        }
+        const size_t slot_size =
+            aligned_item_size + kMessageQueueItemOverhead;
+        if (slot_size > SIZE_MAX / static_cast<size_t>(length)) {
+            return false;
+        }
+        const size_t required = static_cast<size_t>(length)
+            * slot_size;
+        if (storage_buffer_size_bytes < required
+            || static_cast<size_t>(
+                static_cast<rt_size_t>(required)) != required) {
+            return false;
+        }
+        auto* mq = reinterpret_cast<rt_mq_t>(control_storage_);
         if (rt_mq_init(mq, "mq", storage_buffer, static_cast<rt_size_t>(item_size),
-                       static_cast<rt_size_t>(storage_buffer_size_bytes),
+                       static_cast<rt_size_t>(required),
                        RT_IPC_FLAG_FIFO) != RT_EOK) {
-            rtos_free(mq);
             return false;
         }
         native_handle_ = mq;
         control_block_buffer_ = mq;
-        owns_control_block_buffer_ = true;
+        owns_control_block_buffer_ = false;
+        length_ = length;
+        reset_stats();
         return true;
     }
 
@@ -832,6 +1163,8 @@ bool MessageQueue::create(uint32_t length,
         return false;
     }
     native_handle_ = mq;
+    length_ = length;
+    reset_stats();
     return true;
 }
 
@@ -852,15 +1185,19 @@ void MessageQueue::destroy()
     native_handle_ = nullptr;
     control_block_buffer_ = nullptr;
     item_size_ = 0U;
+    length_ = 0U;
+    reset_stats();
     owns_control_block_buffer_ = false;
 }
 
 bool MessageQueue::send(const void* item, Milliseconds timeout_ms)
 {
     auto mq = static_cast<rt_mq_t>(native_handle_);
-    return mq != nullptr && item != nullptr &&
-           rt_mq_send_wait(mq, item, static_cast<rt_size_t>(item_size_),
+    const bool succeeded = mq != nullptr && item != nullptr
+        && rt_mq_send_wait(mq, item, static_cast<rt_size_t>(item_size_),
                            timeout_ms_to_ticks(timeout_ms)) == RT_EOK;
+    record_send(succeeded);
+    return succeeded;
 }
 
 bool MessageQueue::receive(void* item, Milliseconds timeout_ms)
@@ -889,46 +1226,123 @@ uint32_t MessageQueue::free_slots() const
     return mq != nullptr ? static_cast<uint32_t>(mq->max_msgs - mq->entry) : 0U;
 }
 
+void MessageQueue::record_send(bool succeeded)
+{
+    if (!succeeded) {
+        send_failures_.fetch_add(1U, std::memory_order_relaxed);
+        return;
+    }
+    const uint32_t depth = count();
+    uint32_t observed = high_water_mark_.load(std::memory_order_relaxed);
+    while (observed < depth
+           && !high_water_mark_.compare_exchange_weak(
+               observed, depth, std::memory_order_relaxed)) {
+    }
+}
+
+MessageQueueStats MessageQueue::stats() const
+{
+    return {length_, count(),
+            high_water_mark_.load(std::memory_order_relaxed),
+            send_failures_.load(std::memory_order_relaxed)};
+}
+
+void MessageQueue::reset_stats()
+{
+    high_water_mark_.store(count(), std::memory_order_relaxed);
+    send_failures_.store(0U, std::memory_order_relaxed);
+}
+
 // ---- StreamBuffer (ring buffer + semaphore 实现) ----
 
 struct StreamBufferInternal {
     uint8_t *buf;
-    size_t cap;          // 缓冲区总容量
-    size_t trigger;      // 触发阈值
-    volatile size_t head; // 写指针 (send 端)
-    volatile size_t tail; // 读指针 (receive 端)
-    rt_sem_t sem;         // 可用字节数信号量
+    size_t cap;
+    size_t trigger;
+    size_t head;
+    size_t tail;
+    size_t count;
+    bool event_pending;
+    rt_sem_t sem;
+    struct rt_semaphore sem_storage;
     bool owns_buf;
+    bool static_control;
 };
 
+static_assert(sizeof(StreamBufferInternal)
+              <= osal::kStreamBufferControlBytes);
+static_assert(alignof(StreamBufferInternal) <= alignof(std::max_align_t));
+
 static inline size_t sb_used(const StreamBufferInternal *sb) {
-    return (sb->head - sb->tail) % sb->cap;
+    return __atomic_load_n(&sb->count, __ATOMIC_ACQUIRE);
 }
 
 static inline size_t sb_free(const StreamBufferInternal *sb) {
-    return sb->cap - 1U - sb_used(sb);
+    return sb->cap - sb_used(sb);
 }
 
 static size_t sb_write(StreamBufferInternal *sb,
-                       const uint8_t *data, size_t len) {
-    size_t avail = sb_free(sb);
+                       const uint8_t *data, size_t len,
+                       size_t& previous_count) {
+    const size_t avail = sb_free(sb);
     if (len > avail) len = avail;
     for (size_t i = 0; i < len; i++) {
         sb->buf[(sb->head + i) % sb->cap] = data[i];
     }
     sb->head = (sb->head + len) % sb->cap;
+    previous_count = __atomic_fetch_add(&sb->count, len,
+                                         __ATOMIC_RELEASE);
     return len;
 }
 
 static size_t sb_read(StreamBufferInternal *sb,
                       uint8_t *data, size_t len) {
-    size_t avail = sb_used(sb);
+    const size_t avail = sb_used(sb);
     if (len > avail) len = avail;
     for (size_t i = 0; i < len; i++) {
         data[i] = sb->buf[(sb->tail + i) % sb->cap];
     }
     sb->tail = (sb->tail + len) % sb->cap;
+    __atomic_fetch_sub(&sb->count, len, __ATOMIC_RELEASE);
     return len;
+}
+
+static void sb_drain_event(StreamBufferInternal *sb) {
+    while (rt_sem_take(sb->sem, 0) == RT_EOK) {
+    }
+    __atomic_store_n(&sb->event_pending, false, __ATOMIC_RELEASE);
+}
+
+static bool sb_notify(StreamBufferInternal *sb) {
+    bool expected = false;
+    if (!__atomic_compare_exchange_n(&sb->event_pending, &expected, true,
+                                     false, __ATOMIC_ACQ_REL,
+                                     __ATOMIC_ACQUIRE)) {
+        return false;
+    }
+    if (rt_sem_release(sb->sem) == RT_EOK) {
+        return true;
+    }
+    __atomic_store_n(&sb->event_pending, false, __ATOMIC_RELEASE);
+    return false;
+}
+
+static bool sb_wait_event(StreamBufferInternal *sb, rt_int32_t ticks) {
+    if (rt_sem_take(sb->sem, ticks) != RT_EOK) {
+        return false;
+    }
+    __atomic_store_n(&sb->event_pending, false, __ATOMIC_RELEASE);
+    return true;
+}
+
+static bool sb_signal_if_ready(StreamBufferInternal *sb,
+                               size_t previous_count,
+                               size_t written) {
+    if (written == 0U || previous_count >= sb->trigger
+        || previous_count + written < sb->trigger) {
+        return false;
+    }
+    return sb_notify(sb);
 }
 
 StreamBuffer::~StreamBuffer()
@@ -939,7 +1353,8 @@ StreamBuffer::~StreamBuffer()
 bool StreamBuffer::create(size_t buf_size, size_t trigger_level)
 {
     destroy();
-    if (buf_size == 0U || trigger_level == 0U) {
+    if (buf_size == 0U || trigger_level == 0U
+        || trigger_level > buf_size) {
         return false;
     }
     auto *sb = static_cast<StreamBufferInternal*>(
@@ -958,7 +1373,10 @@ bool StreamBuffer::create(size_t buf_size, size_t trigger_level)
     sb->trigger = trigger_level;
     sb->head = 0;
     sb->tail = 0;
+    sb->count = 0;
+    sb->event_pending = false;
     sb->owns_buf = true;
+    sb->static_control = false;
     handle_ = sb;
     return true;
 }
@@ -967,22 +1385,25 @@ bool StreamBuffer::create(uint8_t *storage, size_t storage_size,
                           size_t trigger_level)
 {
     destroy();
-    if (storage == nullptr || storage_size == 0U || trigger_level == 0U) {
+    if (storage == nullptr || storage_size <= 1U || trigger_level == 0U
+        || trigger_level >= storage_size) {
         return false;
     }
-    auto *sb = static_cast<StreamBufferInternal*>(
-        rtos_malloc(sizeof(StreamBufferInternal)));
-    if (sb == nullptr) return false;
-
-    sb->sem = rt_sem_create("sb", 0, RT_IPC_FLAG_FIFO);
-    if (sb->sem == nullptr) { rtos_free(sb); return false; }
+    auto *sb = reinterpret_cast<StreamBufferInternal*>(control_storage_);
+    sb->sem = &sb->sem_storage;
+    if (rt_sem_init(sb->sem, "sb", 0U, RT_IPC_FLAG_FIFO) != RT_EOK) {
+        return false;
+    }
 
     sb->buf = storage;
-    sb->cap = storage_size;
+    sb->cap = storage_size - 1U;
     sb->trigger = trigger_level;
     sb->head = 0;
     sb->tail = 0;
+    sb->count = 0;
+    sb->event_pending = false;
     sb->owns_buf = false;
+    sb->static_control = true;
     handle_ = sb;
     return true;
 }
@@ -991,24 +1412,48 @@ void StreamBuffer::destroy()
 {
     auto *sb = static_cast<StreamBufferInternal*>(handle_);
     if (sb == nullptr) return;
-    if (sb->sem != nullptr) rt_sem_delete(sb->sem);
+    if (sb->sem != nullptr) {
+        if (sb->static_control) {
+            (void)rt_sem_detach(sb->sem);
+        } else {
+            (void)rt_sem_delete(sb->sem);
+        }
+    }
     if (sb->owns_buf && sb->buf != nullptr) rtos_free(sb->buf);
-    rtos_free(sb);
+    if (!sb->static_control) rtos_free(sb);
     handle_ = nullptr;
 }
 
 size_t StreamBuffer::send(const uint8_t *data, size_t len,
                           Milliseconds timeout_ms)
 {
-    (void)timeout_ms; // 写入不阻塞（有空间就写）
     auto *sb = static_cast<StreamBufferInternal*>(handle_);
     if (sb == nullptr || data == nullptr || len == 0U) return 0U;
 
-    size_t written = sb_write(sb, data, len);
-    // 释放信号量唤醒等待的 receive
-    for (size_t i = 0; i < written; i++) {
-        rt_sem_release(sb->sem);
+    const rt_int32_t total_ticks = timeout_ms_to_ticks(timeout_ms);
+    rt_int32_t remaining_ticks = total_ticks;
+    const rt_tick_t start_tick = rt_tick_get();
+    while (sb_free(sb) == 0U) {
+        if (!sb_wait_event(sb, remaining_ticks)) {
+            return 0U;
+        }
+        if (sb_free(sb) != 0U) {
+            break;
+        }
+        if (total_ticks == RT_WAITING_FOREVER) {
+            continue;
+        }
+
+        const rt_tick_t elapsed = rt_tick_get() - start_tick;
+        if (elapsed >= static_cast<rt_tick_t>(total_ticks)) {
+            return 0U;
+        }
+        remaining_ticks = total_ticks - static_cast<rt_int32_t>(elapsed);
     }
+
+    size_t previous_count = 0U;
+    const size_t written = sb_write(sb, data, len, previous_count);
+    (void)sb_signal_if_ready(sb, previous_count, written);
     return written;
 }
 
@@ -1018,12 +1463,9 @@ size_t StreamBuffer::send_from_isr(const uint8_t *data, size_t len,
     auto *sb = static_cast<StreamBufferInternal*>(handle_);
     if (sb == nullptr || data == nullptr || len == 0U) return 0U;
 
-    size_t written = sb_write(sb, data, len);
-    bool released = false;
-    for (size_t i = 0; i < written; i++) {
-        rt_err_t r = rt_sem_release(sb->sem);
-        released = (r == RT_EOK);
-    }
+    size_t previous_count = 0U;
+    const size_t written = sb_write(sb, data, len, previous_count);
+    const bool released = sb_signal_if_ready(sb, previous_count, written);
     context.request_reschedule(released);
     return written;
 }
@@ -1034,22 +1476,32 @@ size_t StreamBuffer::receive(uint8_t *data, size_t len,
     auto *sb = static_cast<StreamBufferInternal*>(handle_);
     if (sb == nullptr || data == nullptr || len == 0U) return 0U;
 
-    // 等待至少一个字节可用
-    rt_tick_t ticks = (timeout_ms == kWaitForever)
-        ? RT_WAITING_FOREVER
-        : static_cast<rt_tick_t>(timeout_ms);
-    if (rt_sem_take(sb->sem, ticks) != RT_EOK) {
-        return 0U;
+    const rt_int32_t total_ticks = timeout_ms_to_ticks(timeout_ms);
+    rt_int32_t remaining_ticks = total_ticks;
+    const rt_tick_t start_tick = rt_tick_get();
+    while (sb_used(sb) == 0U) {
+        if (!sb_wait_event(sb, remaining_ticks)) {
+            if (sb_used(sb) == 0U) {
+                return 0U;
+            }
+            break;
+        }
+        if (sb_used(sb) != 0U) {
+            break;
+        }
+        if (total_ticks == RT_WAITING_FOREVER) {
+            continue;
+        }
+
+        const rt_tick_t elapsed = rt_tick_get() - start_tick;
+        if (elapsed >= static_cast<rt_tick_t>(total_ticks)) {
+            return 0U;
+        }
+        remaining_ticks = total_ticks - static_cast<rt_int32_t>(elapsed);
     }
 
-    // 读取可用数据（至少 1 字节）
-    size_t read = sb_read(sb, data, len);
-
-    // 如果还有更多数据，消耗多余的信号量计数
-    size_t extra = sb_used(sb);
-    for (size_t i = 0; i < extra; i++) {
-        if (rt_sem_take(sb->sem, 0) != RT_EOK) break;
-    }
+    const size_t read = sb_read(sb, data, len);
+    (void)sb_notify(sb);
 
     return read;
 }
@@ -1060,20 +1512,12 @@ size_t StreamBuffer::receive_from_isr(uint8_t *data, size_t len,
     auto *sb = static_cast<StreamBufferInternal*>(handle_);
     if (sb == nullptr || data == nullptr || len == 0U) return 0U;
 
-    // 非阻塞尝试获取信号量
-    if (rt_sem_take(sb->sem, 0) != RT_EOK) {
+    if (sb_used(sb) == 0U) {
         return 0U;
     }
 
-    size_t read = sb_read(sb, data, len);
-
-    // 消耗多余的信号量计数
-    size_t extra = sb_used(sb);
-    for (size_t i = 0; i < extra; i++) {
-        if (rt_sem_take(sb->sem, 0) != RT_EOK) break;
-    }
-
-    (void)context;
+    const size_t read = sb_read(sb, data, len);
+    context.request_reschedule(sb_notify(sb));
     return read;
 }
 
@@ -1096,8 +1540,8 @@ void StreamBuffer::reset()
     rt_enter_critical();
     sb->head = 0;
     sb->tail = 0;
-    // 重置信号量
-    while (rt_sem_take(sb->sem, 0) == RT_EOK) {}
+    __atomic_store_n(&sb->count, 0U, __ATOMIC_RELEASE);
+    sb_drain_event(sb);
     rt_exit_critical();
 }
 

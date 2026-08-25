@@ -3,6 +3,8 @@ menu "Logging"
 config LOG_ASYNC
 	bool "Asynchronous log dispatcher"
 	depends on OSAL_HAS_THREADS
+	depends on OSAL_HAS_STATIC_THREADS
+	depends on OSAL_HAS_MESSAGE_QUEUES
 	default y
 	help
 	  Format in the producer and enqueue into a bounded static queue. A single

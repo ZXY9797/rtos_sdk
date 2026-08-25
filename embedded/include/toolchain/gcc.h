@@ -73,7 +73,7 @@
 #undef BUILD_ASSERT /* clear out common version */
 /* C++11 has static_assert built in */
 #if defined(__cplusplus) && (__cplusplus >= 201103L)
-#define BUILD_ASSERT(EXPR, MSG...) static_assert(EXPR, "" MSG)
+#define BUILD_ASSERT(EXPR, ...) static_assert(EXPR, "" __VA_ARGS__)
 
 /*
  * GCC 4.6 and higher have the C11 _Static_assert built in and its
@@ -84,9 +84,9 @@
 #elif !defined(__cplusplus) && \
 	(((__GNUC__ > 4) || ((__GNUC__ == 4) && (__GNUC_MINOR__ >= 6))) ||	\
 	 (__STDC_VERSION__) >= 201100)
-#define BUILD_ASSERT(EXPR, MSG...) _Static_assert((EXPR), "" MSG)
+#define BUILD_ASSERT(EXPR, ...) _Static_assert((EXPR), "" __VA_ARGS__)
 #else
-#define BUILD_ASSERT(EXPR, MSG...)
+#define BUILD_ASSERT(EXPR, ...)
 #endif
 
 #ifdef __cplusplus

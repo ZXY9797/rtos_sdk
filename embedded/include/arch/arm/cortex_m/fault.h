@@ -5,6 +5,19 @@
 
 namespace hal::fault {
 
+enum class FatalReason : uint32_t {
+    Exception = 1U,
+    InitFailure = 2U,
+    OsalFailure = 3U,
+    Assert = 4U,
+    StackOverflow = 5U,
+    AllocationFailure = 6U,
+    MainReturned = 7U,
+    KernelAssert = 8U,
+    ThreadShutdownTimeout = 9U,
+    WatchdogExpired = 10U,
+};
+
 struct Frame {
     // Must match fault.S: software-saved registers precede the copied
     // hardware exception frame in memory.
@@ -15,13 +28,19 @@ struct Frame {
 };
 
 struct FaultRecord {
-    // Low byte is the persistent format version. Version 2 fixes the saved
-    // register ABI and uses a CRC plus commit-last validity contract.
-    static constexpr uint32_t MAGIC = 0xFA17FA02U;
+    // Low byte is the persistent format version. Version 3 also records
+    // non-exception fatal events under the same commit-last contract.
+    static constexpr uint32_t MAGIC = 0xFA17FA03U;
     static constexpr int MAX_BACKTRACE = 16;
     static constexpr int STACK_SNAPSHOT_WORDS = 32;
+    static constexpr size_t CONTEXT_SIZE = 24U;
 
     uint32_t magic;
+    FatalReason reason;
+    int32_t detail;
+    uint32_t line;
+    uint32_t contextHash;
+    char context[CONTEXT_SIZE];
     uint32_t cfsr;
     uint32_t hfsr;
     uint32_t mmfar;
@@ -40,7 +59,7 @@ struct FaultRecord {
     [[nodiscard]] uint32_t calculateCrc() const {
         const auto *bytes = reinterpret_cast<const uint8_t *>(this);
         uint32_t crc = 0xFFFFFFFFU;
-        for (size_t index = offsetof(FaultRecord, cfsr);
+        for (size_t index = offsetof(FaultRecord, reason);
              index < offsetof(FaultRecord, crc32); ++index) {
             crc ^= bytes[index];
             for (uint8_t bit = 0U; bit < 8U; ++bit) {
@@ -53,6 +72,8 @@ struct FaultRecord {
 
     [[nodiscard]] bool valid() const {
         return magic == MAGIC
+            && reason >= FatalReason::Exception
+            && reason <= FatalReason::WatchdogExpired
             && backtraceDepth >= 0
             && backtraceDepth <= MAX_BACKTRACE
             && crc32 == calculateCrc();
@@ -109,6 +130,11 @@ static constexpr size_t MAX_BACKENDS = 4U;
 // descriptor is copied, so its caller-side lifetime is irrelevant.
 [[nodiscard]] bool registerBackend(const Backend &backend);
 void notifyFault(const FaultRecord &record);
+
+// Persist the fatal context and reset the MCU. This path is safe before the
+// scheduler starts and does not allocate, lock, or use normal logging.
+[[noreturn]] void panic(FatalReason reason, int32_t detail,
+                        const char *context, uint32_t line);
 
 // When CONFIG_FAULT_UART_BACKEND is enabled, the product/SoC must provide a
 // strong, bounded, polling implementation. Otherwise a weak no-op is used for

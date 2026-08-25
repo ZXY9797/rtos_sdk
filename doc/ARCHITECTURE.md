@@ -72,7 +72,7 @@ Boot 代码分为公共代码和固件私有代码。
 各固件目录只保留自己的职责：
 
 - `bootloader/preloader`：第一阶段信任根；生产配置认证固定 loader，开发配置可进入 loader-upgrade。
-- `bootloader/loader`：第二阶段启动决策、DFU 协议处理、签名/防降级校验、staged-copy 掉电续拷和应用 handoff；当前不是双执行槽 A/B。
+- `bootloader/loader`：第二阶段启动决策、DFU 协议处理、签名/防降级校验、单执行槽 sector-swap、trial 回滚和应用 handoff；当前不是双执行槽 A/B。
 - `bootloader/upgrade`：loader 自升级执行，处理 `loader_upgrade` 路径并写入新的 loader 镜像。
 - `app/product/*`：产品固件编排和产品元数据。
 

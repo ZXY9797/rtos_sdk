@@ -24,6 +24,42 @@ config OSAL_HAS_THREADS
 	  threads must depend on this instead of assuming all OSAL backends provide
 	  the same runtime facilities.
 
+config OSAL_HAS_STATIC_THREADS
+    bool
+    default n if RTOS_BAREMETAL
+    default y
+    help
+      Backend can create a thread from caller-owned TCB and stack storage.
+
+config OSAL_HAS_STATIC_PERIODIC_THREADS
+    bool
+    default n if RTOS_BAREMETAL
+    default y
+    help
+      Backend can create PeriodicThread without task or semaphore heap use.
+
+config OSAL_HAS_MESSAGE_QUEUES
+    bool
+    default n if RTOS_BAREMETAL
+    default y
+
+config OSAL_HAS_EVENT_GROUPS
+    bool
+    default n if RTOS_BAREMETAL
+    default y
+
+config OSAL_HAS_SOFT_TIMERS
+    bool
+    default n if RTOS_BAREMETAL
+    default y
+
+config OSAL_HAS_STREAM_BUFFERS
+    bool
+    default y
+    help
+      All backends implement the bounded single-producer/single-consumer byte
+      stream contract, including the baremetal backend.
+
 config OSAL_BAREMETAL_HEAP_SIZE
     int "Baremetal OSAL heap size"
     default 4096
@@ -33,5 +69,34 @@ config OSAL_BAREMETAL_HEAP_SIZE
       Static bytes reserved for the baremetal allocator. Set this to zero in
       firmware that forbids dynamic allocation; rtos_malloc() will then fail
       deterministically without reserving a heap.
+
+config FREERTOS_HEAP_SIZE
+    int "FreeRTOS heap size"
+    default 32768
+    range 4096 262144
+    depends on RTOS_FREERTOS
+    help
+      Bytes reserved by heap_4 for explicitly dynamic RTOS objects. Products
+      should size this from measured peak usage; static queues, stream buffers,
+      the main task, idle task, and timer task do not consume this heap.
+
+config RTTHREAD_HEAP_SIZE
+    int "RT-Thread heap size"
+    default 32768
+    range 4096 262144
+    depends on RTOS_RT_THREAD
+    help
+      Bytes reserved by the RT-Thread system heap. Products must size this
+      from measured peak use, including dynamic kernel objects.
+
+config OSAL_TICKLESS_IDLE
+    bool "Product-provided tickless idle"
+    default n
+    depends on RTOS_FREERTOS
+    help
+      Enable FreeRTOS tickless idle only when the product provides
+      common/osal_low_power.cc with a validated vPortSuppressTicksAndSleep().
+      The provider owns clock switching, wake sources, elapsed-tick accounting,
+      and peripheral sleep constraints.
 
 endmenu

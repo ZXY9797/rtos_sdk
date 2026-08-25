@@ -1,5 +1,6 @@
 #include <mem.h>
 #include <osal.h>
+#include <arch/arm/cortex_m/fault.h>
 
 #include <event_groups.h>
 #include <queue.h>
@@ -8,11 +9,19 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 
 #define MAIN_THREAD_STACK_SIZE  (CONFIG_MAIN_STACK_SIZE / sizeof(StackType_t))
 
+static_assert(CONFIG_NUM_IRQ_PRIO_BITS == __NVIC_PRIO_BITS,
+              "Kconfig/CMSIS NVIC priority-bit mismatch");
+static_assert((CONFIG_MAIN_STACK_SIZE % sizeof(StackType_t)) == 0U,
+              "CONFIG_MAIN_STACK_SIZE must align to StackType_t");
+
 static TaskHandle_t main_task_handle;
 static void (*g_user_entry)(void);
+static StaticTask_t main_task_tcb;
+static StackType_t main_task_stack[MAIN_THREAD_STACK_SIZE];
 
 static void main_task_entry(void* parameter)
 {
@@ -30,21 +39,19 @@ int osal_init(void)
 
 int osal_start(void (*entry)(void))
 {
+    if (entry == nullptr) {
+        return -1;
+    }
     g_user_entry = entry;
-    BaseType_t ret = xTaskCreate(main_task_entry, "main",
-                                 MAIN_THREAD_STACK_SIZE,
-                                 nullptr,
-                                 configMAX_PRIORITIES / 3,
-                                 &main_task_handle);
-    if (ret != pdPASS) {
+    main_task_handle = xTaskCreateStatic(
+        main_task_entry, "main", MAIN_THREAD_STACK_SIZE, nullptr,
+        configMAX_PRIORITIES / 3, main_task_stack, &main_task_tcb);
+    if (main_task_handle == nullptr) {
         return -1;
     }
 
     vTaskStartScheduler();
-
-    for (;;) {
-    }
-    return 0;
+    return -1;
 }
 
 namespace {
@@ -77,13 +84,17 @@ TickType_t period_ms_to_ticks(uint32_t period_ms)
     return ticks == 0U ? 1U : ticks;
 }
 
-UBaseType_t stack_depth_from_bytes(size_t stack_size_bytes)
+configSTACK_DEPTH_TYPE stack_depth_from_bytes(size_t stack_size_bytes)
 {
-    if (stack_size_bytes < sizeof(StackType_t)) {
+    if (stack_size_bytes < sizeof(StackType_t)
+        || (stack_size_bytes % sizeof(StackType_t)) != 0U) {
         return 0U;
     }
-    return static_cast<UBaseType_t>(
-        (stack_size_bytes + sizeof(StackType_t) - 1U) / sizeof(StackType_t));
+    const size_t depth = stack_size_bytes / sizeof(StackType_t);
+    if (depth > std::numeric_limits<configSTACK_DEPTH_TYPE>::max()) {
+        return 0U;
+    }
+    return static_cast<configSTACK_DEPTH_TYPE>(depth);
 }
 
 osal::Thread::State map_task_state(eTaskState state)
@@ -167,9 +178,14 @@ Semaphore::Semaphore(uint32_t initial, uint32_t max_count)
     }
 
     max_count_ = max_count;
-    handle_ = xSemaphoreCreateCounting(native_max, native_initial);
+    auto* const storage = reinterpret_cast<StaticSemaphore_t*>(
+        control_storage_);
+    handle_ = xSemaphoreCreateCountingStatic(
+        native_max, native_initial, storage);
     if (handle_ == nullptr) {
         max_count_ = 0U;
+    } else {
+        is_static_ = true;
     }
 }
 
@@ -178,6 +194,7 @@ Semaphore::~Semaphore()
     if (handle_ != nullptr) {
         vSemaphoreDelete(handle_);
         handle_ = nullptr;
+        is_static_ = false;
     }
 }
 
@@ -195,6 +212,13 @@ int Semaphore::release()
         return -1;
     }
     return xSemaphoreGive(handle_) == pdTRUE ? 0 : -1;
+}
+
+MemoryStats Kernel::memory_stats()
+{
+    return {true,
+            static_cast<size_t>(xPortGetFreeHeapSize()),
+            static_cast<size_t>(xPortGetMinimumEverFreeHeapSize())};
 }
 
 int Semaphore::release_from_isr(IsrContext& context)
@@ -230,8 +254,11 @@ bool Mutex::create()
     if (handle_ != nullptr) {
         return true;
     }
-    handle_ = xSemaphoreCreateMutex();
-    return handle_ != nullptr;
+    auto* const storage = reinterpret_cast<StaticSemaphore_t*>(
+        control_storage_);
+    handle_ = xSemaphoreCreateMutexStatic(storage);
+    is_static_ = handle_ != nullptr;
+    return is_static_;
 }
 
 void Mutex::destroy()
@@ -239,6 +266,7 @@ void Mutex::destroy()
     if (handle_ != nullptr) {
         vSemaphoreDelete(handle_);
         handle_ = nullptr;
+        is_static_ = false;
     }
 }
 
@@ -270,23 +298,37 @@ Thread::Thread() = default;
 
 Thread::~Thread()
 {
-    destroy();
+    if (!shutdown(0U)) {
+        hal::fault::panic(hal::fault::FatalReason::ThreadShutdownTimeout,
+                          0, "thread_destructor", 0U);
+    }
 }
 
-Thread* Thread::create(const char* name, Entry entry, void* param,
-                       size_t stack_size, int32_t prio, int32_t tick)
+void Thread::threadEntry(void* context)
+{
+    auto* thread = static_cast<Thread*>(context);
+    while (!thread->started_.load(std::memory_order_acquire)
+           && !thread->stop_requested()) {
+        vTaskSuspend(nullptr);
+    }
+    if (!thread->stop_requested()) {
+        thread->entry_(thread->context_);
+    }
+    thread->exited_.store(true, std::memory_order_release);
+    for (;;) {
+        vTaskSuspend(nullptr);
+    }
+}
+
+Thread* Thread::create(Entry entry, void* context,
+                       const ThreadConfig& config)
 {
     auto* thread = new (std::nothrow) Thread(PrivateTag {});
     if (thread == nullptr) {
         return nullptr;
     }
 
-    ThreadConfig config {};
-    config.name = name;
-    config.priority = static_cast<Priority>(prio);
-    config.stack_size_bytes = stack_size;
-    config.time_slice_ticks = static_cast<uint32_t>(tick);
-    if (!thread->start(entry, param, config)) {
+    if (!thread->start(entry, context, config)) {
         delete thread;
         return nullptr;
     }
@@ -296,18 +338,30 @@ Thread* Thread::create(const char* name, Entry entry, void* param,
 
 bool Thread::start(Entry entry, void* context, const ThreadConfig& config)
 {
-    if (entry == nullptr || handle_.handle != nullptr) {
+    if (entry == nullptr || handle_.handle != nullptr
+        || config.priority > kPriorityMax) {
         return false;
     }
 
     const char* name = config.name != nullptr ? config.name : "thread";
-    const UBaseType_t stack_depth = stack_depth_from_bytes(config.stack_size_bytes);
+    const configSTACK_DEPTH_TYPE stack_depth =
+        stack_depth_from_bytes(config.stack_size_bytes);
     if (stack_depth == 0U) {
         return false;
     }
 
+    entry_ = entry;
+    context_ = context;
+    stop_requested_.store(false, std::memory_order_relaxed);
+    started_.store(false, std::memory_order_relaxed);
+    exited_.store(false, std::memory_order_relaxed);
+
     if (config.stack_buffer != nullptr) {
-        handle_.handle = xTaskCreateStatic(entry, name, stack_depth, context,
+        if ((reinterpret_cast<uintptr_t>(config.stack_buffer)
+             % alignof(StackType_t)) != 0U) {
+            return false;
+        }
+        handle_.handle = xTaskCreateStatic(threadEntry, name, stack_depth, this,
                                            config.priority,
                                            static_cast<StackType_t*>(config.stack_buffer),
                                            &handle_.tcb);
@@ -317,7 +371,7 @@ bool Thread::start(Entry entry, void* context, const ThreadConfig& config)
         handle_.flags = kThreadFlagStatic;
     } else {
         TaskHandle_t h = nullptr;
-        const BaseType_t ret = xTaskCreate(entry, name, stack_depth, context,
+        const BaseType_t ret = xTaskCreate(threadEntry, name, stack_depth, this,
                                            config.priority, &h);
         if (ret != pdPASS || h == nullptr) {
             return false;
@@ -327,23 +381,74 @@ bool Thread::start(Entry entry, void* context, const ThreadConfig& config)
     }
 
     vTaskSuspend(handle_.handle);
+    stack_size_bytes_ = config.stack_size_bytes;
     return true;
 }
 
 void Thread::destroy()
 {
-    if (handle_.handle != nullptr) {
-        vTaskDelete(handle_.handle);
-        handle_.handle = nullptr;
-        handle_.flags = 0U;
+    if (!shutdown()) {
+        hal::fault::panic(hal::fault::FatalReason::ThreadShutdownTimeout,
+                          0, get_name(), 0U);
     }
+}
+
+void Thread::request_stop()
+{
+    stop_requested_.store(true, std::memory_order_release);
+    if (handle_.handle != nullptr) {
+        (void)xTaskAbortDelay(handle_.handle);
+        vTaskResume(handle_.handle);
+    }
+}
+
+bool Thread::join(Milliseconds timeout_ms)
+{
+    if (handle_.handle == nullptr || exited_.load(std::memory_order_acquire)) {
+        return true;
+    }
+    Deadline deadline(timeout_ms);
+    while (!exited_.load(std::memory_order_acquire)) {
+        if (deadline.expired()) {
+            return false;
+        }
+        osal_sleep(1);
+    }
+    return true;
+}
+
+bool Thread::shutdown(Milliseconds timeout_ms)
+{
+    if (handle_.handle == nullptr) {
+        return true;
+    }
+    if (xTaskGetCurrentTaskHandle() == handle_.handle) {
+        return false;
+    }
+    if (!Kernel::is_running()) {
+        vTaskDelete(handle_.handle);
+    } else {
+        request_stop();
+        if (!join(timeout_ms)) {
+            return false;
+        }
+        vTaskDelete(handle_.handle);
+    }
+    handle_.handle = nullptr;
+    handle_.flags = 0U;
+    entry_ = nullptr;
+    context_ = nullptr;
+    stack_size_bytes_ = 0U;
+    return true;
 }
 
 int Thread::startup()
 {
-    if (handle_.handle == nullptr) {
+    if (handle_.handle == nullptr
+        || exited_.load(std::memory_order_acquire)) {
         return -1;
     }
+    started_.store(true, std::memory_order_release);
     vTaskResume(handle_.handle);
     return 0;
 }
@@ -424,6 +529,17 @@ int IsrTrigger::register_slot(Callback cb, void *arg)
     return -1;
 }
 
+StackStats Thread::stack_stats() const
+{
+    if (handle_.handle == nullptr) {
+        return {};
+    }
+    const size_t free_bytes = static_cast<size_t>(
+        uxTaskGetStackHighWaterMark(handle_.handle)) * sizeof(StackType_t);
+    return {true, stack_size_bytes_,
+            free_bytes < stack_size_bytes_ ? free_bytes : stack_size_bytes_};
+}
+
 void IsrTrigger::unregister_slot(int id)
 {
     if (id < 0 || id >= kMaxSlots) {
@@ -472,9 +588,14 @@ void PeriodicThread::threadEntry(void* parameter)
 {
     auto* thread = static_cast<PeriodicThread*>(parameter);
 
-    for (;;) {
-        while (!thread->running_) {
+    while (!thread->terminate_.load(std::memory_order_acquire)) {
+        while (!thread->running_
+               && !thread->terminate_.load(std::memory_order_acquire)) {
             vTaskSuspend(nullptr);
+        }
+
+        if (thread->terminate_.load(std::memory_order_acquire)) {
+            break;
         }
 
         if (thread->trigger_ == PeriodicTrigger::Tick) {
@@ -511,13 +632,25 @@ void PeriodicThread::threadEntry(void* parameter)
             }
         }
     }
+    thread->exited_.store(true, std::memory_order_release);
+    for (;;) {
+        vTaskSuspend(nullptr);
+    }
 }
 
-PeriodicThread::PeriodicThread(PrivateTag)
+PeriodicThread::PeriodicThread()
 {
 }
 
 PeriodicThread::~PeriodicThread()
+{
+    if (!shutdown(0U)) {
+        hal::fault::panic(hal::fault::FatalReason::ThreadShutdownTimeout,
+                          0, "periodic_destructor", 0U);
+    }
+}
+
+bool PeriodicThread::shutdown(Milliseconds timeout_ms)
 {
     (void)stop();
     if (timer_attached_) {
@@ -528,95 +661,165 @@ PeriodicThread::~PeriodicThread()
         }
         taskEXIT_CRITICAL();
         if (!detached) {
-            __builtin_trap();
+            return false;
         }
     }
     IsrTrigger::unregister_slot(trigger_id_);
     trigger_id_ = -1;
     if (thread_.handle != nullptr) {
+        if (xTaskGetCurrentTaskHandle() == thread_.handle) {
+            hal::fault::panic(hal::fault::FatalReason::ThreadShutdownTimeout,
+                              0, "periodic_self_delete", 0U);
+        }
+        if (started_ && Kernel::is_running()) {
+            terminate_.store(true, std::memory_order_release);
+            running_.store(false, std::memory_order_release);
+            if (sem_ != nullptr) {
+                (void)xSemaphoreGive(sem_);
+            }
+            (void)xTaskAbortDelay(thread_.handle);
+            vTaskResume(thread_.handle);
+            Deadline deadline(timeout_ms);
+            while (!exited_.load(std::memory_order_acquire)) {
+                if (deadline.expired()) {
+                    return false;
+                }
+                osal_sleep(1U);
+            }
+        }
         vTaskDelete(thread_.handle);
         thread_.handle = nullptr;
+        thread_.flags = 0U;
+        started_ = false;
+        stack_size_bytes_ = 0U;
     }
     if (sem_ != nullptr) {
         vSemaphoreDelete(sem_);
         sem_ = nullptr;
+        sem_is_static_ = false;
+    }
+    return true;
+}
+
+void PeriodicThread::destroy()
+{
+    if (!shutdown()) {
+        hal::fault::panic(hal::fault::FatalReason::ThreadShutdownTimeout,
+                          0, "periodic_destroy", 0U);
     }
 }
 
-PeriodicThread* PeriodicThread::create(const char* name,
-                                       PeriodicEntry entry,
-                                       void* param,
-                                       size_t stack_size,
-                                       int32_t prio,
-                                       uint32_t frequency_hz,
-                                       PeriodicTrigger trigger,
-                                       IrqTimer *timer,
-                                       bool register_isr_trigger)
+PeriodicThread* PeriodicThread::create(
+    const PeriodicThreadConfig& config)
 {
-    if (entry == nullptr || frequency_hz == 0U || stack_size < sizeof(StackType_t)) {
-        return nullptr;
-    }
-    if (trigger == PeriodicTrigger::Tick && frequency_hz > configTICK_RATE_HZ) {
-        return nullptr;
-    }
-
-    auto* thread = new (std::nothrow) PeriodicThread(PrivateTag {});
+    auto* thread = new (std::nothrow) PeriodicThread();
     if (thread == nullptr) {
         return nullptr;
     }
+    if (!thread->start(config)) {
+        delete thread;
+        return nullptr;
+    }
+    return thread;
+}
 
-    thread->entry_ = entry;
-    thread->param_ = param;
-    thread->frequency_hz_ = frequency_hz;
-    thread->trigger_ = trigger;
+bool PeriodicThread::start(const PeriodicThreadConfig& config)
+{
+    const configSTACK_DEPTH_TYPE stack_depth =
+        stack_depth_from_bytes(config.stack_size_bytes);
+    if (config.entry == nullptr || config.frequency_hz == 0U
+        || stack_depth == 0U
+        || config.priority > kPriorityMax
+        || thread_.handle != nullptr || sem_ != nullptr
+        || (config.trigger != PeriodicTrigger::Tick
+            && config.trigger != PeriodicTrigger::External)
+        || (config.trigger == PeriodicTrigger::Tick
+            && config.timer != nullptr)
+        || (config.stack_buffer != nullptr
+            && (reinterpret_cast<uintptr_t>(config.stack_buffer)
+                % alignof(StackType_t)) != 0U)) {
+        return false;
+    }
+    if (config.trigger == PeriodicTrigger::Tick
+        && config.frequency_hz > configTICK_RATE_HZ) {
+        return false;
+    }
+
+    entry_ = config.entry;
+    param_ = config.context;
+    frequency_hz_ = config.frequency_hz;
+    trigger_ = config.trigger;
+    sequence_.store(0U, std::memory_order_relaxed);
+    missed_.store(0U, std::memory_order_relaxed);
+    pending_.store(0U, std::memory_order_relaxed);
+    running_.store(false, std::memory_order_relaxed);
+    terminate_.store(false, std::memory_order_relaxed);
+    exited_.store(false, std::memory_order_relaxed);
+    started_ = false;
 
     // External 模式：注册到 IsrTrigger 静态触发表
-    if (trigger == PeriodicTrigger::External && timer == nullptr
-        && register_isr_trigger) {
-        thread->trigger_id_ = IsrTrigger::register_slot(
-            timer_isr_callback, thread);
-        if (thread->trigger_id_ < 0) {
-            delete thread;
-            return nullptr;
+    if (config.trigger == PeriodicTrigger::External
+        && config.timer == nullptr && config.register_isr_trigger) {
+        trigger_id_ = IsrTrigger::register_slot(timer_isr_callback, this);
+        if (trigger_id_ < 0) {
+            return false;
         }
     }
 
     // 如果传入了硬件定时器，自动连接 ISR 回调
-    if (timer != nullptr) {
-        thread->timer_ = timer;
-        if (!timer->enable_update_irq(timer_isr_callback, thread)) {
-            delete thread;
-            return nullptr;
+    if (config.timer != nullptr) {
+        timer_ = config.timer;
+        if (!config.timer->enable_update_irq(timer_isr_callback, this)) {
+            IsrTrigger::unregister_slot(trigger_id_);
+            trigger_id_ = -1;
+            timer_ = nullptr;
+            return false;
         }
-        thread->timer_attached_ = true;
+        timer_attached_ = true;
     }
 
-    if (trigger == PeriodicTrigger::External) {
-        thread->sem_ = xSemaphoreCreateCounting(1U, 0U);
-        if (thread->sem_ == nullptr) {
-            delete thread;
-            return nullptr;
+    if (config.trigger == PeriodicTrigger::External) {
+        auto* const storage = reinterpret_cast<StaticSemaphore_t*>(
+            sem_storage_);
+        sem_ = xSemaphoreCreateCountingStatic(1U, 0U, storage);
+        sem_is_static_ = sem_ != nullptr;
+        if (sem_ == nullptr) {
+            (void)shutdown(0U);
+            return false;
         }
     }
 
-    TaskHandle_t h = nullptr;
-    const BaseType_t ret = xTaskCreate(PeriodicThread::threadEntry, name,
-                                       stack_depth_from_bytes(stack_size),
-                                       thread, prio, &h);
-    if (ret != pdPASS || h == nullptr) {
-        delete thread;
-        return nullptr;
+    const char* name = config.name != nullptr ? config.name : "periodic";
+    if (config.stack_buffer != nullptr) {
+        thread_.handle = xTaskCreateStatic(
+            PeriodicThread::threadEntry, name, stack_depth, this,
+            config.priority, static_cast<StackType_t*>(config.stack_buffer),
+            &thread_.tcb);
+        thread_.flags = kThreadFlagStatic;
+    } else {
+        TaskHandle_t handle = nullptr;
+        const BaseType_t result = xTaskCreate(
+            PeriodicThread::threadEntry, name, stack_depth, this,
+            config.priority, &handle);
+        if (result == pdPASS) {
+            thread_.handle = handle;
+            thread_.flags = kThreadFlagDynamic;
+        }
     }
-
-    thread->thread_.handle = h;
-    thread->thread_.flags = kThreadFlagDynamic;
-    vTaskSuspend(h);
-    return thread;
+    if (thread_.handle == nullptr) {
+        (void)shutdown(0U);
+        return false;
+    }
+    stack_size_bytes_ = config.stack_size_bytes;
+    vTaskSuspend(thread_.handle);
+    return true;
 }
 
 int PeriodicThread::startup()
 {
-    if (thread_.handle == nullptr) {
+    if (thread_.handle == nullptr
+        || terminate_.load(std::memory_order_acquire)
+        || exited_.load(std::memory_order_acquire)) {
         return -1;
     }
 
@@ -754,27 +957,28 @@ bool MessageQueue::create(uint32_t length,
     item_size_ = item_size;
 
     if (storage_buffer != nullptr) {
+        if (item_size > SIZE_MAX / static_cast<size_t>(length)) {
+            return false;
+        }
         const size_t required = static_cast<size_t>(length) * item_size;
         if (storage_buffer_size_bytes < required) {
             return false;
         }
 
-        auto* control = static_cast<StaticQueue_t*>(rtos_malloc(sizeof(StaticQueue_t)));
-        if (control == nullptr) {
-            return false;
-        }
+        auto* control = reinterpret_cast<StaticQueue_t*>(control_storage_);
 
         QueueHandle_t queue = xQueueCreateStatic(length, item_size,
                                                  static_cast<uint8_t*>(storage_buffer),
                                                  control);
         if (queue == nullptr) {
-            rtos_free(control);
             return false;
         }
 
         native_handle_ = queue;
         control_block_buffer_ = control;
-        owns_control_block_buffer_ = true;
+        owns_control_block_buffer_ = false;
+        length_ = length;
+        reset_stats();
         return true;
     }
 
@@ -784,6 +988,8 @@ bool MessageQueue::create(uint32_t length,
     }
 
     native_handle_ = queue;
+    length_ = length;
+    reset_stats();
     return true;
 }
 
@@ -800,14 +1006,29 @@ void MessageQueue::destroy()
     native_handle_ = nullptr;
     control_block_buffer_ = nullptr;
     item_size_ = 0U;
+    length_ = 0U;
+    reset_stats();
     owns_control_block_buffer_ = false;
+}
+
+StackStats PeriodicThread::stack_stats() const
+{
+    if (thread_.handle == nullptr) {
+        return {};
+    }
+    const size_t free_bytes = static_cast<size_t>(
+        uxTaskGetStackHighWaterMark(thread_.handle)) * sizeof(StackType_t);
+    return {true, stack_size_bytes_,
+            free_bytes < stack_size_bytes_ ? free_bytes : stack_size_bytes_};
 }
 
 bool MessageQueue::send(const void* item, Milliseconds timeout_ms)
 {
     auto queue = static_cast<QueueHandle_t>(native_handle_);
-    return queue != nullptr && item != nullptr &&
-           xQueueSend(queue, item, timeout_ms_to_ticks(timeout_ms)) == pdTRUE;
+    const bool succeeded = queue != nullptr && item != nullptr
+        && xQueueSend(queue, item, timeout_ms_to_ticks(timeout_ms)) == pdTRUE;
+    record_send(succeeded);
+    return succeeded;
 }
 
 bool MessageQueue::receive(void* item, Milliseconds timeout_ms)
@@ -845,27 +1066,16 @@ StreamBuffer::~StreamBuffer()
 bool StreamBuffer::create(size_t buf_size, size_t trigger_level)
 {
     destroy();
-    if (buf_size == 0U || trigger_level == 0U) {
+    if (buf_size == 0U || trigger_level == 0U
+        || trigger_level > buf_size) {
         return false;
     }
-    auto *ctrl = static_cast<StaticStreamBuffer_t*>(
-        rtos_malloc(sizeof(StaticStreamBuffer_t)));
-    if (ctrl == nullptr) {
-        return false;
-    }
-    auto *buf = static_cast<uint8_t*>(rtos_malloc(buf_size));
-    if (buf == nullptr) {
-        rtos_free(ctrl);
-        return false;
-    }
-    auto h = xStreamBufferCreateStatic(buf_size, trigger_level, buf, ctrl);
+    auto h = xStreamBufferCreate(buf_size, trigger_level);
     if (h == nullptr) {
-        rtos_free(buf);
-        rtos_free(ctrl);
         return false;
     }
     handle_ = h;
-    control_block_ = ctrl;
+    control_block_ = nullptr;
     owns_storage_ = true;
     return true;
 }
@@ -874,18 +1084,14 @@ bool StreamBuffer::create(uint8_t *storage, size_t storage_size,
                           size_t trigger_level)
 {
     destroy();
-    if (storage == nullptr || storage_size == 0U || trigger_level == 0U) {
+    if (storage == nullptr || storage_size <= 1U || trigger_level == 0U
+        || trigger_level >= storage_size) {
         return false;
     }
-    auto *ctrl = static_cast<StaticStreamBuffer_t*>(
-        rtos_malloc(sizeof(StaticStreamBuffer_t)));
-    if (ctrl == nullptr) {
-        return false;
-    }
+    auto *ctrl = reinterpret_cast<StaticStreamBuffer_t*>(control_storage_);
     auto h = xStreamBufferCreateStatic(storage_size, trigger_level,
                                        storage, ctrl);
     if (h == nullptr) {
-        rtos_free(ctrl);
         return false;
     }
     handle_ = h;
@@ -899,9 +1105,6 @@ void StreamBuffer::destroy()
     auto h = static_cast<StreamBufferHandle_t>(handle_);
     if (h != nullptr) {
         vStreamBufferDelete(h);
-    }
-    if (control_block_ != nullptr) {
-        rtos_free(control_block_);
     }
     handle_ = nullptr;
     control_block_ = nullptr;
@@ -930,6 +1133,33 @@ size_t StreamBuffer::send_from_isr(const uint8_t *data, size_t len,
     size_t written = xStreamBufferSendFromISR(h, data, len, &woken);
     context.request_reschedule(woken == pdTRUE);
     return written;
+}
+
+void MessageQueue::record_send(bool succeeded)
+{
+    if (!succeeded) {
+        send_failures_.fetch_add(1U, std::memory_order_relaxed);
+        return;
+    }
+    const uint32_t depth = count();
+    uint32_t observed = high_water_mark_.load(std::memory_order_relaxed);
+    while (observed < depth
+           && !high_water_mark_.compare_exchange_weak(
+               observed, depth, std::memory_order_relaxed)) {
+    }
+}
+
+MessageQueueStats MessageQueue::stats() const
+{
+    return {length_, count(),
+            high_water_mark_.load(std::memory_order_relaxed),
+            send_failures_.load(std::memory_order_relaxed)};
+}
+
+void MessageQueue::reset_stats()
+{
+    high_water_mark_.store(count(), std::memory_order_relaxed);
+    send_failures_.store(0U, std::memory_order_relaxed);
 }
 
 size_t StreamBuffer::receive(uint8_t *data, size_t len,
@@ -1140,14 +1370,19 @@ extern "C" void vApplicationGetTimerTaskMemory(StaticTask_t** ppxTimerTaskTCBBuf
 
 extern "C" void vApplicationStackOverflowHook(TaskHandle_t, char *pcTaskName)
 {
-    hal::fault::print("\nSTACK OVERFLOW: ");
-    hal::fault::print(pcTaskName ? pcTaskName : "?");
-    hal::fault::putc('\n');
-    for (;;) { __asm__("cpsid i"); __asm__("wfi"); }
+    hal::fault::panic(hal::fault::FatalReason::StackOverflow, 0,
+                      pcTaskName != nullptr ? pcTaskName : "?", 0U);
 }
 
 extern "C" void vApplicationMallocFailedHook()
 {
-    hal::fault::print("\nMALLOC FAILED\n");
-    for (;;) { __asm__("cpsid i"); __asm__("wfi"); }
+    hal::fault::panic(hal::fault::FatalReason::AllocationFailure, 0,
+                      "freertos_heap", 0U);
+}
+
+extern "C" void osal_freertos_assert_failed(const char *file,
+                                               unsigned int line)
+{
+    hal::fault::panic(hal::fault::FatalReason::KernelAssert,
+                      static_cast<int32_t>(line), file, line);
 }

@@ -207,6 +207,7 @@ source "embedded/arch/Kconfig"
 source "embedded/drivers/Kconfig"
 source "embedded/modules/Kconfig"
 source "embedded/osal/Kconfig"
+source "embedded/system/Kconfig"
 
 config ASSERT
     bool "Enable assertion checks"

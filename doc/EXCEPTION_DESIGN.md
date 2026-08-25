@@ -8,11 +8,12 @@
 - 先把寄存器、SCB 状态、回溯和 128 字节栈快照写入静态记录；
 - 使用 CRC 校验，并最后写 `magic` 提交 `.noinit` 记录；
 - 在关中断状态下调用固定容量、启动期冻结的 POD 回调表；
-- 处理完成后保持关中断并停机，等待看门狗或调试器接管。
+- 记录提交后执行 `NVIC_SystemReset()`；若复位请求失效，则保持关中断并停机。
 
-支持 HardFault、MemManage、BusFault、UsageFault、断言以及 FreeRTOS 栈溢出/
-内存分配失败钩子。`FaultRecord` 的持久化格式版本编码在 `MAGIC` 低字节中，修改结构
-布局时必须升级版本。
+支持 HardFault、MemManage、BusFault、UsageFault、断言、init/OSAL 失败、线程停止
+超时、看门狗 client 过期，以及 FreeRTOS 栈溢出/内存分配失败钩子。`FaultRecord`
+还记录 reason、detail、源代码行、有界 context 和 context hash。持久化格式版本编码在
+`MAGIC` 低字节中，修改结构布局时必须升级版本。
 
 ## 调用链
 
@@ -23,7 +24,8 @@ vector table
   -> 构造并提交 FaultRecord
   -> 内建 noinit/UART 后端
   -> 启动期冻结的产品 Backend 回调
-  -> 关中断停机
+  -> NVIC_SystemReset
+  -> 复位失败时关中断停机
 ```
 
 `fault_init` 位于 `PRE_KERNEL_1`，会处理上次复位保留的记录，然后冻结注册表。注册必须
