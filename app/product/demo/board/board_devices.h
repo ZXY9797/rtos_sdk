@@ -7,6 +7,7 @@ namespace app::board {
 // 产品级设备门面。硬件别名集中在 board_devices.cc，业务逻辑只使用产品语义名称。
 decltype(device_get(uart0)) console();
 decltype(device_get(adc0)) main_adc();
+decltype(device_get(can0)) main_can();
 #ifdef CONFIG_IMU_ICM40609D
 decltype(device_get(imu0)) imu();
 #endif

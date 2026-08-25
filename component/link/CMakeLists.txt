@@ -1,8 +1,12 @@
 set(MODULE_NAME link)
 add_library(${MODULE_NAME} STATIC)
 
-file(GLOB LINK_SOURCES src/*.cc)
-target_sources(${MODULE_NAME} PRIVATE ${LINK_SOURCES})
+target_sources(${MODULE_NAME}
+    PRIVATE
+        src/codec.cc
+        src/crc16.cc
+        src/router.cc
+)
 
 target_include_directories(${MODULE_NAME}
     PUBLIC

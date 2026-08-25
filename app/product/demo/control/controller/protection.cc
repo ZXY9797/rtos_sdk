@@ -1,9 +1,8 @@
 #include "protection.h"
-#include <cstring>
 
 void Protection::init(const ProtectionConfig &cfg) {
     cfg_ = cfg;
-    flags_ = ProtectionFlag::None;
+    flags_.store(0U, std::memory_order_release);
     bus_ov_cnt_ = bus_uv_cnt_ = 0;
     board_ot_cnt_ = motor_ot_cnt_ = oc_cnt_ = 0;
     bus_ov_recover_cnt_ = bus_uv_recover_cnt_ = 0;
@@ -27,14 +26,14 @@ void Protection::check_bus_overvoltage(float vbus) {
         bus_ov_cnt_++;
         bus_ov_recover_cnt_ = 0;
         if (bus_ov_cnt_ >= cfg_.fast_trigger_cnt) {
-            flags_ = flags_ | flag;
+            flags_.fetch_or(static_cast<uint32_t>(flag), std::memory_order_acq_rel);
         }
     } else if (vbus < cfg_.bus_ov_recovery) {
-        if (!!(flags_ & flag)) {
+        if (!!(flags() & flag)) {
             bus_ov_recover_cnt_++;
             if (bus_ov_recover_cnt_ >= cfg_.fast_recover_cnt) {
-                flags_ = static_cast<ProtectionFlag>(
-                    static_cast<uint32_t>(flags_) & ~static_cast<uint32_t>(flag));
+                flags_.fetch_and(~static_cast<uint32_t>(flag),
+                                 std::memory_order_acq_rel);
                 bus_ov_cnt_ = 0;
             }
         } else {
@@ -49,14 +48,14 @@ void Protection::check_bus_undervoltage(float vbus) {
         bus_uv_cnt_++;
         bus_uv_recover_cnt_ = 0;
         if (bus_uv_cnt_ >= cfg_.fast_trigger_cnt) {
-            flags_ = flags_ | flag;
+            flags_.fetch_or(static_cast<uint32_t>(flag), std::memory_order_acq_rel);
         }
     } else if (vbus > cfg_.bus_uv_recovery) {
-        if (!!(flags_ & flag)) {
+        if (!!(flags() & flag)) {
             bus_uv_recover_cnt_++;
             if (bus_uv_recover_cnt_ >= cfg_.fast_recover_cnt) {
-                flags_ = static_cast<ProtectionFlag>(
-                    static_cast<uint32_t>(flags_) & ~static_cast<uint32_t>(flag));
+                flags_.fetch_and(~static_cast<uint32_t>(flag),
+                                 std::memory_order_acq_rel);
                 bus_uv_cnt_ = 0;
             }
         } else {
@@ -71,14 +70,14 @@ void Protection::check_board_overtemp(float temp) {
         board_ot_cnt_++;
         board_ot_recover_cnt_ = 0;
         if (board_ot_cnt_ >= cfg_.slow_trigger_cnt) {
-            flags_ = flags_ | flag;
+            flags_.fetch_or(static_cast<uint32_t>(flag), std::memory_order_acq_rel);
         }
     } else if (temp < cfg_.board_ot_recovery) {
-        if (!!(flags_ & flag)) {
+        if (!!(flags() & flag)) {
             board_ot_recover_cnt_++;
             if (board_ot_recover_cnt_ >= cfg_.slow_recover_cnt) {
-                flags_ = static_cast<ProtectionFlag>(
-                    static_cast<uint32_t>(flags_) & ~static_cast<uint32_t>(flag));
+                flags_.fetch_and(~static_cast<uint32_t>(flag),
+                                 std::memory_order_acq_rel);
                 board_ot_cnt_ = 0;
             }
         } else {
@@ -93,14 +92,14 @@ void Protection::check_motor_overtemp(float temp) {
         motor_ot_cnt_++;
         motor_ot_recover_cnt_ = 0;
         if (motor_ot_cnt_ >= cfg_.slow_trigger_cnt) {
-            flags_ = flags_ | flag;
+            flags_.fetch_or(static_cast<uint32_t>(flag), std::memory_order_acq_rel);
         }
     } else if (temp < cfg_.motor_ot_recovery) {
-        if (!!(flags_ & flag)) {
+        if (!!(flags() & flag)) {
             motor_ot_recover_cnt_++;
             if (motor_ot_recover_cnt_ >= cfg_.slow_recover_cnt) {
-                flags_ = static_cast<ProtectionFlag>(
-                    static_cast<uint32_t>(flags_) & ~static_cast<uint32_t>(flag));
+                flags_.fetch_and(~static_cast<uint32_t>(flag),
+                                 std::memory_order_acq_rel);
                 motor_ot_cnt_ = 0;
             }
         } else {
@@ -116,14 +115,14 @@ void Protection::check_overcurrent(float current) {
         oc_cnt_++;
         oc_recover_cnt_ = 0;
         if (oc_cnt_ >= cfg_.fast_trigger_cnt) {
-            flags_ = flags_ | flag;
+            flags_.fetch_or(static_cast<uint32_t>(flag), std::memory_order_acq_rel);
         }
     } else {
-        if (!!(flags_ & flag)) {
+        if (!!(flags() & flag)) {
             oc_recover_cnt_++;
             if (oc_recover_cnt_ >= cfg_.fast_recover_cnt) {
-                flags_ = static_cast<ProtectionFlag>(
-                    static_cast<uint32_t>(flags_) & ~static_cast<uint32_t>(flag));
+                flags_.fetch_and(~static_cast<uint32_t>(flag),
+                                 std::memory_order_acq_rel);
                 oc_cnt_ = 0;
             }
         } else {
@@ -133,21 +132,19 @@ void Protection::check_overcurrent(float current) {
 }
 
 bool Protection::allow_enable() const {
-    return flags_ == ProtectionFlag::None;
+    return !has_fault();
 }
 
 const char *Protection::flag_str() const {
-    static char buf[64];
-    buf[0] = '\0';
-    auto f = static_cast<uint32_t>(flags_);
-    if (f == 0) {
-        strcpy(buf, "OK");
-    } else {
-        if (f & static_cast<uint32_t>(ProtectionFlag::BusOverV))    strcat(buf, "OV ");
-        if (f & static_cast<uint32_t>(ProtectionFlag::BusUnderV))   strcat(buf, "UV ");
-        if (f & static_cast<uint32_t>(ProtectionFlag::BoardOverT))  strcat(buf, "BOT ");
-        if (f & static_cast<uint32_t>(ProtectionFlag::MotorOverT))  strcat(buf, "MOT ");
-        if (f & static_cast<uint32_t>(ProtectionFlag::OverCurrent)) strcat(buf, "OC ");
-    }
-    return buf;
+    static constexpr const char *kFlagNames[32] = {
+        "OK", "OV", "UV", "OV UV", "BOT", "OV BOT", "UV BOT",
+        "OV UV BOT", "MOT", "OV MOT", "UV MOT", "OV UV MOT",
+        "BOT MOT", "OV BOT MOT", "UV BOT MOT", "OV UV BOT MOT",
+        "OC", "OV OC", "UV OC", "OV UV OC", "BOT OC", "OV BOT OC",
+        "UV BOT OC", "OV UV BOT OC", "MOT OC", "OV MOT OC",
+        "UV MOT OC", "OV UV MOT OC", "BOT MOT OC", "OV BOT MOT OC",
+        "UV BOT MOT OC", "OV UV BOT MOT OC",
+    };
+    const uint32_t value = flags_.load(std::memory_order_acquire);
+    return kFlagNames[value & 0x1FU];
 }

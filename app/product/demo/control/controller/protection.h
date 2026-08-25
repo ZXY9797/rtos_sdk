@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 
 enum class ProtectionFlag : uint32_t {
@@ -48,15 +49,20 @@ public:
     void fast_check(float vbus);
     void slow_check(float board_temp, float motor_temp, float phase_current);
 
-    bool has_fault() const { return flags_ != ProtectionFlag::None; }
-    ProtectionFlag flags() const { return flags_; }
+    bool has_fault() const {
+        return flags_.load(std::memory_order_acquire) != 0U;
+    }
+    ProtectionFlag flags() const {
+        return static_cast<ProtectionFlag>(
+            flags_.load(std::memory_order_acquire));
+    }
     bool allow_enable() const;
 
     const char *flag_str() const;
 
 private:
     ProtectionConfig cfg_;
-    ProtectionFlag flags_ {ProtectionFlag::None};
+    std::atomic<uint32_t> flags_ {0U};
 
     uint32_t bus_ov_cnt_ {0};
     uint32_t bus_uv_cnt_ {0};

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 
@@ -29,11 +30,11 @@ public:
     void poll() { if (poll_fn_) poll_fn_(poll_arg_); }
 
     // link_id（业务层指定的物理端口 ID）
-    uint16_t id() const { return id_; }
-    void set_id(uint16_t id) { id_ = id; }
+    uint16_t id() const { return id_.load(std::memory_order_acquire); }
+    void set_id(uint16_t id) { id_.store(id, std::memory_order_release); }
 
 protected:
-    uint16_t id_ {0};
+    std::atomic<uint16_t> id_ {0U};
     PollFunc poll_fn_ {nullptr};
     void *poll_arg_ {nullptr};
 };

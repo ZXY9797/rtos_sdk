@@ -5,38 +5,61 @@
 
 #if defined(CONFIG_CAN_GD32) || defined(HAL_CAN_MODULE_ENABLED)
 #include <drivers/can.h>
-static hal::Can *g_can = nullptr;
 #endif
 
 static void float_to_bytes(float val, uint8_t *data) {
     memcpy(data, &val, sizeof(float));
 }
 
-void CanHandler::init(uint32_t base_id) {
+void CanHandler::init(uint32_t base_id, hal::Can &can) {
+    deinit();
     base_id_ = base_id;
 #if defined(CONFIG_CAN_GD32) || defined(HAL_CAN_MODULE_ENABLED)
-    g_can = &hal::Can::instance(0);
-    hal::CanConfig cfg;
-    cfg.bitrate = 500000U;
-    if (g_can->init(cfg) == hal::Status::Ok) {
-        (void)g_can->start();
+    can_ = &can;
+    hal::Status init_status = hal::Status::Ok;
+    if (!can_->is_initialized()) {
+        hal::CanConfig cfg;
+        cfg.bitrate = 500000U;
+        init_status = can_->init(cfg);
+    }
+    if (init_status == hal::Status::Ok
+        && can_->start() == hal::Status::Ok) {
         ready_ = true;
+    } else {
+        (void)can_->deinit();
+        can_ = nullptr;
     }
 #else
     ready_ = false;
 #endif
 }
 
+void CanHandler::deinit() {
+#if defined(CONFIG_CAN_GD32) || defined(HAL_CAN_MODULE_ENABLED)
+    if (can_ != nullptr) {
+        if (can_->is_initialized()) {
+            (void)can_->stop();
+        }
+        (void)can_->deinit();
+    }
+#endif
+    can_ = nullptr;
+    ready_ = false;
+    callback_ = nullptr;
+}
+
 bool CanHandler::process() {
 #if defined(CONFIG_CAN_GD32) || defined(HAL_CAN_MODULE_ENABLED)
-    if (!ready_ || !g_can) return false;
+    if (!ready_ || !can_) return false;
 
     uint32_t id = 0;
     uint8_t data[8] = {};
     uint8_t len = 0;
 
-    if (g_can->get_rx_message(&id, data, &len) == hal::Status::Ok) {
-        dispatch(id, data, len);
+    if (can_->get_rx_message(&id, data, &len) == hal::Status::Ok) {
+        if (id == base_id_) {
+            dispatch(id, data, len);
+        }
         return true;
     }
 #endif
@@ -54,8 +77,8 @@ void CanHandler::dispatch(uint32_t id, const uint8_t *data, uint8_t len) {
 
 bool CanHandler::send(uint32_t id, const uint8_t *data, uint8_t len) {
 #if defined(CONFIG_CAN_GD32) || defined(HAL_CAN_MODULE_ENABLED)
-    if (!ready_ || !g_can) return false;
-    return g_can->send(id, data, len, 0) == hal::Status::Ok;
+    if (!ready_ || !can_) return false;
+    return can_->send(id, data, len, 0) == hal::Status::Ok;
 #else
     return false;
 #endif

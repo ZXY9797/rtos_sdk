@@ -21,6 +21,7 @@ public:
     /// init() 由 gen_device_traits.py 生成的 initcall 调用
     /// 需要 drivers_generated.h 中 device_get 的定义可见
     int init(const MotorConfig &cfg);
+    int deinit();
 
     Motor &motor() { return *motor_; }
     const Motor &motor() const { return *motor_; }
@@ -38,6 +39,10 @@ private:
 
 template <int PwmOrd, int AdcOrd, int ChU, int ChV, int ChW>
 int MotorDevice<PwmOrd, AdcOrd, ChU, ChV, ChW>::init(const MotorConfig &cfg) {
+    if (motor_ != nullptr) {
+        return -static_cast<int>(hal::Status::Busy);
+    }
+
     auto &pwm = hal::device_get<PwmOrd>();
     auto &adc = hal::device_get<AdcOrd>();
 
@@ -48,10 +53,37 @@ int MotorDevice<PwmOrd, AdcOrd, ChU, ChV, ChW>::init(const MotorConfig &cfg) {
         static_cast<hal::PwmChannel>(ChW),
         adc);
 
-    motor_->init();
+    const hal::Status init_status = motor_->init();
+    if (init_status != hal::Status::Ok) {
+        motor_->~Motor();
+        motor_ = nullptr;
+        return -static_cast<int>(init_status);
+    }
 
-    (void)pwm.set_update_callback(pwm_isr_callback, motor_);
+    const hal::Status callback_status = pwm.set_update_callback(pwm_isr_callback, motor_);
+    if (callback_status != hal::Status::Ok) {
+        motor_->disable();
+        motor_->~Motor();
+        motor_ = nullptr;
+        return -static_cast<int>(callback_status);
+    }
 
+    return 0;
+}
+
+template <int PwmOrd, int AdcOrd, int ChU, int ChV, int ChW>
+int MotorDevice<PwmOrd, AdcOrd, ChU, ChV, ChW>::deinit() {
+    if (motor_ == nullptr) {
+        return 0;
+    }
+    motor_->disable();
+    auto &pwm = hal::device_get<PwmOrd>();
+    const hal::Status callback_status = pwm.set_update_callback(nullptr, nullptr);
+    if (callback_status != hal::Status::Ok) {
+        return static_cast<int>(callback_status);
+    }
+    motor_->~Motor();
+    motor_ = nullptr;
     return 0;
 }
 

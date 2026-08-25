@@ -10,15 +10,21 @@ namespace link {
 // ── CanLink ──
 // CAN 分片传输，frag_payload 可配置:
 //   CAN classic (8B): frag_payload = 7
-//   CAN FD (64B):     frag_payload = 63
+// The current HAL is classic CAN only; CAN FD requires a separate backend.
 
 class CanLink : public Link {
 public:
     // frag_payload: 每片最大载荷（不含 1B frag header）
     CanLink(uint8_t can_port, uint32_t can_id, size_t frag_payload = 7)
-        : can_(hal::Can::instance(can_port)), can_id_(can_id),
+        : can_(hal::Can::instance(can_port < kMaxCanPorts ? can_port : 0U)),
+          can_id_(can_id),
           frag_payload_(frag_payload) {
-        register_link(this);
+        if (can_port < kMaxCanPorts && !s_port_claimed_[can_port]
+            && frag_payload_ > 0U && frag_payload_ <= 7U
+            && register_link(this)) {
+            s_port_claimed_[can_port] = true;
+            valid_ = true;
+        }
         set_poll(poll_impl, this);
     }
 
@@ -34,12 +40,18 @@ public:
         return reasm_.read(buf, max_len);
     }
 
-    bool is_ready() const override { return can_.is_initialized(); }
+    bool is_ready() const override {
+        return valid_ && can_.is_initialized();
+    }
 
 private:
+    static constexpr uint8_t kMaxCanPorts = 2U;
+    inline static bool s_port_claimed_[kMaxCanPorts] {};
+
     hal::Can &can_;
     uint32_t can_id_;
     size_t frag_payload_;
+    bool valid_ {false};
     Reassembler reasm_;
 
     static void poll_impl(void *arg) {
@@ -47,7 +59,12 @@ private:
         uint32_t id;
         uint8_t data[64], len;
         while (self->can_.get_rx_message(&id, data, &len) == hal::Status::Ok) {
-            Fragmenter::recv(data, len, self->reasm_);
+            if (id != self->can_id_) {
+                continue;
+            }
+            if (Fragmenter::recv(data, len, self->reasm_)) {
+                break;
+            }
         }
     }
 };

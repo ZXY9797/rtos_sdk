@@ -4,11 +4,14 @@
 namespace link {
 
 void FrameCodec::reset() {
-    widx_ = 0;
+    prepare_next_frame();
     frame_ = {};
+}
+
+void FrameCodec::prepare_next_frame() {
+    widx_ = 0;
     state_ = State::SearchSof;
     expected_len_ = 0;
-    ver_len_lo_ = 0;
 }
 
 int FrameCodec::feed(uint8_t byte) {
@@ -22,6 +25,10 @@ int FrameCodec::feed(uint8_t byte) {
         return 0;
 
     case State::FetchVerLen:
+        if (widx_ >= sizeof(buf_)) {
+            reset();
+            return -2;
+        }
         buf_[widx_++] = byte;
         if (widx_ == 3) {
             // 收到 ver_len 两字节，检查 head_crc
@@ -30,6 +37,10 @@ int FrameCodec::feed(uint8_t byte) {
         return 0;
 
     case State::CheckHead:
+        if (widx_ >= sizeof(buf_)) {
+            reset();
+            return -2;
+        }
         buf_[widx_++] = byte;
         // 验证前 3 字节 BCC
         if (bcc(buf_, 3) != byte) {
@@ -53,6 +64,10 @@ int FrameCodec::feed(uint8_t byte) {
         return 0;
 
     case State::FetchData:
+        if (widx_ >= sizeof(buf_) || widx_ >= expected_len_) {
+            reset();
+            return -2;
+        }
         buf_[widx_++] = byte;
         if (widx_ >= expected_len_) {
             // 数据收完，校验尾部 CRC
@@ -61,11 +76,12 @@ int FrameCodec::feed(uint8_t byte) {
                 return -3;  // CRC 错误
             }
             parse_header();
+            prepare_next_frame();
             return 1;  // 解出一帧
         }
         return 0;
 
-    case State::CheckCrc:
+    default:
         // 不应该到达这里
         reset();
         return -4;
@@ -83,8 +99,8 @@ void FrameCodec::parse_header() {
     frame_.cmd_set = buf_[9];
     frame_.cmd_id = buf_[10];
 
-    size_t data_len = frame_.len - HEADER_SIZE - CRC_SIZE;
-    frame_.data_len = static_cast<uint8_t>(data_len);
+    const size_t data_len = frame_.len - HEADER_SIZE - CRC_SIZE;
+    frame_.data_len = static_cast<uint16_t>(data_len);
     frame_.data = (data_len > 0) ? (buf_ + HEADER_SIZE) : nullptr;
 }
 
@@ -99,9 +115,15 @@ bool FrameCodec::check_crc() {
 
 size_t FrameCodec::pack(uint8_t *buf, size_t buf_size,
                         const PackArgs &args,
-                        const uint8_t *data, uint8_t data_len) {
-    size_t total = HEADER_SIZE + data_len + CRC_SIZE;
-    if (buf_size < total) return 0;
+                        const uint8_t *data, size_t data_len) {
+    if (!buf || (data_len > 0U && !data)) {
+        return 0U;
+    }
+    const size_t total = HEADER_SIZE + data_len + CRC_SIZE;
+    if (total > CONFIG_LINK_MAX_FRAME_SIZE ||
+        total > VER_LEN_LEN_MASK || buf_size < total) {
+        return 0U;
+    }
 
     buf[0] = SOF;
     uint16_t ver_len = pack_ver_len(1, static_cast<uint16_t>(total));
@@ -116,8 +138,9 @@ size_t FrameCodec::pack(uint8_t *buf, size_t buf_size,
     buf[8] = (args.seq >> 8) & 0xFF;
     buf[9] = args.cmd_set;
     buf[10] = args.cmd_id;
-    if (data_len > 0 && data)
+    if (data_len > 0U) {
         memcpy(buf + HEADER_SIZE, data, data_len);
+    }
 
     uint16_t crc = crc16_ccitt(buf, HEADER_SIZE + data_len);
     buf[HEADER_SIZE + data_len] = crc & 0xFF;

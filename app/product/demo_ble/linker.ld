@@ -1,23 +1,24 @@
-/* GR5525 app linker script - slot0 @ 0x0020C000. */
+/* GR5525 app linker script. Addresses come from product layout.json. */
 
 ENTRY(Reset_Handler)
 
 _region_min_align = 4;
 
 /* GCC RW Compress: app flash slot + physical RAM. */
-__flash_size__ = 160K + 256K;
+__flash_size__ = BOOT_APP_LINK_SIZE;
 
 MEMORY
 {
-    FLASH (rx) :    ORIGIN = 0x0020C000,    LENGTH = __flash_size__
-    RAM   (rw) :    ORIGIN = 0x20000000,    LENGTH = 256K
+    FLASH (rx) :    ORIGIN = BOOT_SLOT0_PAYLOAD_ORIGIN, LENGTH = __flash_size__
+    RAM   (rw) :    ORIGIN = BOOT_RAM_BASE, LENGTH = BOOT_RAM_SIZE
 }
 
 _system_stack_size = 0x800;
 
 SECTIONS
 {
-    __rom_region_start = (0x0020C000 + 0x0);
+    __image_header_start = BOOT_SLOT0_ORIGIN;
+    __rom_region_start = BOOT_SLOT0_PAYLOAD_ORIGIN;
 
     rom_start :
     {
@@ -31,7 +32,7 @@ SECTIONS
         . = ALIGN(4);
     } > FLASH
 
-    .product_info 0x0020C400 :
+    .product_info BOOT_PRODUCT_INFO_ORIGIN :
     {
         . = ALIGN(4);
         KEEP(*(.product_info))
@@ -98,17 +99,29 @@ SECTIONS
         . = ALIGN(4);
         __init_start = .;
         __init_EARLY_start = .;
-        KEEP(*(.z_init_EARLY*))
+        KEEP(*(SORT(.z_init_EARLY_P_?_*)))
+        KEEP(*(SORT(.z_init_EARLY_P_??_*)))
+        KEEP(*(SORT(.z_init_EARLY_P_???_*)))
         __init_PRE_KERNEL_1_start = .;
-        KEEP(*(.z_init_PRE_KERNEL_1*))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_1_P_?_*)))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_1_P_??_*)))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_1_P_???_*)))
         __init_PRE_KERNEL_2_start = .;
-        KEEP(*(.z_init_PRE_KERNEL_2*))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_2_P_?_*)))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_2_P_??_*)))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_2_P_???_*)))
         __init_PRE_KERNEL_3_start = .;
-        KEEP(*(.z_init_PRE_KERNEL_3*))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_3_P_?_*)))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_3_P_??_*)))
+        KEEP(*(SORT(.z_init_PRE_KERNEL_3_P_???_*)))
         __init_POST_KERNEL_start = .;
-        KEEP(*(.z_init_POST_KERNEL*))
+        KEEP(*(SORT(.z_init_POST_KERNEL_P_?_*)))
+        KEEP(*(SORT(.z_init_POST_KERNEL_P_??_*)))
+        KEEP(*(SORT(.z_init_POST_KERNEL_P_???_*)))
         __init_APPLICATION_start = .;
-        KEEP(*(.z_init_APPLICATION*))
+        KEEP(*(SORT(.z_init_APPLICATION_P_?_*)))
+        KEEP(*(SORT(.z_init_APPLICATION_P_??_*)))
+        KEEP(*(SORT(.z_init_APPLICATION_P_???_*)))
         __init_end = .;
         . = ALIGN(4);
     } > FLASH
@@ -245,4 +258,6 @@ SECTIONS
     _end = .;
     end = .;
     __bss_size__ = __bss_end - __bss_start;
+    ASSERT((LOADADDR(datas) + SIZEOF(datas) - __rom_region_start) <= BOOT_SLOT0_PAYLOAD_SIZE,
+           "Application payload exceeds the physical slot")
 }

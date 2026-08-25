@@ -16,6 +16,8 @@
 #include "data_logger.h"
 #include <drivers/pwm.h>
 #include <drivers/adc.h>
+#include <osal.h>
+#include <atomic>
 
 namespace foc {
 
@@ -38,6 +40,21 @@ struct MotorConfig {
 
     // 控制模式
     ControlMode control {ControlMode::Speed};
+
+    // Board-specific acquisition and timer parameters. These values must be
+    // generated from the board description rather than inferred by the FOC core.
+    uint32_t timer_clock_hz {120000000U};
+    uint16_t pwm_prescaler {0U};
+    uint32_t dead_time_ns {500U};
+    uint8_t adc_resolution_bits {12U};
+    hal::AdcChannel current_u_channel {hal::AdcChannel::Ch0};
+    hal::AdcChannel current_w_channel {hal::AdcChannel::Ch1};
+    hal::AdcChannel vbus_channel {hal::AdcChannel::Ch2};
+    uint32_t adc_trigger_source {0U};
+    float adc_reference_voltage {3.3F};
+    float current_zero_code {2048.0F};
+    float current_sense_volts_per_amp {0.1F};
+    float vbus_divider_ratio {20.0F};
 };
 
 class Motor {
@@ -47,7 +64,7 @@ public:
           hal::AdcBase &adc);
 
     // 初始化
-    void init();
+    [[nodiscard]] hal::Status init();
 
     // 快循环 — PWM ISR 中调用
     void fast_loop_isr();
@@ -63,21 +80,24 @@ public:
     void emergency_stop();
 
     // 状态查询
-    MotorState state() const { return state_; }
+    MotorState state() const { return state_.load(std::memory_order_relaxed); }
     float speed_rpm() const;
-    float phase_current_u() const { return raw_i_.u; }
-    float phase_current_w() const { return raw_i_.w; }
-    float bus_voltage() const { return vbus_; }
-    float temperature() const { return temp_celsius_; }
+    float phase_current_u() const { return current_u_.load(std::memory_order_relaxed); }
+    float phase_current_w() const { return current_w_.load(std::memory_order_relaxed); }
+    float bus_voltage() const { return bus_voltage_.load(std::memory_order_relaxed); }
+    float temperature() const { return temp_celsius_.load(std::memory_order_relaxed); }
+    const MotorConfig &config() const { return cfg_; }
 
     // 子系统访问
     const ErrorHandler &errors() const { return errors_; }
-    FOCController &foc_controller() { return foc_; }
-    MotorMeasurement &measurement() { return meas_; }
+    const FOCController &foc_controller() const { return foc_; }
+    const MotorMeasurement &measurement() const { return meas_; }
     DataLogger &logger() { return logger_; }
 
     // 电机参数自动检测
-    void start_measurement();
+    // Unavailable until a board-specific synchronized current/voltage
+    // acquisition path is installed. The API fails closed in the meantime.
+    [[nodiscard]] hal::Status start_measurement();
 
     // ── 校准注入接口 ──
 
@@ -90,10 +110,10 @@ public:
         float gain_v {1.0f};
         float gain_w {1.0f};
     };
-    void set_current_calibration(const CurrentCalib &cal) { current_calib_ = cal; }
+    void set_current_calibration(const CurrentCalib &cal);
 
     // 电角度校正偏移量 (rad)，在 fast_loop_isr 中叠加到估算角度上
-    void set_angle_correction(float offset_rad) { angle_correction_ = offset_rad; }
+    void set_angle_correction(float offset_rad);
 
     // 电角度 Lagrange 插值校正器（每 ISR 周期根据当前角度查表校正）
     // table: 校准偏移表, point_count: 点数, x_max: 角度范围上限 (rad)
@@ -102,14 +122,19 @@ public:
         uint32_t point_count {0};
         float x_max {0.0f};
     };
-    void set_angle_lut(const AngleLutConfig &lut) { angle_lut_ = lut; }
+    [[nodiscard]] bool set_angle_lut(const AngleLutConfig &lut);
+
+    // Cross-context current-reference mailbox. The ISR consumes these atomics.
+    void set_current_reference(float id, float iq);
+    void configure_current_loop(float rs, float ld, float lq,
+                                float flux, uint8_t pole_pairs);
 
     // 外部温度注入 (°C)，用于独立 NTC 传感器
     void set_temperature(float board_temp, float motor_temp) {
-        temp_celsius_ = motor_temp;
-        board_temp_celsius_ = board_temp;
+        temp_celsius_.store(motor_temp, std::memory_order_relaxed);
+        board_temp_celsius_.store(board_temp, std::memory_order_relaxed);
     }
-    float board_temperature() const { return board_temp_celsius_; }
+    float board_temperature() const { return board_temp_celsius_.load(std::memory_order_relaxed); }
 
 private:
     // 硬件引用
@@ -134,7 +159,7 @@ private:
     DataLogger logger_;
 
     // 状态
-    MotorState state_ {MotorState::Idle};
+    std::atomic<MotorState> state_ {MotorState::Idle};
     uint32_t align_count_ {0};
     uint32_t ol_count_ {0};
 
@@ -142,13 +167,21 @@ private:
     Vec3 raw_i_ {};
     Vec3 conv_i_ {};
     float vbus_ {0.0f};
-    float temp_celsius_ {25.0f};
-    float board_temp_celsius_ {25.0f};
+    std::atomic<float> current_u_ {0.0F};
+    std::atomic<float> current_w_ {0.0F};
+    std::atomic<float> control_current_u_ {0.0F};
+    std::atomic<float> bus_voltage_ {0.0F};
+    std::atomic<float> temp_celsius_ {25.0F};
+    std::atomic<float> board_temp_celsius_ {25.0F};
 
     // 校准数据
     CurrentCalib current_calib_ {};
     float angle_correction_ {0.0f};
     AngleLutConfig angle_lut_ {};
+    static constexpr uint32_t kMaxAngleLutPoints = 128U;
+    float angle_lut_storage_[2][kMaxAngleLutPoints] {};
+    uint8_t angle_lut_active_ {0U};
+    osal::Mutex angle_lut_mutex_;
 
     // Lagrange 查表（内联，避免 ISR 中分配）
     float angle_lut_lookup(float angle_rad) const;
@@ -157,10 +190,10 @@ private:
     uint32_t pwm_period_ {0};
 
     // 内部方法
-    void read_adc();
+    [[nodiscard]] bool read_adc();
     void state_machine();
     void update_observer(float dt);
-    void apply_duty(uint32_t du, uint32_t dv, uint32_t dw);
+    [[nodiscard]] bool apply_duty(uint32_t du, uint32_t dv, uint32_t dw);
 };
 
 } // namespace foc

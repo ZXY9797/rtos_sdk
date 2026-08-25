@@ -8,7 +8,7 @@ namespace link {
 class UartLink : public Link {
 public:
     explicit UartLink(hal::UartBase &uart) : uart_(uart) {
-        register_link(this);
+        registered_ = register_link(this);
     }
 
     int send(const uint8_t *data, size_t len) override {
@@ -23,10 +23,13 @@ public:
         return static_cast<int>(read);
     }
 
-    bool is_ready() const override { return uart_.is_initialized(); }
+    bool is_ready() const override {
+        return registered_ && uart_.is_initialized();
+    }
 
 private:
     hal::UartBase &uart_;
+    bool registered_ {false};
 };
 
 } // namespace link

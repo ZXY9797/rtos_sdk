@@ -6,6 +6,10 @@ decltype(device_get(ble0)) ble() {
     return device_get(ble0);
 }
 
+decltype(device_get(uart0)) console() {
+    return device_get(uart0);
+}
+
 decltype(device_get(ble_uart)) uart() {
     return device_get(ble_uart);
 }

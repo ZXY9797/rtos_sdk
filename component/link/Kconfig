@@ -6,18 +6,22 @@ if LINK
 
 config LINK_MAX_FRAME_SIZE
 	int "最大帧长度 (字节)"
+	range 16 65535
 	default 512
 
 config LINK_MAX_LINKS
 	int "最大链路数"
+	range 1 255
 	default 8
 
 config LINK_MAX_ROUTES
 	int "最大路由规则数"
+	range 1 1024
 	default 16
 
 config LINK_MAX_PENDING
 	int "最大待确认帧数"
+	range 1 1024
 	default 8
 
 config LINK_HANDLER_SECTION
@@ -26,14 +30,17 @@ config LINK_HANDLER_SECTION
 
 config LINK_PROCESS_HZ
 	int "Link 处理任务频率 (Hz)"
+	range 1 1000000
 	default 1000
 
 config LINK_PROCESS_STACK
 	int "Link 处理任务栈大小 (字节)"
+	range 256 65536
 	default 1024
 
 config LINK_PROCESS_PRIO
 	int "Link 处理任务优先级"
+	range 0 255
 	default 5
 
 endif

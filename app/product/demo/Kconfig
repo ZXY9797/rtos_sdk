@@ -7,51 +7,61 @@ config APP_NAME
 menu "Motor Parameters (DM-4340)"
     config MOTOR_TORQUE_CONSTANT
         int "Torque constant (mNm/A)"
+        range 1 1000000
         default 4074
     config MOTOR_GEAR_RATIO
         int "Gear ratio"
+        range 1 10000
         default 40
-    config MOTOR_POLE_PAIRS_APP
-        int "Pole pairs"
-        default 14
 endmenu
 
 menu "LESO Speed Controller"
     config LESO_OMEGA
         int "LESO bandwidth (rad/s)"
+        range 1 100000
         default 3000
     config LESO_B0
         int "LESO control gain b0"
+        range 1 1000000
         default 6000
     config LESO_KP
         int "LESO proportional gain (milli)"
+        range 0 1000000
         default 6
 endmenu
 
 menu "Position Controller"
     config POS_KP
         int "Position PID Kp (milli)"
+        range 0 1000000
         default 6000
     config POS_KI
         int "Position PID Ki (milli)"
+        range 0 1000000
         default 0
     config POS_KD
         int "Position PID Kd (milli)"
+        range 0 1000000
         default 0
     config POS_OUTPUT_LIMIT
         int "Position PID output limit (milli rad/s)"
+        range 1 1000000
         default 3500
     config POS_BACKLASH_DEADZONE
         int "Backlash deadzone (millirad)"
+        range 0 1000000
         default 6
     config POS_BACKLASH_HYSTERESIS
         int "Backlash hysteresis (millirad)"
+        range 0 1000000
         default 10
     config POS_BACKLASH_CMD_THRESHOLD
         int "Backlash command threshold (milli rad/s)"
+        range 0 1000000
         default 1000
     config POS_BACKLASH_DWELL_TIME
         int "Backlash dwell time (ms)"
+        range 0 3600000
         default 1000
     config POS_CTRL_AUTO_CALIB
         bool "Auto-calibrate on first boot"
@@ -61,42 +71,53 @@ endmenu
 menu "Protection Thresholds"
     config PROTECT_BUS_OV
         int "Bus overvoltage (mV)"
+        range 1 1000000
         default 45000
     config PROTECT_BUS_UV
         int "Bus undervoltage (mV)"
+        range 1 1000000
         default 12000
     config PROTECT_BOARD_OT
         int "Board overtemperature (dC)"
+        range 1 3000
         default 1000
     config PROTECT_MOTOR_OT
         int "Motor overtemperature (dC)"
+        range 1 3000
         default 1200
 endmenu
 
 menu "Temperature Sensors"
     config NTC_DIVIDER_RESISTANCE
         int "NTC voltage divider resistance (ohm)"
+        range 1 10000000
         default 10000
     config BOARD_TEMP_ADC_CHANNEL
         int "Board temperature ADC channel"
+        range 0 255
         default 16
     config MOTOR_TEMP_ADC_CHANNEL
         int "Motor temperature ADC channel"
+        range 0 255
         default 17
 endmenu
 
 menu "Sweep Signal"
     config SWEEP_FSTART
         int "Sweep start frequency (dHz)"
+        range 1 1000000
         default 1
     config SWEEP_FEND
         int "Sweep end frequency (dHz)"
+        range 1 1000000
         default 200
     config SWEEP_FGAP
         int "Sweep frequency step (dHz)"
+        range 1 1000000
         default 1
     config SWEEP_REPEAT
         int "Sweep repeat count per frequency"
+        range 1 1000000
         default 10
 endmenu
 

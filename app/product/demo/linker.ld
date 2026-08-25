@@ -1,4 +1,4 @@
-/* App linker script - 160KB @ 0x0800A000 (slot0) */
+/* App linker script. Addresses are injected from product layout.json. */
 /* 基于 gd,gd32f503.ld，修改 ORIGIN 和添加 .product_info section */
 
 ENTRY(Reset_Handler)
@@ -6,19 +6,21 @@ ENTRY(Reset_Handler)
 _region_min_align = 4;
 
 /* GCC RW Compress: flash size = physical flash + physical RAM */
-__flash_size__ = 160K + 128K;
+__flash_size__ = BOOT_APP_LINK_SIZE;
 
 MEMORY
 {
-    FLASH (rx) :    ORIGIN = 0x0800A000,    LENGTH = __flash_size__ /* slot0 + RAM for compress */
-    RAM   (rw) :    ORIGIN = 0x20000000,    LENGTH = 128K  /* 128K SRAM */
+    /* Raw app payload starts after the independently packaged image header. */
+    FLASH (rx) :    ORIGIN = BOOT_SLOT0_PAYLOAD_ORIGIN, LENGTH = __flash_size__
+    RAM   (rw) :    ORIGIN = BOOT_RAM_BASE, LENGTH = BOOT_RAM_SIZE
 }
 
 _system_stack_size = 0x800;
 
 SECTIONS
 {
-    __rom_region_start = (0x0800A000 + 0x0);
+    __image_header_start = BOOT_SLOT0_ORIGIN;
+    __rom_region_start = BOOT_SLOT0_PAYLOAD_ORIGIN;
 
     rom_start :
     {
@@ -31,7 +33,7 @@ SECTIONS
     } > FLASH
 
     /* ProductInfo 标记区: app 起始偏移 1KB (0x400) 处 */
-    .product_info 0x0800A400 :
+    .product_info BOOT_PRODUCT_INFO_ORIGIN :
     {
         . = ALIGN(4);
         KEEP(*(.product_info))
@@ -151,7 +153,7 @@ SECTIONS
     __rom_region_end = __rom_region_start + . - ADDR(rom_start);
     __rom_region_size = __rom_region_end - __rom_region_start;
 
-    . = 0x20000000;
+    . = BOOT_RAM_BASE;
     . = ALIGN(_region_min_align);
     _image_ram_start = .;
 
@@ -215,10 +217,10 @@ SECTIONS
 
     .stack :
     {
-        . = ALIGN(4);
+        . = ALIGN(8);
         _sstack = .;
         . = . + _system_stack_size;
-        . = ALIGN(4);
+        . = ALIGN(8);
         _estack = .;
     } >RAM
 
@@ -241,4 +243,6 @@ SECTIONS
     } > FLASH
 
     _flash_used = LOADADDR(.last_section) + SIZEOF(.last_section) - __rom_region_start;
+    ASSERT(_flash_used <= BOOT_SLOT0_PAYLOAD_SIZE,
+           "Application payload exceeds the physical slot")
 }

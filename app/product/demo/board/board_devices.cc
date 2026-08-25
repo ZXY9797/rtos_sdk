@@ -10,6 +10,10 @@ decltype(device_get(adc0)) main_adc() {
     return device_get(adc0);
 }
 
+decltype(device_get(can0)) main_can() {
+    return device_get(can0);
+}
+
 #ifdef CONFIG_IMU_ICM40609D
 decltype(device_get(imu0)) imu() {
     return device_get(imu0);

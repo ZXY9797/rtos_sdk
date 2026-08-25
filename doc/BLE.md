@@ -135,7 +135,7 @@ component/ble/
     ├── Kconfig                 # BLE 编译时配置
     ├── profiles/               # GATT Profile 实现
     ├── libraries/              # BLE SDK 辅助库
-    └── lib/libble_sdk_fixed.a  # Goodix 预编译 BLE 协议栈
+    └── lib/libble_sdk.a        # Goodix 预编译 BLE 协议栈原件
 
 embedded/dts/bindings/ble/
 └── goodix,gr5525-ble.yaml      # BLE 设备树绑定
@@ -143,6 +143,11 @@ embedded/dts/bindings/ble/
 embedded/soc/goodix/gr5525x/include/
 └── custom_config.h             # Kconfig → GR5525 SDK 宏桥接
 ```
+
+配置阶段会校验 `libble_sdk.a` 与 SDK `v1.0.3_patch_2` ROM symbol 表的
+SHA-256。构建系统仅在输出目录创建 archive 副本并移除厂商示例 `main.o`，不修改
+仓库中的原始库。所有 ROM 调用必须由匹配的 symbol 表解析，最终 ELF 不允许残留
+未解析符号。
 
 ## 移植指南
 

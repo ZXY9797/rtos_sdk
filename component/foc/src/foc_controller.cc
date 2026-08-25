@@ -43,6 +43,7 @@ void FOCController::calculate_voltage_gain(float vbus) {
 
 void FOCController::update_current(const Vec3 &i_abc, float vbus, uint16_t angle,
                                     const SinCos &sc,
+                                    uint32_t pwm_period,
                                     uint32_t &duty_u, uint32_t &duty_v, uint32_t &duty_w) {
     vbus_ = vbus;
     calculate_voltage_gain(vbus);
@@ -52,6 +53,9 @@ void FOCController::update_current(const Vec3 &i_abc, float vbus, uint16_t angle
 
     // Park 变换
     idq_ = park_transform(iab_, sc);
+    id_snapshot_.store(idq_.d, std::memory_order_relaxed);
+    iq_snapshot_.store(idq_.q, std::memory_order_relaxed);
+    vbus_snapshot_.store(vbus, std::memory_order_relaxed);
 
     // 死区补偿: 根据电流方向叠加补偿电压
     float dt_comp_d = 0.0f, dt_comp_q = 0.0f;
@@ -64,15 +68,17 @@ void FOCController::update_current(const Vec3 &i_abc, float vbus, uint16_t angle
 
     // 电流环 PI
     float dt = 1.0f / cfg_.pwm_frequency;
-    float vd = id_pid_.update(id_ref_, idq_.d, dt);
-    float vq = iq_pid_.update(iq_ref_, idq_.q, dt);
+    const float id_ref = id_ref_.load(std::memory_order_relaxed);
+    const float iq_ref = iq_ref_.load(std::memory_order_relaxed);
+    float vd = id_pid_.update(id_ref, idq_.d, dt);
+    float vq = iq_pid_.update(iq_ref, idq_.q, dt);
 
     // 应用死区补偿
     vd += dt_comp_d;
     vq += dt_comp_q;
 
     // 前馈解耦: vd -= ωLqIq, vq += ωLdId
-    float we = e_hz_ * TWO_PI;
+    float we = e_hz_.load(std::memory_order_relaxed) * TWO_PI;
     vd -= we * lq_ * idq_.q;
     vq += we * ld_ * idq_.d;
 
@@ -95,38 +101,45 @@ void FOCController::update_current(const Vec3 &i_abc, float vbus, uint16_t angle
         vdq_.d *= scale;
         vdq_.q *= scale;
     }
+    vd_snapshot_.store(vdq_.d, std::memory_order_relaxed);
+    vq_snapshot_.store(vdq_.q, std::memory_order_relaxed);
 
     // 逆 Park 变换
     vab_ = inverse_park(vdq_, sc);
 
     // SVPWM
-    uint32_t period = static_cast<uint32_t>(cfg_.pwm_frequency);
-    svpwm_.generate(vab_, vbus_, period, duty_u, duty_v, duty_w);
+    svpwm_.generate(vab_, vbus_, pwm_period, duty_u, duty_v, duty_w);
 }
 
 float FOCController::update_speed(float speed_rpm, float dt) {
-    mech_rpm_ = speed_rpm;
+    mech_rpm_.store(speed_rpm, std::memory_order_relaxed);
 
     // 速度环 PI
-    float iq_out = speed_pid_.update(speed_ref_, speed_rpm, dt);
+    const float speed_ref = speed_ref_.load(std::memory_order_relaxed);
+    float iq_out = speed_pid_.update(speed_ref, speed_rpm, dt);
 
     // 弱磁
     if (cfg_.field_weakening > 0) {
-        float v_mag = sqrtf(vdq_.d * vdq_.d + vdq_.q * vdq_.q);
-        float v_max = vbus_ * modulation_max_ * 0.9f;
+        const float vd = vd_snapshot_.load(std::memory_order_relaxed);
+        const float vq = vq_snapshot_.load(std::memory_order_relaxed);
+        const float vbus = vbus_snapshot_.load(std::memory_order_relaxed);
+        float v_mag = sqrtf(vd * vd + vq * vq);
+        float v_max = vbus * modulation_max_ * 0.9f;
         if (v_mag > v_max) {
             fw_current_ += 0.01f * (v_mag - v_max);
         } else {
             fw_current_ -= 0.01f;
         }
         fw_current_ = std::clamp(fw_current_, -cfg_.current_bandwidth * 0.1f, 0.0f);
-        id_ref_ = fw_current_ + id_mtpa_;
+        id_ref_.store(fw_current_ + id_mtpa_, std::memory_order_relaxed);
     } else {
-        id_ref_ = id_mtpa_;
+        id_ref_.store(id_mtpa_, std::memory_order_relaxed);
     }
 
-    iq_ref_ = std::clamp(iq_out, -cfg_.current_bandwidth, cfg_.current_bandwidth);
-    return iq_ref_;
+    const float iq_ref = std::clamp(
+        iq_out, -cfg_.current_bandwidth, cfg_.current_bandwidth);
+    iq_ref_.store(iq_ref, std::memory_order_relaxed);
+    return iq_ref;
 }
 
 void FOCController::run_mtpa(float ld, float lq_minus_ld) {
@@ -135,7 +148,8 @@ void FOCController::run_mtpa(float ld, float lq_minus_ld) {
         return;
     }
     // MTPA: id = (flux - sqrt(flux^2 + 8*(Ld-Lq)^2*iq^2)) / (4*(Ld-Lq))
-    float iq_sq = iq_ref_ * iq_ref_;
+    const float iq_ref = iq_ref_.load(std::memory_order_relaxed);
+    float iq_sq = iq_ref * iq_ref;
     float l_diff = lq_minus_ld;
     float disc = 4.0f * l_diff * l_diff * iq_sq;  // simplified
     id_mtpa_ = -disc / (4.0f * l_diff);
@@ -143,7 +157,9 @@ void FOCController::run_mtpa(float ld, float lq_minus_ld) {
 }
 
 void FOCController::pll_update(uint16_t angle, float dt) {
-    int32_t error = static_cast<int32_t>(angle) - static_cast<int32_t>(pll_angle_ & 0xFFFF);
+    const uint32_t pll_angle = pll_angle_.load(std::memory_order_relaxed);
+    int32_t error = static_cast<int32_t>(angle)
+        - static_cast<int32_t>(pll_angle & 0xFFFFU);
     // 归一化到 [-32768, 32767]
     if (error > 32767) error -= 65536;
     if (error < -32768) error += 65536;
@@ -156,8 +172,10 @@ void FOCController::update_pll(int32_t angle_error, float dt) {
     pll_integrator_ += pll_ki_ * pll_error_ * dt;
     float speed = pll_kp_ * pll_error_ + pll_integrator_;
 
-    pll_angle_ = static_cast<uint32_t>(static_cast<int32_t>(pll_angle_) + static_cast<int32_t>(speed * dt));
-    pll_angle_ &= 0xFFFF;
+    const uint32_t pll_angle = pll_angle_.load(std::memory_order_relaxed);
+    const uint32_t next_angle = static_cast<uint32_t>(
+        static_cast<int32_t>(pll_angle) + static_cast<int32_t>(speed * dt));
+    pll_angle_.store(next_angle & 0xFFFFU, std::memory_order_relaxed);
 }
 
 } // namespace foc

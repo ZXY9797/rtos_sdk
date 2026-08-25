@@ -32,9 +32,7 @@ target_link_libraries(${MODULE_NAME}
         boot_common
         drivers
         osal
-        -Wl,--whole-archive
         ble_gr5525
-        -Wl,--no-whole-archive
 )
 
 if(TARGET link)

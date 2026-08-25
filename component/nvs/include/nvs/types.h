@@ -1,41 +1,36 @@
 #pragma once
 
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 
 namespace nvs {
 
-inline constexpr uint16_t kMaxId = 0xFFFE;
-inline constexpr uint16_t kCloseId = 0xFFFF;
-inline constexpr size_t kAteSize = 8;
-inline constexpr uint32_t kBlockSize = 32;
+inline constexpr uint16_t kMaxId = 0xFFFEU;
+inline constexpr uint16_t kCloseId = 0xFFFFU;
+inline constexpr size_t kAteSize = 8U;
 
-// ATE (Allocation Table Entry) — 8 字节，packed
-//
-// on-flash layout (little-endian):
-//   [0..1]  id       (2B)
-//   [2..3]  offset   (2B)  扇区内数据偏移
-//   [4..5]  len      (2B)  数据长度（0=墓碑/删除）
-//   [6]     part     (1B)  保留 (0xFF)
-//   [7]     crc8     (1B)  CRC-8 校验前 7 字节
+// Allocation descriptor. Data grows upward while descriptors grow downward.
+// part=0xA5 and crc8 authenticate this immutable descriptor; a separate
+// write-block-sized marker commits the record after its payload is durable.
 struct __attribute__((packed)) Ate {
-    uint16_t id;
-    uint16_t offset;
-    uint16_t len;
-    uint8_t  part {0xFF};
-    uint8_t  crc8;
+    uint16_t id {};
+    uint16_t offset {};
+    uint16_t len {};
+    uint8_t part {0xFFU};
+    uint8_t crc8 {0xFFU};
 };
 
-static_assert(sizeof(Ate) == kAteSize, "Ate must be 8 bytes");
+static_assert(sizeof(Ate) == kAteSize);
 
 enum class Status : uint8_t {
-    Ok = 0,
+    Ok = 0U,
     NotFound,
     CrcError,
     NoSpace,
     FlashError,
     NotMounted,
     InvalidArgument,
+    MigrationRequired,
 };
 
 } // namespace nvs

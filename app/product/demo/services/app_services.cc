@@ -5,6 +5,7 @@
 
 #include <boot/boot_ctrl.h>
 #include <boot/product_info.h>
+#include <boot_layout.h>
 #include <assert.h>
 #include <device.h>
 #include <device_base.h>
@@ -20,11 +21,12 @@ namespace {
 
 constexpr size_t CLI_POLL_STACK = 512;
 constexpr int32_t CLI_POLL_PRIO = 8;
+osal::PeriodicThread *g_cli_thread = nullptr;
 
 // 产品信息标记区：app 偏移 1KB 处，用于启动加载器校验防误升级。
 __attribute__((section(".product_info"), used))
 const boot::ProductInfo kProductInfo = boot::make_product_info(
-    boot::PRODUCT_ID_DEMO, 0x0100, {1, 0, 0, 0});
+    boot::layout::kProductId, 0x0100, {1, 0, 0, 0});
 
 void cli_poll_entry(void *, const osal::PeriodicStats &) {
     auto &uart = app::board::console();
@@ -37,21 +39,23 @@ void cli_poll_entry(void *, const osal::PeriodicStats &) {
 
 void print_uart_stats(hal::UartBase &uart) {
     auto stats = uart.get_stats();
-    LOGI("demo", "UART Stats: tx=%lu, rx=%lu, overrun=%lu, fe=%lu, pe=%lu",
+    LOGI("demo", "UART Stats: tx=%lu, rx=%lu, overrun=%lu, fe=%lu, "
+         "pe=%lu, tx_timeout=%lu, rx_drop=%lu",
          stats.tx_bytes, stats.rx_bytes,
-         stats.overrun_count, stats.framing_errors, stats.parity_errors);
+         stats.overrun_count, stats.framing_errors, stats.parity_errors,
+         stats.tx_timeouts, stats.rx_dropped);
 }
 
 } // 匿名命名空间
 
 namespace app {
 
-void confirm_boot_image() {
-    boot::confirm_image();
+bool confirm_boot_image() {
+    return boot::confirm_image();
 }
 
-void init_logging() {
-    (void)log_uart(app::board::console(), LogLevel::Info);
+bool init_logging() {
+    return log_uart(app::board::console(), LogLevel::Info) == 0;
 }
 
 void print_device_registry() {
@@ -60,8 +64,10 @@ void print_device_registry() {
 
     LOGI("demo", "--- Device Registry (%zu devices) ---", count);
     for (size_t i = 0; i < count; i++) {
-        LOGI("demo", "  [%zu] %s (ord=%d, type=%s)",
-             i, registry[i].alias, registry[i].ord, registry[i].type_name);
+        const bool ready = registry[i].is_ready(registry[i].instance);
+        LOGI("demo", "  [%zu] %s (ord=%d, type=%s, ready=%s)",
+             i, registry[i].alias, registry[i].ord,
+             registry[i].type_name, ready ? "yes" : "no");
     }
     LOGI("demo", "--------------------------------------");
 }
@@ -71,14 +77,24 @@ void assert_required_devices() {
     HAL_ASSERT(app::board::main_motor().is_initialized());
 }
 
-void start_cli_poll() {
-    auto *cli_thread = osal::PeriodicThread::create("cli_poll",
+int start_cli_poll() {
+    if (g_cli_thread != nullptr) return 0;
+    g_cli_thread = osal::PeriodicThread::create("cli_poll",
         cli_poll_entry, nullptr,
         CLI_POLL_STACK, CLI_POLL_PRIO,
         100, osal::PeriodicTrigger::Tick);
-    if (cli_thread) {
-        (void)cli_thread->startup();
+    if (g_cli_thread == nullptr) return -1;
+    if (g_cli_thread->startup() != 0) {
+        delete g_cli_thread;
+        g_cli_thread = nullptr;
+        return -1;
     }
+    return 0;
+}
+
+void stop_cli_poll() {
+    delete g_cli_thread;
+    g_cli_thread = nullptr;
 }
 
 void print_periodic_diagnostics(uint32_t loop_count) {

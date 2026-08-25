@@ -1,8 +1,6 @@
 set(MODULE_NAME app)
 add_library(${MODULE_NAME} ${NULL_C})
 
-add_subdirectory(${CMAKE_SOURCE_DIR}/component/foc component_foc)
-
 target_include_directories(${MODULE_NAME}
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}
@@ -31,7 +29,6 @@ target_sources(${MODULE_NAME}
         control/controller/pos_controller.cc
         control/controller/calibration.cc
         comm/can_handler.cc
-        ${CMAKE_SOURCE_DIR}/bootloader/product/demo/common/flash_map.cc
         ${DRIVERS_GENERATED_CC}
         ${PINCTRL_GENERATED_CC}
 )

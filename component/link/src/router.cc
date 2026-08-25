@@ -1,151 +1,240 @@
 #include "link/router.h"
-#include "link/link.h"
+
 #include <init.h>
 #include <osal.h>
+
 #include <cstring>
 
 namespace link {
+namespace {
 
-// ── .link_handler section 边界符号 ──
+constexpr uint8_t kProgressStatus = 0x01U;
+
+bool retry_policy(AckMode mode, uint32_t& timeout_ms, uint8_t& max_retry)
+{
+    switch (mode) {
+    case AckMode::Now:
+        timeout_ms = 10U;
+        max_retry = 3U;
+        return true;
+    case AckMode::Finish:
+        timeout_ms = 500U;
+        max_retry = 2U;
+        return true;
+    case AckMode::Progress:
+        timeout_ms = 2000U;
+        max_retry = 1U;
+        return true;
+    default:
+        return false;
+    }
+}
+
+} // namespace
 
 extern "C" {
-    extern const Handler __link_handler_start;
-    extern const Handler __link_handler_end;
+extern const Handler __link_handler_start;
+extern const Handler __link_handler_end;
 }
 
-// ── 单例 ──
-
-Router &Router::instance() {
-    static Router r;
-    return r;
+Router& Router::instance()
+{
+    static Router router;
+    return router;
 }
 
-// ── SYS_INIT 初始化 ──
-
-void Router::init() {
-    // 从全局注册表拷贝已注册的链路
-    link_cnt_ = g_link_registry.cnt;
-    for (size_t i = 0; i < link_cnt_; i++)
+void Router::init()
+{
+    deinit();
+    link_cnt_ = (g_link_registry.cnt <= CONFIG_LINK_MAX_LINKS)
+        ? g_link_registry.cnt : CONFIG_LINK_MAX_LINKS;
+    for (size_t i = 0U; i < link_cnt_; ++i) {
         links_[i] = g_link_registry.links[i];
-
-    // 加载 .link_handler section
+    }
     handlers_ = &__link_handler_start;
     handler_cnt_ = static_cast<size_t>(&__link_handler_end - &__link_handler_start);
 }
 
-// ── 路由表 ──
-
-void Router::set_routes(const RouteEntry *entries, size_t count) {
-    routes_ = entries;
-    route_cnt_ = count;
-}
-
-// ── 链路查找 ──
-
-Link *Router::find_link(uint16_t link_id) {
-    for (size_t i = 0; i < link_cnt_; i++) {
-        if (links_[i] && links_[i]->id() == link_id)
-            return links_[i];
+void Router::deinit()
+{
+    for (size_t i = 0U; i < CONFIG_LINK_MAX_LINKS; ++i) {
+        links_[i] = nullptr;
+        codecs_[i].reset();
     }
-    return nullptr;
+    for (RouteEntry& route : routes_) {
+        route = {};
+    }
+    for (TxPending& pending : pending_) {
+        pending = {};
+    }
+    link_cnt_ = 0U;
+    route_cnt_ = 0U;
+    rr_idx_ = 0U;
+    self_addr_.store(0U, std::memory_order_release);
+    tx_seq_ = 0U;
+    handlers_ = nullptr;
+    handler_cnt_ = 0U;
+    on_timeout_ = nullptr;
+    on_timeout_arg_ = nullptr;
 }
 
-// ── 路由查找 ──
-
-Link *Router::route_lookup(uint8_t receiver, uint16_t in_link_id) {
-    for (size_t i = 0; i < route_cnt_; i++) {
-        auto &r = routes_[i];
-        if (r.mode == RouteMode::Direct) {
-            if (r.match_addr == 0 || r.match_addr == in_link_id)
-                return select_out_link(r);
-        } else {
-            if ((receiver & r.mask) == (r.match_addr & r.mask))
-                return select_out_link(r);
+bool Router::set_routes(const RouteEntry* entries, size_t count)
+{
+    if ((count > 0U && entries == nullptr) || count > CONFIG_LINK_MAX_ROUTES) {
+        return false;
+    }
+    for (size_t i = 0U; i < count; ++i) {
+        if (entries[i].out_cnt == 0U || entries[i].out_cnt > 4U) {
+            return false;
         }
-    }
-    return nullptr;
-}
-
-// ── 多路由 round-robin ──
-
-Link *Router::select_out_link(const RouteEntry &entry) {
-    static uint8_t rr_idx = 0;
-    for (uint8_t i = 0; i < entry.out_cnt; i++) {
-        uint16_t lid = entry.out_links[(rr_idx + i) % entry.out_cnt];
-        Link *l = find_link(lid);
-        if (l && l->is_ready()) {
-            rr_idx = (rr_idx + i + 1) % entry.out_cnt;
-            return l;
-        }
-    }
-    rr_idx++;
-    return (entry.out_cnt > 0) ? find_link(entry.out_links[0]) : nullptr;
-}
-
-// ── 主循环 ──
-
-void Router::process() {
-    uint8_t byte;
-
-    for (size_t i = 0; i < link_cnt_; i++) {
-        if (!links_[i] || !links_[i]->is_ready()) continue;
-
-        while (links_[i]->recv(&byte, 1) == 1) {
-            int ret = codecs_[i].feed(byte);
-            if (ret > 0) {
-                const auto &f = codecs_[i].frame();
-
-                // 本机帧检查
-                bool for_me = (f.receiver_id == self_addr_)
-                           || (f.receiver_id == ADDR_BROADCAST);
-
-                if (!for_me) {
-                    // 路由转发
-                    Link *out = route_lookup(f.receiver_id, links_[i]->id());
-                    if (out) {
-                        out->send(codecs_[i].raw(), codecs_[i].raw_len());
-                    }
-                } else if (f.is_ack()) {
-                    // ACK 帧处理
-                    handle_ack(f);
-                } else {
-                    // 普通帧 → 回调分发
-                    dispatch(links_[i], f);
+        for (uint8_t output = 0U; output < entries[i].out_cnt; ++output) {
+            const uint16_t link_id = entries[i].out_links[output];
+            if (link_id == 0U || find_link(link_id) == nullptr) {
+                return false;
+            }
+            for (uint8_t previous = 0U; previous < output; ++previous) {
+                if (entries[i].out_links[previous] == link_id) {
+                    return false;
                 }
-            } else if (ret < 0) {
-                // 解包错误，状态机已 reset
             }
         }
     }
 
-    // 超时检查
+    osal::LockGuard lock(route_mutex_);
+    if (!lock.owns_lock()) {
+        return false;
+    }
+    for (size_t i = 0U; i < count; ++i) {
+        routes_[i] = entries[i];
+    }
+    route_cnt_ = count;
+    rr_idx_ = 0U;
+    return true;
+}
+
+Link* Router::find_link(uint16_t link_id)
+{
+    for (size_t i = 0U; i < link_cnt_; ++i) {
+        if (links_[i] != nullptr && links_[i]->id() == link_id) {
+            return links_[i];
+        }
+    }
+    return nullptr;
+}
+
+Link* Router::select_out_link(const RouteEntry& entry)
+{
+    if (entry.out_cnt == 0U || entry.out_cnt > 4U) {
+        return nullptr;
+    }
+    for (uint8_t offset = 0U; offset < entry.out_cnt; ++offset) {
+        const uint8_t index = static_cast<uint8_t>((rr_idx_ + offset) % entry.out_cnt);
+        Link* const candidate = find_link(entry.out_links[index]);
+        if (candidate != nullptr && candidate->is_ready()) {
+            rr_idx_ = static_cast<uint8_t>((index + 1U) % entry.out_cnt);
+            return candidate;
+        }
+    }
+    return nullptr;
+}
+
+Link* Router::route_lookup(uint8_t receiver, uint16_t in_link_id)
+{
+    osal::LockGuard lock(route_mutex_);
+    if (!lock.owns_lock()) {
+        return nullptr;
+    }
+    for (size_t i = 0U; i < route_cnt_; ++i) {
+        const RouteEntry& route = routes_[i];
+        const bool matches = (route.mode == RouteMode::Direct)
+            ? (route.match_addr == 0U || route.match_addr == in_link_id)
+            : ((receiver & route.mask)
+               == (static_cast<uint8_t>(route.match_addr) & route.mask));
+        if (matches) {
+            return select_out_link(route);
+        }
+    }
+    return nullptr;
+}
+
+int Router::send_raw(Link* out, const uint8_t* data, size_t len)
+{
+    if (out == nullptr || data == nullptr || len == 0U || !out->is_ready()) {
+        return -1;
+    }
+    osal::LockGuard lock(send_mutex_);
+    return lock.owns_lock() ? out->send(data, len) : -1;
+}
+
+void Router::process()
+{
+    uint8_t byte = 0U;
+    for (size_t i = 0U; i < link_cnt_; ++i) {
+        Link* const input = links_[i];
+        if (input == nullptr || !input->is_ready()) {
+            continue;
+        }
+        while (input->recv(&byte, 1U) == 1) {
+            const int result = codecs_[i].feed(byte);
+            if (result <= 0) {
+                continue;
+            }
+            const Frame& frame = codecs_[i].frame();
+            const bool for_me = frame.receiver_id
+                                  == self_addr_.load(std::memory_order_acquire)
+                             || frame.receiver_id == ADDR_BROADCAST;
+            if (!for_me) {
+                Link* const output = route_lookup(frame.receiver_id, input->id());
+                if (output != nullptr) {
+                    (void)send_raw(output, codecs_[i].raw(), codecs_[i].raw_len());
+                }
+            } else if (frame.enc_mode() != EncMode::None) {
+                continue;
+            } else if (frame.is_ack()) {
+                handle_ack(frame);
+            } else {
+                dispatch(input, frame);
+            }
+        }
+    }
     check_timeout();
 }
 
-// ── 帧分发 ──
-
-void Router::dispatch(Link *src, const Frame &frame) {
-    for (size_t i = 0; i < handler_cnt_; i++) {
-        auto &h = handlers_[i];
-        if (h.cmd_set == frame.cmd_set && h.cmd_id == frame.cmd_id) {
-            if (h.cb) h.cb(frame, h.arg);
+void Router::dispatch(Link* src, const Frame& frame)
+{
+    (void)src;
+    for (size_t i = 0U; i < handler_cnt_; ++i) {
+        const Handler& handler = handlers_[i];
+        if (handler.cmd_set == frame.cmd_set && handler.cmd_id == frame.cmd_id) {
+            if (handler.cb != nullptr) {
+                handler.cb(frame, handler.arg);
+            }
             return;
         }
     }
 }
 
-// ── 发送 ──
-
 int Router::send(uint8_t receiver, uint8_t cmd_set, uint8_t cmd_id,
-                 const uint8_t *data, uint8_t data_len,
-                 uint8_t ack_mode, uint8_t enc_mode,
-                 uint8_t priority) {
-    // 路由查找
-    Link *out = route_lookup(receiver, 0);
-    if (!out) return -1;
+                 const uint8_t* data, size_t data_len, uint8_t ack_mode,
+                 uint8_t enc_mode, uint8_t priority)
+{
+    if ((data_len > 0U && data == nullptr)
+        || ack_mode > static_cast<uint8_t>(AckMode::Progress)
+        || enc_mode != static_cast<uint8_t>(EncMode::None)
+        || priority > static_cast<uint8_t>(Priority::High)) {
+        return -2;
+    }
+    Link* const output = route_lookup(receiver, 0U);
+    if (output == nullptr) {
+        return -1;
+    }
 
+    osal::LockGuard send_lock(send_mutex_);
+    if (!send_lock.owns_lock()) {
+        return -1;
+    }
     PackArgs args {};
-    args.sender = self_addr_;
+    args.sender = self_addr_.load(std::memory_order_acquire);
     args.receiver = receiver;
     args.cmd_set = cmd_set;
     args.cmd_id = cmd_id;
@@ -154,182 +243,258 @@ int Router::send(uint8_t receiver, uint8_t cmd_set, uint8_t cmd_id,
     args.priority = static_cast<Priority>(priority);
     args.seq = tx_seq_++;
 
-    uint8_t frame_buf[CONFIG_LINK_MAX_FRAME_SIZE];
-    size_t frame_len = FrameCodec::pack(frame_buf, sizeof(frame_buf),
-                                        args, data, data_len);
-    if (frame_len == 0) return -2;
-
-    int sent = out->send(frame_buf, frame_len);
-
-    // 需要 ACK 时入待确认队列
-    if (ack_mode != 0 && sent > 0) {
-        // 找到目标链路索引
-        uint8_t link_idx = 0;
-        for (size_t i = 0; i < link_cnt_; i++) {
-            if (links_[i] == out) { link_idx = static_cast<uint8_t>(i); break; }
-        }
-        add_pending(args.seq, ack_mode, link_idx, frame_buf, static_cast<uint16_t>(frame_len));
+    uint8_t frame_buf[CONFIG_LINK_MAX_FRAME_SIZE] {};
+    const size_t frame_len = FrameCodec::pack(frame_buf, sizeof(frame_buf),
+                                              args, data, data_len);
+    if (frame_len == 0U) {
+        return -2;
     }
 
+    int pending_index = -1;
+    if (args.ack_mode != AckMode::No) {
+        size_t link_index = link_cnt_;
+        for (size_t i = 0U; i < link_cnt_; ++i) {
+            if (links_[i] == output) {
+                link_index = i;
+                break;
+            }
+        }
+        if (link_index >= link_cnt_ || link_index > UINT8_MAX) {
+            return -1;
+        }
+        pending_index = add_pending(args.seq, ack_mode,
+                                    static_cast<uint8_t>(link_index), frame_buf,
+                                    static_cast<uint16_t>(frame_len));
+        if (pending_index < 0) {
+            return -3;
+        }
+    }
+    const int sent = output->send(frame_buf, frame_len);
+    if (sent != static_cast<int>(frame_len) && pending_index >= 0) {
+        remove_pending(args.seq);
+    }
     return sent;
 }
 
-// ── ACK 处理 ──
-
-void Router::handle_ack(const Frame &frame) {
-    // ACK data[0]: status — 0x00=成功, 0x01=执行中(进度)
-    uint8_t status = (frame.data_len > 0) ? frame.data[0] : 0x00;
-
-    // 查找对应的 pending 条目
-    for (int i = 0; i < CONFIG_LINK_MAX_PENDING; i++) {
-        if (pending_[i].used && pending_[i].seq == frame.seq) {
-            if (status == 0x01 && pending_[i].ack_mode == static_cast<uint8_t>(AckMode::Progress)) {
-                // 进度 ACK：重置定时器，保持 pending
-                pending_[i].send_tick = get_tick_ms();
-                pending_[i].retry_cnt = 0;
-            } else {
-                // 最终 ACK：移除
-                pending_[i].used = false;
-            }
-            return;
+void Router::handle_ack(const Frame& frame)
+{
+    const uint8_t status = (frame.data_len > 0U && frame.data != nullptr)
+        ? frame.data[0] : 0U;
+    osal::LockGuard lock(pending_mutex_);
+    if (!lock.owns_lock()) {
+        return;
+    }
+    for (TxPending& pending : pending_) {
+        if (!pending.used || pending.seq != frame.seq) {
+            continue;
         }
+        if (status == kProgressStatus
+            && pending.ack_mode == static_cast<uint8_t>(AckMode::Progress)) {
+            pending.send_tick = get_tick_ms();
+            pending.retry_cnt = 0U;
+        } else {
+            pending.used = false;
+        }
+        return;
     }
 }
 
-void Router::send_ack(Link *out, const Frame &req, uint8_t status,
-                      const uint8_t *data, uint8_t data_len) {
+void Router::send_ack(Link* out, const Frame& req, uint8_t status,
+                      const uint8_t* data, size_t data_len)
+{
+    if (out == nullptr || (data_len > 0U && data == nullptr)) {
+        return;
+    }
+    uint8_t ack_data[CONFIG_LINK_MAX_FRAME_SIZE - HEADER_SIZE - CRC_SIZE] {};
+    const size_t copy_len = (data_len < (sizeof(ack_data) - 1U))
+        ? data_len : (sizeof(ack_data) - 1U);
+    ack_data[0] = status;
+    if (copy_len > 0U) {
+        std::memcpy(&ack_data[1], data, copy_len);
+    }
+
     PackArgs args {};
-    args.sender = self_addr_;
+    args.sender = self_addr_.load(std::memory_order_acquire);
     args.receiver = req.sender_id;
     args.cmd_set = req.cmd_set;
     args.cmd_id = req.cmd_id;
-    args.ack_mode = AckMode::No;
     args.is_ack = true;
     args.seq = req.seq;
-
-    // 构建 ACK data: [status | original data...]
-    uint8_t ack_data[CONFIG_LINK_MAX_FRAME_SIZE - HEADER_SIZE - CRC_SIZE];
-    size_t ack_data_len = 1 + data_len;
-    if (ack_data_len > sizeof(ack_data)) ack_data_len = sizeof(ack_data);
-    ack_data[0] = status;
-    if (data_len > 0 && data)
-        memcpy(ack_data + 1, data, data_len);
-
-    uint8_t frame_buf[CONFIG_LINK_MAX_FRAME_SIZE];
-    size_t frame_len = FrameCodec::pack(frame_buf, sizeof(frame_buf),
-                                        args, ack_data, static_cast<uint8_t>(ack_data_len));
-    if (frame_len > 0)
-        out->send(frame_buf, frame_len);
+    uint8_t frame_buf[CONFIG_LINK_MAX_FRAME_SIZE] {};
+    const size_t frame_len = FrameCodec::pack(frame_buf, sizeof(frame_buf), args,
+                                              ack_data, copy_len + 1U);
+    if (frame_len > 0U) {
+        (void)send_raw(out, frame_buf, frame_len);
+    }
 }
 
-// ── TxPending 管理 ──
-
 int Router::add_pending(uint16_t seq, uint8_t ack_mode, uint8_t link_idx,
-                        const uint8_t *raw, uint16_t raw_len) {
-    for (int i = 0; i < CONFIG_LINK_MAX_PENDING; i++) {
-        if (!pending_[i].used) {
-            pending_[i].seq = seq;
-            pending_[i].ack_mode = ack_mode;
-            pending_[i].send_tick = get_tick_ms();
-            pending_[i].retry_cnt = 0;
-            pending_[i].out_link_idx = link_idx;
-            pending_[i].raw_len = raw_len;
-            if (raw_len <= CONFIG_LINK_MAX_FRAME_SIZE)
-                memcpy(pending_[i].raw_frame, raw, raw_len);
-            pending_[i].used = true;
-            return i;
+                        const uint8_t* raw, uint16_t raw_len)
+{
+    if (raw == nullptr || raw_len < MIN_FRAME_SIZE
+        || raw_len > CONFIG_LINK_MAX_FRAME_SIZE || link_idx >= link_cnt_) {
+        return -1;
+    }
+    osal::LockGuard lock(pending_mutex_);
+    if (!lock.owns_lock()) {
+        return -1;
+    }
+    for (size_t i = 0U; i < CONFIG_LINK_MAX_PENDING; ++i) {
+        TxPending& pending = pending_[i];
+        if (!pending.used) {
+            pending.seq = seq;
+            pending.ack_mode = ack_mode;
+            pending.send_tick = get_tick_ms();
+            pending.retry_cnt = 0U;
+            pending.out_link_idx = link_idx;
+            pending.raw_len = raw_len;
+            std::memcpy(pending.raw_frame, raw, raw_len);
+            pending.used = true;
+            return static_cast<int>(i);
         }
     }
     return -1;
 }
 
-void Router::remove_pending(uint16_t seq) {
-    for (int i = 0; i < CONFIG_LINK_MAX_PENDING; i++) {
-        if (pending_[i].used && pending_[i].seq == seq) {
-            pending_[i].used = false;
+void Router::remove_pending(uint16_t seq)
+{
+    osal::LockGuard lock(pending_mutex_);
+    if (!lock.owns_lock()) {
+        return;
+    }
+    for (TxPending& pending : pending_) {
+        if (pending.used && pending.seq == seq) {
+            pending.used = false;
             return;
         }
     }
 }
 
-// ── 超时检查 ──
+void Router::check_timeout()
+{
+    const uint32_t now = get_tick_ms();
+    for (size_t i = 0U; i < CONFIG_LINK_MAX_PENDING; ++i) {
+        bool notify_timeout = false;
+        uint16_t seq = 0U;
+        uint8_t receiver = 0U;
+        uint8_t cmd_set = 0U;
+        uint8_t cmd_id = 0U;
 
-void Router::check_timeout() {
-    uint32_t now = get_tick_ms();
-
-    for (int i = 0; i < CONFIG_LINK_MAX_PENDING; i++) {
-        if (!pending_[i].used) continue;
-
-        uint32_t timeout_ms;
-        uint8_t max_retry;
-
-        switch (static_cast<AckMode>(pending_[i].ack_mode)) {
-        case AckMode::Now:      timeout_ms = 10;    max_retry = 3; break;
-        case AckMode::Finish:   timeout_ms = 500;   max_retry = 2; break;
-        case AckMode::Progress: timeout_ms = 2000;  max_retry = 1; break;
-        default: pending_[i].used = false; continue;
-        }
-
-        if (now - pending_[i].send_tick < timeout_ms) continue;
-
-        if (pending_[i].retry_cnt >= max_retry) {
-            // 超时，通知上层
-            if (on_timeout_ && pending_[i].raw_len >= HEADER_SIZE) {
-                uint8_t receiver = pending_[i].raw_frame[6];
-                uint8_t cmd_set  = pending_[i].raw_frame[9];
-                uint8_t cmd_id   = pending_[i].raw_frame[10];
-                on_timeout_(pending_[i].seq, receiver, cmd_set, cmd_id, on_timeout_arg_);
+        {
+            // Keep the same global lock order as send(): send -> pending.
+            osal::LockGuard send_lock(send_mutex_);
+            osal::LockGuard pending_lock(pending_mutex_);
+            if (!send_lock.owns_lock() || !pending_lock.owns_lock()) {
+                return;
             }
-            pending_[i].used = false;
-            continue;
+            TxPending& pending = pending_[i];
+            if (!pending.used) {
+                continue;
+            }
+            uint32_t timeout_ms = 0U;
+            uint8_t max_retry = 0U;
+            if (!retry_policy(static_cast<AckMode>(pending.ack_mode),
+                              timeout_ms, max_retry)) {
+                pending.used = false;
+                continue;
+            }
+            if ((now - pending.send_tick) < timeout_ms) {
+                continue;
+            }
+            if (pending.retry_cnt >= max_retry) {
+                if (pending.raw_len >= HEADER_SIZE) {
+                    seq = pending.seq;
+                    receiver = pending.raw_frame[6];
+                    cmd_set = pending.raw_frame[9];
+                    cmd_id = pending.raw_frame[10];
+                    notify_timeout = true;
+                }
+                pending.used = false;
+            } else {
+                pending.raw_frame[4] |= static_cast<uint8_t>(
+                    1U << CMD_TYPE_RETRANSMIT_SHIFT);
+                const size_t crc_offset = pending.raw_len - CRC_SIZE;
+                const uint16_t crc = crc16_ccitt(pending.raw_frame, crc_offset);
+                pending.raw_frame[crc_offset] = static_cast<uint8_t>(crc & 0xFFU);
+                pending.raw_frame[crc_offset + 1U] = static_cast<uint8_t>(crc >> 8U);
+                Link* output = nullptr;
+                if (pending.out_link_idx < link_cnt_) {
+                    output = links_[pending.out_link_idx];
+                }
+                if (output != nullptr && output->is_ready()) {
+                    (void)output->send(pending.raw_frame, pending.raw_len);
+                }
+                pending.retry_cnt++;
+                pending.send_tick = now;
+            }
         }
 
-        // 重传：设置 retransmit 位
-        if (pending_[i].raw_len > HEADER_SIZE) {
-            pending_[i].raw_frame[4] |= (1 << CMD_TYPE_RETRANSMIT_SHIFT);
+        TimeoutCallback callback = nullptr;
+        void* callback_arg = nullptr;
+        {
+            osal::LockGuard callback_lock(callback_mutex_);
+            if (callback_lock.owns_lock()) {
+                callback = on_timeout_;
+                callback_arg = on_timeout_arg_;
+            }
         }
-
-        Link *out = links_[pending_[i].out_link_idx];
-        if (out && out->is_ready()) {
-            out->send(pending_[i].raw_frame, pending_[i].raw_len);
+        if (notify_timeout && callback != nullptr) {
+            callback(seq, receiver, cmd_set, cmd_id, callback_arg);
         }
-
-        pending_[i].retry_cnt++;
-        pending_[i].send_tick = now;
     }
 }
 
-// ── 系统 tick ──
-
-uint32_t Router::get_tick_ms() {
+uint32_t Router::get_tick_ms()
+{
     return osal::Kernel::uptime_ms();
 }
 
 } // namespace link
 
-// ── Link 处理任务 ──
+namespace {
 
-static void link_process_entry(void *, const osal::PeriodicStats &) {
-    auto &router = link::Router::instance();
-    // 轮询所有链路（如 CAN 分片重组）
-    for (size_t i = 0; i < router.link_count(); i++) {
-        auto *l = router.find_link_by_index(i);
-        if (l) l->poll();
+osal::PeriodicThread* g_link_thread = nullptr;
+
+void link_process_entry(void*, const osal::PeriodicStats&)
+{
+    link::Router& router = link::Router::instance();
+    for (size_t i = 0U; i < router.link_count(); ++i) {
+        link::Link* const physical_link = router.find_link_by_index(i);
+        if (physical_link != nullptr) {
+            physical_link->poll();
+        }
     }
     router.process();
 }
 
-// ── SYS_INIT 自动初始化 ──
-
-static int link_sys_init(void) {
+int link_sys_init()
+{
+    if (g_link_thread != nullptr) {
+        return 0;
+    }
     link::Router::instance().init();
-
-    auto *thread = osal::PeriodicThread::create(
+    g_link_thread = osal::PeriodicThread::create(
         "link", link_process_entry, nullptr,
         CONFIG_LINK_PROCESS_STACK, CONFIG_LINK_PROCESS_PRIO,
         CONFIG_LINK_PROCESS_HZ, osal::PeriodicTrigger::Tick);
-    if (thread) (void)thread->startup();
-
+    if (g_link_thread == nullptr || g_link_thread->startup() != 0) {
+        delete g_link_thread;
+        g_link_thread = nullptr;
+        link::Router::instance().deinit();
+        return -1;
+    }
     return 0;
 }
-SYS_INIT(link_sys_init, INITCALL_LEVEL_POST_KERNEL, 20);
+
+int link_sys_deinit()
+{
+    delete g_link_thread;
+    g_link_thread = nullptr;
+    link::Router::instance().deinit();
+    return 0;
+}
+
+} // namespace
+
+SYS_INIT_ROLLBACK(link_sys_init, link_sys_deinit,
+                  INITCALL_LEVEL_POST_KERNEL, 20);

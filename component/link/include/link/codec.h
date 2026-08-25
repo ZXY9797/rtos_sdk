@@ -6,6 +6,10 @@
 #define CONFIG_LINK_MAX_FRAME_SIZE 512
 #endif
 
+#if CONFIG_LINK_MAX_FRAME_SIZE > 1023
+#error "CONFIG_LINK_MAX_FRAME_SIZE exceeds the 10-bit wire length field"
+#endif
+
 namespace link {
 
 struct PackArgs {
@@ -35,7 +39,7 @@ public:
     // 打包一帧到 buf，返回帧总长
     static size_t pack(uint8_t *buf, size_t buf_size,
                        const PackArgs &args,
-                       const uint8_t *data, uint8_t data_len);
+                       const uint8_t *data, size_t data_len);
 
     // 重置状态机
     void reset();
@@ -45,13 +49,18 @@ private:
     size_t widx_ {0};
     Frame frame_ {};
 
-    enum class State : uint8_t { SearchSof, FetchVerLen, CheckHead, FetchData, CheckCrc };
+    enum class State : uint8_t {
+        SearchSof,
+        FetchVerLen,
+        CheckHead,
+        FetchData,
+    };
     State state_ {State::SearchSof};
 
     // 临时变量
-    uint8_t  ver_len_lo_ {0};
     uint16_t expected_len_ {0};
 
+    void prepare_next_frame();
     void parse_header();
     bool check_crc();
 };

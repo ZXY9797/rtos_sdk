@@ -38,10 +38,14 @@ void Svpwm::generate(const Vec2 &v_ab, float vbus, uint32_t period,
     vw += v_zero;
 
     // 归一化到 [0, period]
-    float inv_vbus = static_cast<float>(period) / vbus;
-    duty_u = static_cast<uint32_t>(std::clamp(vu * inv_vbus, 0.0f, static_cast<float>(period)));
-    duty_v = static_cast<uint32_t>(std::clamp(vv * inv_vbus, 0.0f, static_cast<float>(period)));
-    duty_w = static_cast<uint32_t>(std::clamp(vw * inv_vbus, 0.0f, static_cast<float>(period)));
+    const float half_period = static_cast<float>(period) * 0.5f;
+    const float volts_to_count = static_cast<float>(period) / vbus;
+    duty_u = static_cast<uint32_t>(std::clamp(
+        half_period + vu * volts_to_count, 0.0f, static_cast<float>(period)));
+    duty_v = static_cast<uint32_t>(std::clamp(
+        half_period + vv * volts_to_count, 0.0f, static_cast<float>(period)));
+    duty_w = static_cast<uint32_t>(std::clamp(
+        half_period + vw * volts_to_count, 0.0f, static_cast<float>(period)));
 }
 
 } // namespace foc

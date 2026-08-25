@@ -17,32 +17,50 @@ class Reassembler {
 public:
     static constexpr size_t MAX_FRAME = CONFIG_LINK_MAX_FRAME_SIZE;
 
-    void append(const uint8_t *data, size_t len) {
-        if (widx_ + len > MAX_FRAME) { reset(); return; }
+    bool append_fragment(uint8_t index, const uint8_t *data, size_t len,
+                         bool last) {
+        if (ready_ || data == nullptr || len == 0U
+            || index != expected_index_ || widx_ + len > MAX_FRAME) {
+            reset();
+            return false;
+        }
         memcpy(buf_ + widx_, data, len);
         widx_ += len;
-    }
-
-    void finish() {
-        ready_ = true;
-        ready_len_ = widx_;
+        expected_index_ = static_cast<uint8_t>((expected_index_ + 1U) & 0x7FU);
+        if (last) {
+            ready_ = true;
+            ready_len_ = widx_;
+            read_idx_ = 0U;
+        }
+        return true;
     }
 
     int read(uint8_t *buf, size_t max_len) {
-        if (!ready_) return 0;
-        size_t n = (ready_len_ < max_len) ? ready_len_ : max_len;
-        memcpy(buf, buf_, n);
-        ready_ = false;
-        widx_ = 0;
+        if (!ready_ || buf == nullptr || max_len == 0U) return 0;
+        const size_t remaining = ready_len_ - read_idx_;
+        const size_t n = (remaining < max_len) ? remaining : max_len;
+        memcpy(buf, buf_ + read_idx_, n);
+        read_idx_ += n;
+        if (read_idx_ == ready_len_) {
+            reset();
+        }
         return static_cast<int>(n);
     }
 
-    void reset() { widx_ = 0; ready_ = false; }
+    void reset() {
+        widx_ = 0U;
+        read_idx_ = 0U;
+        ready_len_ = 0U;
+        expected_index_ = 0U;
+        ready_ = false;
+    }
 
 private:
     uint8_t buf_[MAX_FRAME] {};
     size_t widx_ {0};
+    size_t read_idx_ {0};
     size_t ready_len_ {0};
+    uint8_t expected_index_ {0U};
     bool ready_ {false};
 };
 
@@ -57,12 +75,17 @@ public:
     template<typename SendFn>
     static int send(const uint8_t *data, size_t len, size_t frag_payload,
                     SendFn &&send_fn) {
+        if ((len > 0U && data == nullptr) || len > Reassembler::MAX_FRAME
+            || frag_payload == 0U || frag_payload > Reassembler::MAX_FRAME
+            || len > 128U * frag_payload) {
+            return -1;
+        }
         size_t off = 0;
         uint8_t idx = 0;
         while (off < len) {
             size_t n = len - off;
             if (n > frag_payload) n = frag_payload;
-            uint8_t frag[1 + 64]; // frag_hdr + max CAN FD payload
+            uint8_t frag[1 + Reassembler::MAX_FRAME];
             frag[0] = idx | (off + n >= len ? 0x80 : 0);
             memcpy(frag + 1, data + off, n);
             if (!send_fn(frag, n + 1)) return static_cast<int>(off);
@@ -76,10 +99,10 @@ public:
     // 返回 true 表示重组完成（最后一片已收到）
     static bool recv(const uint8_t *frame, size_t frame_len, Reassembler &reasm) {
         if (frame_len < 2) return false;
-        bool last = frame[0] & 0x80;
-        reasm.append(frame + 1, frame_len - 1);
-        if (last) reasm.finish();
-        return last;
+        const bool last = (frame[0] & 0x80U) != 0U;
+        const uint8_t index = frame[0] & 0x7FU;
+        return reasm.append_fragment(index, frame + 1U, frame_len - 1U, last)
+            && last;
     }
 };
 

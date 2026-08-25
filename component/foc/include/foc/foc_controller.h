@@ -3,6 +3,7 @@
 #include "types.h"
 #include "svpwm.h"
 #include <algo/pid_controller.h>
+#include <atomic>
 #include <cstdint>
 
 namespace foc {
@@ -34,15 +35,16 @@ public:
     // 电流环 — ISR 中调用
     void update_current(const Vec3 &i_abc, float vbus, uint16_t angle,
                         const SinCos &sc,
+                        uint32_t pwm_period,
                         uint32_t &duty_u, uint32_t &duty_v, uint32_t &duty_w);
 
     // 速度环 — 慢循环中调用
     float update_speed(float speed_rpm, float dt);
 
     // 参考值设置
-    void set_iq_ref(float iq) { iq_ref_ = iq; }
-    void set_id_ref(float id) { id_ref_ = id; }
-    void set_speed_ref(float rpm) { speed_ref_ = rpm; }
+    void set_iq_ref(float iq) { iq_ref_.store(iq, std::memory_order_relaxed); }
+    void set_id_ref(float id) { id_ref_.store(id, std::memory_order_relaxed); }
+    void set_speed_ref(float rpm) { speed_ref_.store(rpm, std::memory_order_relaxed); }
 
     // 参数计算
     void calculate_gains(float rs, float ld, float lq, float flux, uint8_t pp);
@@ -50,14 +52,14 @@ public:
     void run_mtpa(float ld, float lq_minus_ld);
 
     // 状态读取
-    float id() const { return idq_.d; }
-    float iq() const { return idq_.q; }
-    float vd() const { return vdq_.d; }
-    float vq() const { return vdq_.q; }
-    float speed_rpm() const { return mech_rpm_; }
-    float e_hz() const { return e_hz_; }
-    float id_ref() const { return id_ref_; }
-    float iq_ref() const { return iq_ref_; }
+    float id() const { return id_snapshot_.load(std::memory_order_relaxed); }
+    float iq() const { return iq_snapshot_.load(std::memory_order_relaxed); }
+    float vd() const { return vd_snapshot_.load(std::memory_order_relaxed); }
+    float vq() const { return vq_snapshot_.load(std::memory_order_relaxed); }
+    float speed_rpm() const { return mech_rpm_.load(std::memory_order_relaxed); }
+    float e_hz() const { return e_hz_.load(std::memory_order_relaxed); }
+    float id_ref() const { return id_ref_.load(std::memory_order_relaxed); }
+    float iq_ref() const { return iq_ref_.load(std::memory_order_relaxed); }
 
     // 死区补偿
     void set_dead_time_comp(const DeadTimeCompConfig &cfg) { dt_comp_ = cfg; }
@@ -67,7 +69,9 @@ public:
 
     // PLL 角度追踪
     void pll_update(uint16_t angle, float dt);
-    uint16_t pll_angle() const { return pll_angle_; }
+    uint16_t pll_angle() const {
+        return static_cast<uint16_t>(pll_angle_.load(std::memory_order_relaxed));
+    }
 
 private:
     FOCConfig cfg_;
@@ -89,11 +93,18 @@ private:
     float vab_to_pwm_ {0.0f};
 
     // 速度相关
-    float e_hz_ {0.0f};
-    float mech_rpm_ {0.0f};
-    float speed_ref_ {0.0f};
-    float id_ref_ {0.0f};
-    float iq_ref_ {0.0f};
+    std::atomic<float> e_hz_ {0.0F};
+    std::atomic<float> mech_rpm_ {0.0F};
+    std::atomic<float> speed_ref_ {0.0F};
+    std::atomic<float> id_ref_ {0.0F};
+    std::atomic<float> iq_ref_ {0.0F};
+
+    // ISR publications. Thread-context readers never access idq_/vdq_ directly.
+    std::atomic<float> id_snapshot_ {0.0F};
+    std::atomic<float> iq_snapshot_ {0.0F};
+    std::atomic<float> vd_snapshot_ {0.0F};
+    std::atomic<float> vq_snapshot_ {0.0F};
+    std::atomic<float> vbus_snapshot_ {0.0F};
 
     // 弱磁
     float fw_current_ {0.0f};
@@ -110,7 +121,7 @@ private:
     float pll_ki_ {0.0f};
     float pll_error_ {0.0f};
     float pll_integrator_ {0.0f};
-    uint32_t pll_angle_ {0};
+    std::atomic<uint32_t> pll_angle_ {0U};
 
     // 死区补偿
     DeadTimeCompConfig dt_comp_;

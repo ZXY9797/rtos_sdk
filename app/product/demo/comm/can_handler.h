@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+namespace hal { class Can; }
+
 enum class CanCmd : uint8_t {
     Enable          = 0x01,
     Disable         = 0x02,
@@ -30,7 +32,8 @@ class CanHandler {
 public:
     using CmdCallback = void(*)(CanCmd cmd, const uint8_t *data, uint8_t len);
 
-    void init(uint32_t base_id);
+    void init(uint32_t base_id, hal::Can &can);
+    void deinit();
     bool process();
 
     void report_status(uint8_t state, uint32_t error_flags);
@@ -49,6 +52,7 @@ private:
     bool send(uint32_t id, const uint8_t *data, uint8_t len);
     bool ready_ {false};
     CmdCallback callback_ {nullptr};
+    hal::Can *can_ {nullptr};
 
     void dispatch(uint32_t id, const uint8_t *data, uint8_t len);
 };

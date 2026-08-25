@@ -16,6 +16,8 @@ extern "C" {
 
 #include "ble_cfg.h"
 
+#include <atomic>
+
 /* Stub for BLE SDK internal logging — not provided by the SDK library */
 extern "C" void stack_raw_log_output(const char *fmt, ...) { (void)fmt; }
 
@@ -25,11 +27,13 @@ namespace ble {
 static STACK_HEAP_INIT(s_heaps_table);
 
 /* ---- Static state (ISR/callback-safe: volatile for cross-context access) ---- */
-static volatile EventCallback s_event_cb = nullptr;
-static volatile void *s_event_user_data = nullptr;
-static volatile bool s_is_connected = false;
-static volatile uint8_t s_conn_idx = 0;
-static BdAddr s_peer_addr{}; // 仅在 BLE 回调中写入，读取时已稳定
+static std::atomic<EventCallback> s_event_cb {nullptr};
+static std::atomic<void *> s_event_user_data {nullptr};
+static std::atomic<bool> s_is_connected {false};
+static std::atomic<uint8_t> s_conn_idx {0U};
+static std::atomic<uint32_t> s_peer_sequence {0U};
+static std::atomic<uint8_t> s_peer_addr[6] {};
+static std::atomic<uint8_t> s_peer_addr_type {0U};
 static StackConfig s_cfg{};
 
 /* ---- GR5525 event → ble::Event translation ---- */
@@ -53,19 +57,27 @@ static void gr5525_evt_handler(const ble_evt_t *p_evt) {
     case BLE_GAPC_EVT_CONNECTED:
         evt.id = EventId::Connected;
         evt.conn_idx = p_evt->evt.gapc_evt.index;
-        s_is_connected = true;
-        s_conn_idx = evt.conn_idx;
-        memcpy(s_peer_addr.addr,
-               p_evt->evt.gapc_evt.params.connected.peer_addr.addr, 6);
-        s_peer_addr.addr_type = p_evt->evt.gapc_evt.params.connected.peer_addr_type;
-        evt.peer_addr = s_peer_addr;
+        s_is_connected.store(true, std::memory_order_release);
+        s_conn_idx.store(evt.conn_idx, std::memory_order_release);
+        s_peer_sequence.fetch_add(1U, std::memory_order_acq_rel);
+        memcpy(evt.peer_addr.addr,
+               p_evt->evt.gapc_evt.params.connected.peer_addr.addr, 6U);
+        evt.peer_addr.addr_type =
+            p_evt->evt.gapc_evt.params.connected.peer_addr_type;
+        for (size_t i = 0U; i < 6U; ++i) {
+            s_peer_addr[i].store(evt.peer_addr.addr[i],
+                                 std::memory_order_relaxed);
+        }
+        s_peer_addr_type.store(evt.peer_addr.addr_type,
+                               std::memory_order_relaxed);
+        s_peer_sequence.fetch_add(1U, std::memory_order_release);
         break;
 
     case BLE_GAPC_EVT_DISCONNECTED:
         evt.id = EventId::Disconnected;
         evt.conn_idx = p_evt->evt.gapc_evt.index;
         evt.disconnect_reason = p_evt->evt.gapc_evt.params.disconnected.reason;
-        s_is_connected = false;
+        s_is_connected.store(false, std::memory_order_release);
         break;
 
     case BLE_GAPC_EVT_CONN_PARAM_UPDATE_REQ:
@@ -94,16 +106,17 @@ static void gr5525_evt_handler(const ble_evt_t *p_evt) {
         return; // Don't dispatch unhandled events
     }
 
-    if (s_event_cb) {
-        s_event_cb(evt, const_cast<void *>(static_cast<const volatile void *>(s_event_user_data)));
+    const EventCallback callback = s_event_cb.load(std::memory_order_acquire);
+    if (callback != nullptr) {
+        callback(evt, s_event_user_data.load(std::memory_order_acquire));
     }
 }
 
 /* ---- BleStack implementation ---- */
 
 Status BleStack::init(const StackConfig &cfg, EventCallback cb, void *user_data) {
-    s_event_cb = cb;
-    s_event_user_data = user_data;
+    s_event_user_data.store(user_data, std::memory_order_release);
+    s_event_cb.store(cb, std::memory_order_release);
     s_cfg = cfg;
 
     // Initialize BLE stack (creates internal BLE task)
@@ -196,9 +209,31 @@ Status BleStack::adv_stop() {
     return Status::Ok;
 }
 
-bool BleStack::is_connected() const { return s_is_connected; }
-uint8_t BleStack::conn_index() const { return s_conn_idx; }
-BdAddr BleStack::peer_addr() const { return s_peer_addr; }
+bool BleStack::is_connected() const {
+    return s_is_connected.load(std::memory_order_acquire);
+}
+uint8_t BleStack::conn_index() const {
+    return s_conn_idx.load(std::memory_order_acquire);
+}
+BdAddr BleStack::peer_addr() const {
+    BdAddr snapshot {};
+    uint32_t before = 0U;
+    uint32_t after = 0U;
+    do {
+        before = s_peer_sequence.load(std::memory_order_acquire);
+        if ((before & 1U) != 0U) {
+            continue;
+        }
+        for (size_t i = 0U; i < 6U; ++i) {
+            snapshot.addr[i] =
+                s_peer_addr[i].load(std::memory_order_relaxed);
+        }
+        snapshot.addr_type =
+            s_peer_addr_type.load(std::memory_order_relaxed);
+        after = s_peer_sequence.load(std::memory_order_acquire);
+    } while (before != after);
+    return snapshot;
+}
 
 Status BleStack::conn_param_update(uint8_t conn_idx, const ConnParam &param) {
     ble_gap_conn_update_param_t p{};

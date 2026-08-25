@@ -43,32 +43,6 @@
         };
     };
 
-    flash0: flash@8000000 {
-        compatible = "soc-nv-flash";
-        reg = <0x08000000 0x60000>;  /* 384KB */
-        erase-block-size = <2048>;    /* 2KB sector */
-        write-block-size = <4>;
-
-        partitions {
-            compatible = "fixed-partitions";
-            #address-cells = <1>;
-            #size-cells = <1>;
-
-            slot0_partition: partition@8000 {
-                label = "slot0";
-                reg = <0x8000 0x28000>;  /* 160KB */
-            };
-            upgrade_partition: partition@30000 {
-                label = "upgrade";
-                reg = <0x30000 0x28000>;  /* 160KB */
-            };
-            storage_partition: partition@58000 {
-                label = "storage";
-                reg = <0x58000 0x8000>;   /* 32KB */
-            };
-        };
-    };
-
     aliases {
         led0 = &green_led;
         key0 = &user_key;
@@ -78,6 +52,7 @@
         tim5 = &timer5;
         tim6 = &timer6;
         adc0 = &adc0;
+        can0 = &can0;
         motor0 = &motor0;
         imu0 = &imu0;
     };
@@ -136,7 +111,7 @@
                 accel-fs = <0>;
                 gyro-fs = <0>;
                 sample-rate = <16000>;
-                cs-gpios = <&gpiob 6 0>;
+                cs-gpios = <&gpiob 6 1>;
                 label = "IMU0";
             };
         };
@@ -229,6 +204,17 @@
             #io-channel-cells = <1>;
         };
 
+        can0: can@40006400 {
+            compatible = "gd,gd32-can";
+            reg = <0x40006400 0x400>;
+            port = <0>;
+            interrupts = <19 6>;
+            status = "okay";
+            bitrate = <500000>;
+            irq-priority = <6>;
+            label = "CAN0";
+        };
+
         motor0: motor {
             compatible = "foc,motor";
             status = "okay";
@@ -246,8 +232,21 @@
             max-voltage-mv = <48000>;
             pwm-frequency = <20000>;
             current-bandwidth = <1000>;
+            timer-clock-hz = <120000000>;
+            pwm-prescaler = <0>;
+            dead-time-ns = <500>;
+            adc-resolution-bits = <12>;
+            current-u-channel = <0>;
+            current-w-channel = <1>;
+            vbus-channel = <2>;
+            adc-trigger-source = <0>;
+            adc-reference-mv = <3300>;
+            current-zero-code = <2048>;
+            current-sense-uv-per-amp = <100000>;
+            vbus-divider-milli = <20000>;
             sensor-mode = <0>;
-            control-mode = <1>;
+            /* Product LESO/PID loops publish torque; disable the core speed PI. */
+            control-mode = <0>;
         };
     };
 };

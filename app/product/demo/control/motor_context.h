@@ -13,6 +13,7 @@
 #include <osal.h>
 #include <sensor_core.h>
 
+#include <atomic>
 #include <cstdint>
 #include <cstring>
 
@@ -114,9 +115,9 @@ struct MotorContext {
     uint32_t can_base_id {0x100};
 
     // Runtime state
-    ControlMode ctrl_mode {ControlMode::Idle};
-    float speed_setpoint {0.0f};
-    float torque_setpoint {0.0f};
+    std::atomic<ControlMode> ctrl_mode {ControlMode::Idle};
+    std::atomic<float> speed_setpoint {0.0f};
+    std::atomic<float> torque_setpoint {0.0f};
     float pos_setpoint {0.0f};
     float pos_current {0.0f};
     uint32_t pos_iter_max {0};
@@ -132,7 +133,11 @@ struct MotorContext {
     bool output_angle_calib_done {false};
     float max_pos_rad {6.283185307f};
     bool max_pos_calib_done {false};
-    bool auto_calib_pending {false};
+    // Serializes sweep generator reconfiguration against the 4 kHz consumer.
+    osal::Mutex sweep_mutex;
+    // Position sensors/controllers are shared by the position, slow-loop,
+    // command and CLI tasks. Keep their compound state transitions atomic.
+    osal::Mutex position_mutex;
 
     // Thread handles
     osal::PeriodicThread *speed_loop {nullptr};

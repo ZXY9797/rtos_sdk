@@ -8,8 +8,11 @@
 #include "services/ble_app.h"
 
 #include "board/board_devices.h"
+#include "comm/link_bridge.h"
 
+#include <boot/boot_ctrl.h>
 #include <boot/product_info.h>
+#include <boot_layout.h>
 #include <log.h>
 
 #include "ble/ble_device.h"
@@ -18,12 +21,14 @@
 #include "ble/ble_batt.h"
 #include "ble/ble_dis.h"
 
+#include <atomic>
+
 extern "C" {
 #include "gr55xx_pwr.h"
 }
 
 /* ---- BLE objects ---- */
-static ble::BleStack *s_ble = nullptr;
+static std::atomic<ble::BleStack *> s_ble {nullptr};
 static ble::BleHidService s_hid;
 static ble::BleUartService s_uart;
 static ble::BleBattService s_batt;
@@ -31,13 +36,15 @@ static ble::BleDisService s_dis;
 
 __attribute__((section(".product_info"), used))
 const boot::ProductInfo kProductInfo = boot::make_product_info(
-    boot::PRODUCT_ID_DEMO_BLE, 0x0100, {1, 0, 0, 0});
+    boot::layout::kProductId, 0x0100, {1, 0, 0, 0});
 
 /* ---- Link layer RX bridge ---- */
-static app::BleRxCallback s_link_rx_cb = nullptr;
+static std::atomic<app::BleRxCallback> s_link_rx_cb {nullptr};
 
 static void ble_uart_rx_bridge(const uint8_t *data, size_t len, void *) {
-    if (s_link_rx_cb) s_link_rx_cb(data, len);
+    const app::BleRxCallback callback =
+        s_link_rx_cb.load(std::memory_order_acquire);
+    if (callback != nullptr) callback(data, len);
 }
 
 /* ---- HID Report Map (Keyboard + Consumer Control) ---- */
@@ -116,11 +123,25 @@ static void on_ble_event(const ble::Event &evt, void *) {
     switch (evt.id) {
     case ble::EventId::StackInit:
         LOGI("ble", "Stack ready, initializing services");
-        s_dis.init(s_pnp_id);
-        s_batt.init(100);
-        s_hid.init_keyboard({s_hid_report_map, sizeof(s_hid_report_map)});
-        s_uart.init(ble_uart_rx_bridge, nullptr);
-        s_ble->adv_start();
+        if (s_dis.init(s_pnp_id) != ble::Status::Ok
+            || s_batt.init(100) != ble::Status::Ok
+            || s_hid.init_keyboard(
+                   {s_hid_report_map, sizeof(s_hid_report_map)})
+                   != ble::Status::Ok
+            || s_uart.init(ble_uart_rx_bridge, nullptr) != ble::Status::Ok) {
+            LOGE("ble", "service initialization failed");
+            return;
+        }
+        if (auto *stack = s_ble.load(std::memory_order_acquire);
+            stack == nullptr || stack->adv_start() != ble::Status::Ok) {
+            LOGE("ble", "advertising startup failed");
+            return;
+        }
+        // Confirm only after the asynchronous BLE service startup succeeds.
+        if (!boot::confirm_image()) {
+            LOGE("ble", "image confirmation failed");
+            return;
+        }
         break;
 
     case ble::EventId::AdvStarted:
@@ -128,6 +149,7 @@ static void on_ble_event(const ble::Event &evt, void *) {
         break;
 
     case ble::EventId::Connected:
+        app::set_comm_connected(true);
         LOGI("ble", "Connected to %02X:%02X:%02X:%02X:%02X:%02X",
              evt.peer_addr.addr[5], evt.peer_addr.addr[4],
              evt.peer_addr.addr[3], evt.peer_addr.addr[2],
@@ -135,8 +157,12 @@ static void on_ble_event(const ble::Event &evt, void *) {
         break;
 
     case ble::EventId::Disconnected:
+        app::set_comm_connected(false);
         LOGI("ble", "Disconnected (0x%02X)", evt.disconnect_reason);
-        s_ble->adv_start();
+        if (auto *stack = s_ble.load(std::memory_order_acquire);
+            stack != nullptr) {
+            (void)stack->adv_start();
+        }
         break;
 
     case ble::EventId::PairSuccess:
@@ -156,33 +182,48 @@ static void on_ble_event(const ble::Event &evt, void *) {
 
 namespace app {
 
-void init_ble() {
+int init_ble() {
     // BLE config comes from initcall; app supplies the event callback.
     auto &ble_dev = board::ble();
-    ble_dev.init(on_ble_event, nullptr);
-    s_ble = &ble_dev.stack();
+    s_ble.store(&ble_dev.stack(), std::memory_order_release);
+    const int result = ble_dev.init(on_ble_event, nullptr);
+    if (result != static_cast<int>(ble::Status::Ok)) {
+        s_ble.store(nullptr, std::memory_order_release);
+        return result != 0 ? result : -1;
+    }
 
     // Application-specific advertising data.
-    s_ble->set_adv_data(s_adv_data, sizeof(s_adv_data));
+    ble_dev.stack().set_adv_data(s_adv_data, sizeof(s_adv_data));
+    return 0;
 }
 
-bool ble_is_connected() { return s_ble && s_ble->is_connected(); }
-uint8_t ble_conn_idx() { return s_ble ? s_ble->conn_index() : 0; }
+bool ble_is_connected() {
+    auto *stack = s_ble.load(std::memory_order_acquire);
+    return stack != nullptr && stack->is_connected();
+}
+uint8_t ble_conn_idx() {
+    auto *stack = s_ble.load(std::memory_order_acquire);
+    return stack != nullptr ? stack->conn_index() : 0U;
+}
 
 void ble_send_keyboard(const uint8_t *report, size_t len) {
-    if (!s_ble) return;
-    s_hid.send_keyboard_report(s_ble->conn_index(), 1, report, len);
+    auto *stack = s_ble.load(std::memory_order_acquire);
+    if (stack == nullptr) return;
+    (void)s_hid.send_keyboard_report(stack->conn_index(), 1U, report, len);
 }
 
-void ble_send_uart(const uint8_t *data, size_t len) {
-    if (!s_ble) return;
-    s_uart.send(s_ble->conn_index(), data, len);
+bool ble_send_uart(const uint8_t *data, size_t len) {
+    auto *stack = s_ble.load(std::memory_order_acquire);
+    return stack != nullptr
+        && s_uart.send(stack->conn_index(), data, len) == ble::Status::Ok;
 }
 
 bool ble_uart_tx_ready() { return s_uart.is_tx_ready(); }
 
 void run_ble_scheduler() { pwr_mgmt_schedule(); }
 
-void set_ble_rx_callback(BleRxCallback cb) { s_link_rx_cb = cb; }
+void set_ble_rx_callback(BleRxCallback cb) {
+    s_link_rx_cb.store(cb, std::memory_order_release);
+}
 
 } // namespace app
