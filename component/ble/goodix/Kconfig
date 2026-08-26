@@ -19,12 +19,6 @@ config BLE_UART_SERVICE
     help
       Enable GUS for BLE UART transparent data.
 
-config BLE_HEART_RATE
-    bool "BLE Heart Rate Service (HRS)"
-    default n
-    help
-      Enable HRS for BLE heart rate monitoring.
-
 config BLE_BATTERY_SERVICE
     bool "BLE Battery Service (BAS)"
     default y
@@ -37,23 +31,41 @@ config BLE_DEVICE_INFO
     help
       Enable DIS for device information.
 
-config BLE_OTA_SERVICE
-    bool "BLE OTA Service (OTAS)"
-    default n
-    help
-      Enable OTAS for over-the-air firmware updates.
-
 config BLE_TASK_STACK_SIZE
-    int "BLE task stack size"
+    int "BLE owner task stack size (bytes)"
     default 2048
+    range 768 8192
     help
-      Stack size for the BLE processing task.
+      Caller-owned stack for the application task that serializes outbound
+      profile operations and handles deferred BLE application events. The
+      Goodix controller/host stack itself uses SDK-defined static heaps and an
+      interrupt-driven scheduler.
 
-config BLE_HEAP_SIZE
-    int "BLE heap size (bytes)"
-    default 32768
+config BLE_EVENT_QUEUE_DEPTH
+    int "BLE deferred application event depth"
+    default 8
+    range 4 32
     help
-      Heap memory reserved for BLE stack operations.
+      Usable entries in the static single-producer/single-consumer ring that
+      moves connection state and GUS RX data out of the BLE software ISR.
+
+config BLE_COMMAND_QUEUE_DEPTH
+    int "BLE outbound command queue depth"
+    depends on BLE_HID || BLE_UART_SERVICE
+    default 8
+    range 2 32
+    help
+      Number of fixed-size HID/UART commands accepted before producers receive
+      backpressure. Queue data and control storage are statically allocated.
+
+config BLE_COMMAND_TIMEOUT_MS
+    int "BLE command completion timeout (milliseconds)"
+    depends on BLE_HID || BLE_UART_SERVICE
+    default 250
+    range 20 2000
+    help
+      Maximum time the BLE command owner retries a temporarily busy profile
+      operation before dropping it and recording a timeout.
 
 # ── BLE 协议栈编译时参数 ──
 

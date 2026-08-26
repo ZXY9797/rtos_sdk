@@ -39,7 +39,6 @@ struct ThreadConfig {
     Priority priority = kDefaultThreadPriority;
     size_t stack_size_bytes = kDefaultThreadStackBytes;
     void* stack_buffer = nullptr;
-    uint32_t time_slice_ticks = 20U;
 };
 
 class Kernel {

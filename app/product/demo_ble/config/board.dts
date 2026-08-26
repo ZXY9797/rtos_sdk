@@ -57,9 +57,9 @@
             label = "UART1";
         };
 
-        gpio0: gpio@40010800 {
+        gpio0: gpio@40010000 {
             compatible = "goodix,gr5525-gpio";
-            reg = <0x40010800 0x400>;
+            reg = <0x40010000 0x400>;
             interrupts = <0 0>;
             label = "GPIO0";
             gpio-controller;

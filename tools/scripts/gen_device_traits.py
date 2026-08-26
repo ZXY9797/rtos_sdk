@@ -577,14 +577,14 @@ def render_source(specs):
                 priority = interrupt['priority']
                 if interrupt['uses_osal']:
                     lines.extend([
-                        f'    static_assert({priority}U >= '
+                        f'    static_assert(Irq::nativePriority({priority}U) >= '
                         'osal::kMinRtosCallableIrqPriority,',
                         f'                  "IRQ {irq} priority cannot '
                         'call OSAL ISR APIs");',
                     ])
                 lines.extend([
                     f'    static_assert({priority}U <= '
-                    'osal::kLowestIrqPriority,',
+                    'Irq::kLowestPriority,',
                     f'                  "IRQ {irq} priority exceeds the '
                     'selected SoC range");',
                 ])

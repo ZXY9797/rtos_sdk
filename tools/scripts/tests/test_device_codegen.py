@@ -334,6 +334,11 @@ class GeneratedCodeTest(unittest.TestCase):
             fake_spec(has_init=False, interrupts=[interrupt])])
         self.assertIn('Irq::connect(37, IRQ37_Handler);', source)
         self.assertIn(
+            'Irq::nativePriority(6U) >= '
+            'osal::kMinRtosCallableIrqPriority', source)
+        self.assertIn(
+            '6U <= Irq::kLowestPriority', source)
+        self.assertIn(
             'hal::DeviceTrait<1>::isr_global(context);', source)
         self.assertIn('Irq::enable(37);', source)
         self.assertIn('SYS_INIT_ROLLBACK(hal::_init_test0', source)

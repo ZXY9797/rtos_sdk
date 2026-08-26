@@ -21,6 +21,18 @@ class Irq {
 public:
     using Handler = void (*)();
 
+    // Public priorities are logical hardware-IRQ priorities. Cortex-M keeps
+    // the leading native levels for configurable faults/SVC, and the C layer
+    // applies this offset in arm_irq_priority_set().
+    static constexpr unsigned int kPriorityOffset = _IRQ_PRIO_OFFSET;
+    static constexpr unsigned int kLowestPriority = IRQ_PRIO_LOWEST;
+
+    [[nodiscard]] static constexpr unsigned int nativePriority(
+        unsigned int priority)
+    {
+        return priority + kPriorityOffset;
+    }
+
     Irq() = delete;
 
     static void connect(int irq, Handler handler) {

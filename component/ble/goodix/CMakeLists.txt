@@ -6,11 +6,6 @@ target_sources(${MODULE_NAME}
     PRIVATE
         sdk/ble.c
         src/ble_stack_impl.cc
-        src/ble_hid_impl.cc
-        src/ble_uart_impl.cc
-        src/ble_batt_impl.cc
-        src/ble_dis_impl.cc
-        src/ble_scheduler.cc
 )
 
 # BLE profiles — selective inclusion to avoid compilation issues
@@ -18,11 +13,32 @@ target_sources(${MODULE_NAME}
     PRIVATE
         profiles/common/ble_prf_utils.c
         profiles/common/ble_srv_disc_utils.c
-        profiles/hids/hids.c
-        profiles/bas/bas.c
-        profiles/dis/dis.c
-        profiles/gus/gus.c
 )
+
+# Disabled services do not add either their wrapper or vendor profile.
+if(CONFIG_BLE_HID)
+    target_sources(${MODULE_NAME} PRIVATE
+        src/ble_hid_impl.cc
+        profiles/hids/hids.c)
+endif()
+
+if(CONFIG_BLE_UART_SERVICE)
+    target_sources(${MODULE_NAME} PRIVATE
+        src/ble_uart_impl.cc
+        profiles/gus/gus.c)
+endif()
+
+if(CONFIG_BLE_BATTERY_SERVICE)
+    target_sources(${MODULE_NAME} PRIVATE
+        src/ble_batt_impl.cc
+        profiles/bas/bas.c)
+endif()
+
+if(CONFIG_BLE_DEVICE_INFO)
+    target_sources(${MODULE_NAME} PRIVATE
+        src/ble_dis_impl.cc
+        profiles/dis/dis.c)
+endif()
 
 # BLE libraries — only ble_time needed
 target_sources(${MODULE_NAME}

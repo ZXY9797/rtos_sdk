@@ -5,6 +5,9 @@
  */
 
 #include "ble/ble_hid.h"
+#include "goodix_status.h"
+
+#include <atomic>
 
 extern "C" {
 #include "hids.h"
@@ -15,15 +18,18 @@ extern "C" {
 
 namespace ble {
 
-static bool s_boot_mode = false;
+static std::atomic<bool> s_boot_mode {false};
 
 static void hids_evt_handler(hids_evt_t *p_evt) {
+    if (p_evt == nullptr) {
+        return;
+    }
     switch (p_evt->evt_type) {
     case HIDS_EVT_BOOT_MODE_ENTERED:
-        s_boot_mode = true;
+        s_boot_mode.store(true, std::memory_order_release);
         break;
     case HIDS_EVT_REPORT_MODE_ENTERED:
-        s_boot_mode = false;
+        s_boot_mode.store(false, std::memory_order_release);
         break;
     default:
         break;
@@ -31,6 +37,10 @@ static void hids_evt_handler(hids_evt_t *p_evt) {
 }
 
 Status BleHidService::init_keyboard(const HidReportMap &report_map) {
+    if (report_map.data == nullptr || report_map.len == 0U
+        || report_map.len > UINT16_MAX) {
+        return Status::InvalidParam;
+    }
     hids_init_t init{};
     init.evt_handler = hids_evt_handler;
     init.is_kb = true;
@@ -56,27 +66,32 @@ Status BleHidService::init_keyboard(const HidReportMap &report_map) {
     init.out_report_sup = false;
     init.feature_report_sup = false;
 
-    hids_service_init(&init);
-    return Status::Ok;
+    return goodix::status_from_sdk(hids_service_init(&init));
 }
 
 Status BleHidService::send_keyboard_report(uint8_t conn_idx, uint8_t report_id,
                                            const uint8_t *data, size_t len) {
+    if (report_id != 1U || data == nullptr || len != 8U) {
+        return Status::InvalidParam;
+    }
     sdk_err_t err;
-    if (s_boot_mode) {
+    if (s_boot_mode.load(std::memory_order_acquire)) {
         err = hids_boot_kb_in_rep_send(conn_idx, const_cast<uint8_t *>(data), len);
     } else {
         // report_index 0 = keyboard report
         err = hids_input_rep_send(conn_idx, 0, const_cast<uint8_t *>(data), len);
     }
-    return (err == SDK_SUCCESS) ? Status::Ok : Status::Error;
+    return goodix::status_from_sdk(err);
 }
 
 Status BleHidService::send_consumer_report(uint8_t conn_idx, uint8_t report_id,
                                            const uint8_t *data, size_t len) {
+    if (report_id != 2U || data == nullptr || len != 1U) {
+        return Status::InvalidParam;
+    }
     // report_index 1 = consumer report
     sdk_err_t err = hids_input_rep_send(conn_idx, 1, const_cast<uint8_t *>(data), len);
-    return (err == SDK_SUCCESS) ? Status::Ok : Status::Error;
+    return goodix::status_from_sdk(err);
 }
 
 } // namespace ble

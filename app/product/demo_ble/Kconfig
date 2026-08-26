@@ -4,4 +4,49 @@ config APP_NAME
     string "Application name"
     default "demo_ble"
 
+config APP_BLE_OWNER_PRIORITY
+    int "BLE command owner priority"
+    default 6
+    range 1 30
+
+config APP_HID_TASK_PRIORITY
+    int "HID task priority"
+    depends on BLE_HID
+    default 5
+    range 1 30
+
+config APP_HID_TASK_STACK_SIZE
+    int "HID task stack size (bytes)"
+    depends on BLE_HID
+    default 1024
+    range 512 4096
+
+config APP_HID_DEBOUNCE_MS
+    int "HID key debounce time (milliseconds)"
+    depends on BLE_HID
+    default 20
+    range 1 200
+
+config APP_UART_TASK_PRIORITY
+    int "UART bridge task priority"
+    depends on BLE_UART_SERVICE
+    default 4
+    range 1 30
+
+config APP_UART_TASK_STACK_SIZE
+    int "UART bridge task stack size (bytes)"
+    depends on BLE_UART_SERVICE
+    default 1024
+    range 512 4096
+
+config APP_RUNTIME_DIAGNOSTICS
+    bool "Periodic RTOS resource diagnostics"
+    default y
+
+config APP_RUNTIME_DIAGNOSTICS_INTERVAL_MS
+    int "Resource diagnostics interval (milliseconds)"
+    depends on APP_RUNTIME_DIAGNOSTICS
+    default 60000
+    range 5000 3600000
+
 endmenu

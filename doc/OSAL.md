@@ -98,10 +98,18 @@ consumer；多 producer 或多 consumer 必须在调用方串行化。ISR 和线
 显式返回 `available=false`。`MessageQueue::stats()` 提供当前深度、高水位和发送失败
 计数。发布定容必须读取这些接口的长稳实测结果，不能只用配置值估算。
 
+FreeRTOS 与 RT-Thread 都以 `CONFIG_SYS_CLOCK_TICKS_PER_SEC` 作为唯一 tick 频率配置源。
+RT-Thread 的同优先级线程固定使用 1 tick 时间片，并开启内核栈越界检查；这两个 native
+策略不进入公共 `ThreadConfig`，避免业务代码依赖特定内核。栈检查仍需在目标板压力场景
+验证，不能替代每个线程的最小剩余栈观测。
+
 ## IRQ 规则
 
-- 只有优先级数值位于 `kMinRtosCallableIrqPriority` 到
+- 只有转换后的 native 优先级位于 `kMinRtosCallableIrqPriority` 到
   `kLowestIrqPriority`（含边界）的 ISR 才能调用 OSAL FromISR API；
+- DTS 使用逻辑硬件 IRQ 优先级；生成器先加 Cortex-M fault/SVC 保留偏移，再校验 native
+  优先级是否可调用 RTOS，同时以 `Irq::kLowestPriority` 阻止最低值加偏移后回绕为最高
+  硬件优先级；
 - 设备树生成器同时检查 priority 上界和 syscall 下界；
 - ISR 只做确认中断、搬运有限数据和唤醒任务；
 - `IsrContext` 统一收集是否需要调度，ISR 退出前只请求一次切换；

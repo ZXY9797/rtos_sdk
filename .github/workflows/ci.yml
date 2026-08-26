@@ -176,6 +176,17 @@ jobs:
             -Dp=demo_ble -Dt=armgcc9
           cmake --build out/demo-ble --parallel
 
+      - name: Build BLE configuration contracts
+        run: |
+          cmake -S . -B out/demo-ble-minimal -G Ninja \
+            -Dp=demo_ble -Dt=armgcc9 \
+            -DEXTRA_CONF_FILE=tests/config/demo_ble_minimal.conf
+          cmake --build out/demo-ble-minimal --parallel
+          cmake -S . -B out/demo-ble-production -G Ninja \
+            -Dp=demo_ble -Dt=armgcc9 \
+            -DEXTRA_CONF_FILE=app/product/demo_ble/release.conf
+          cmake --build out/demo-ble-production --parallel
+
       - name: Build RT-Thread application
         run: |
           cmake -S . -B out/demo-rtthread -G Ninja \
@@ -250,6 +261,7 @@ jobs:
             out/demo_ble-*/demo_ble_*.*
             out/demo-app.img
             out/demo-ble-app.img
+            out/demo-ble-production/demo_ble.*
             out/demo_3in1.bin
             out/demo_ble_3in1.bin
             out/factory-images.sha256

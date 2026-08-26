@@ -24,8 +24,9 @@ static void on_event(const ble::Event &evt, void *) {
 
 void ble_app_init() {
     auto &ble_dev = device_get(ble0);       // 从设备树获取 BleDevice
-    ble_dev.init(on_event, nullptr);         // 用 DTS 配置 + 应用回调启动协议栈
     s_ble = &ble_dev.stack();
+    (void)s_ble->set_adv_data(adv_data, sizeof(adv_data));
+    ble_dev.init(on_event, nullptr);         // 用 DTS 配置 + 应用回调启动协议栈
 }
 ```
 
@@ -47,7 +48,7 @@ BLE 设备采用两阶段初始化，区别于普通驱动的自动初始化：
 | `ble::BleDevice` | 设备树包装类，两阶段 init |
 | `ble::BleStack` | 协议栈初始化、广播、连接管理 |
 | `ble::BleHidService` | HID over GATT（键盘/消费者控制） |
-| `ble::BleUartService` | UART 透传（NUS） |
+| `ble::BleUartService` | UART 透传（Goodix UART Service，GUS） |
 | `ble::BleBattService` | 电池电量服务 |
 | `ble::BleDisService` | 设备信息服务 |
 
@@ -96,17 +97,40 @@ CONFIG_BLE_UART_SERVICE=y           # UART 透传服务
 CONFIG_BLE_BATTERY_SERVICE=y        # 电池服务
 CONFIG_BLE_DEVICE_INFO=y            # 设备信息服务
 
+# demo_ble 命令 owner
+CONFIG_BLE_TASK_STACK_SIZE=2048      # BLE owner 静态栈，字节
+CONFIG_BLE_EVENT_QUEUE_DEPTH=8       # ISR 到 owner 的延迟事件深度
+CONFIG_BLE_COMMAND_QUEUE_DEPTH=8     # 多生产者命令队列深度
+CONFIG_BLE_COMMAND_TIMEOUT_MS=250    # Busy 重试总时限
+
 # GR5525 启动/安全
 CONFIG_GR5525_BOOT_CHECK_IMAGE=y    # 启动时校验镜像
 CONFIG_GR5525_SECURITY_CFG=0        # 安全配置级别
 ```
 
-Kconfig 选项通过 `custom_config.h` 桥接到 GR5525 SDK 期望的 `CFG_*` 宏名。
+Kconfig 选项通过 `custom_config.h` 桥接到 GR5525 SDK 期望的 `CFG_*` 宏名。服务选项还会
+控制对应 wrapper 和 profile 源文件是否进入目标；关闭服务不会留下空实现或伪配置。
+Goodix BLE 内存由匹配版本的厂商协议栈和连接/Profile 上限共同决定，框架不暴露无法
+兑现的独立 `BLE_HEAP_SIZE` 选项。
+
+## RTOS 并发模型
+
+- Goodix 协议栈由厂商软件中断驱动；RTOS 应用不得轮询仅适用于非 RTOS 主循环的
+  `pwr_mgmt_schedule()`。
+- HID、UART 等业务线程只向固定容量命令队列提交请求，由唯一 BLE owner 调用 GATT
+  service API；`Busy` 只在配置的总时限内重试，超时、队列满和非法参数都会计入统计。
+- BLE 软件中断只执行厂商要求的协议栈/Profile 操作；连接状态、GUS RX、日志和镜像确认
+  通过固定容量 SPSC 事件环延迟到 BLE owner。关键生命周期事件溢出会进入 fatal，普通
+  RX/配对通知溢出会记录丢弃计数。
+- 按键 ISR 只确认边沿并释放信号量，消抖和 HID 报告在任务上下文完成；UART RX 任务
+  阻塞等待流缓冲区，不做毫秒级轮询。
+- 量产诊断周期读取 OS heap 最低余量、关键线程最小剩余栈、BLE 队列高水位和失败计数。
+  这些接口用于板级长稳定容，构建成功不能替代射频、IRQ、并发和栈水位实测。
 
 ## 架构
 
 ```
-app/demo_ble/               应用层（HID + UART 透传）
+app/product/demo_ble/       应用层（ISR 事件环 + 静态命令队列 + 单 BLE owner）
     ↓ device_get(ble0).init(callback)
 component/ble/include       BleDevice 包装 + ble:: API
     ↓

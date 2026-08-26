@@ -425,7 +425,9 @@ bool Thread::start(Entry entry, void* context, const ThreadConfig& config)
 
     const char* name = config.name != nullptr ? config.name : "thread";
     const rt_uint8_t prio = native_priority(config.priority);
-    const rt_uint32_t tick = config.time_slice_ticks == 0U ? 20U : config.time_slice_ticks;
+    // Match FreeRTOS preemptive round-robin semantics: equal-priority threads
+    // share the CPU at the common OS tick boundary.
+    constexpr rt_uint32_t tick = 1U;
 
     entry_ = entry;
     context_ = context;

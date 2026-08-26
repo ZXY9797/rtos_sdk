@@ -50,18 +50,20 @@ app/product/demo_ble/
     board_devices.h             BLE、UART、按键、LED 的产品级设备门面
     board_devices.cc
   services/
-    ble_app.h                   BLE 初始化、发送、调度和 RX 回调注册
+    ble_app.h                   BLE 初始化、ISR 事件环、owner 命令队列和统计
     ble_app.cc
   comm/
     link_bridge.h               Link 协议到 BLE UART 透传的桥接
     link_bridge.cc
   tasks/
-    app_tasks.h                 HID、UART 透传、BLE scheduler、heartbeat 任务
+    app_tasks.h                 IRQ 唤醒 HID、阻塞 UART、BLE owner、heartbeat 任务
     app_tasks.cc
+  common/
+    app_watchdog.cc             demo_ble 的 GR5525 AON 硬件看门狗 provider
   config/
     board.dts
     prj.conf
-    user_config.h
+  release.conf                  demo_ble 量产构建附加配置
   CMakeLists.txt
   Kconfig
   linker.ld

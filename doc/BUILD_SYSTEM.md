@@ -129,12 +129,22 @@ ctest --test-dir out\host_tests --output-on-failure
 initcall、持久化 fault section、fatal 入口和未解析符号。这个检查是构建目标的一部分，
 不能通过跳过单独的 CI job 绕开。
 
-CI 同时构建两个产品的 FreeRTOS app、demo RT-Thread app，以及两个产品的
+CI 同时构建两个产品的 FreeRTOS app、`demo_ble` 最小服务/production 配置、demo
+RT-Thread app，以及两个产品的
 preloader/loader/upgrade 矩阵；upgrade 构建显式嵌入同一轮刚生成的 loader BIN，禁止
 用占位 payload 或跨产品产物。CI 还会验证缺少 app watchdog、Link security 和 boot
 security/watchdog provider 时配置按预期失败。RT-Thread 参考配置位于
 `tests/config/rtthread.conf`，用于暴露公共头文件泄漏内核/SoC 私有依赖、后端 API
 语义漂移和配置符号不闭环等问题。
+
+本地验证 `demo_ble` 量产配置时使用与厂商库匹配的 GCC 9.3.1：
+
+```powershell
+$env:ARMGCC9_TOOLCHAIN_PATH='C:/arm-none-eabi-gcc-9.3.1-1.4'
+cmake -S . -B out/demo_ble_production -GNinja -Dp=demo_ble -Df=app `
+  '-DEXTRA_CONF_FILE=app/product/demo_ble/release.conf'
+cmake --build out/demo_ble_production --parallel
+```
 
 发布前还应对每个最终 ELF 执行：
 

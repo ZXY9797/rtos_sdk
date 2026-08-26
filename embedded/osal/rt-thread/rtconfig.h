@@ -10,8 +10,8 @@
 //  <i>Default: 32
 #define RT_THREAD_PRIORITY_MAX  32
 // <o>OS tick per second
-//  <i>Default: 1000   (1ms)
-#define RT_TICK_PER_SECOND  1000
+//  <i>Configured by the common OSAL Kconfig contract
+#define RT_TICK_PER_SECOND  CONFIG_SYS_CLOCK_TICKS_PER_SEC
 // <o>Alignment size for CPU architecture data access
 //  <i>Default: 4
 #define RT_ALIGN_SIZE   4
@@ -45,8 +45,8 @@
 //  <i>Default: 0
 #define RT_DEBUG_INIT 0
 // <c1>thread stack over flow detect
-//  <i> Diable Thread stack over flow detect
-//#define RT_USING_OVERFLOW_CHECK
+//  <i>Enable thread stack overflow detection in all profiles.
+#define RT_USING_OVERFLOW_CHECK
 // </c>
 // </h>
 

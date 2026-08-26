@@ -22,6 +22,9 @@ public:
     /// 由 gen_device_traits.py 生成的 initcall 调用
     /// 存储 DTS 配置，不启动协议栈
     int init(const StackConfig &cfg) {
+        if (configured_.load(std::memory_order_acquire)) {
+            return -1;
+        }
         cfg_ = cfg;
         configured_.store(true, std::memory_order_release);
         return 0;
@@ -33,6 +36,9 @@ public:
 
     /// 应用层调用：启动 BLE 协议栈
     int init(EventCallback cb, void *user_data = nullptr) {
+        if (!configured_.load(std::memory_order_acquire)) {
+            return static_cast<int>(Status::InvalidParam);
+        }
         return static_cast<int>(stack_.init(cfg_, cb, user_data));
     }
 

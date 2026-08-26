@@ -71,8 +71,13 @@ bool app_watchdog_stop(void);
 替业务线程伪造心跳。
 
 仓库内两个 demo 已接入业务 client：`demo` 监控主循环和慢速控制环，`demo_ble` 监控
-主循环和 BLE scheduler。client 在 `APPLICATION` priority 90 注册，watchdog monitor
+主循环和 BLE command owner。`demo_ble` 使用 GR5525 AON watchdog；alarm 配置或 feed
+失败后保持 fail-closed，不再继续喂狗。client 在 `APPLICATION` priority 90 注册，watchdog monitor
 在 priority 99 启动，因此量产策略会在任何业务线程运行前完成 client 完整性检查。
+
+`demo_ble` 的 BLE 软件中断只保留厂商要求的协议栈/Profile 调用。连接状态、GUS RX、
+日志和镜像确认通过静态 SPSC 事件环交给 BLE owner；关键生命周期事件溢出按 fatal
+处理，避免 Link 层在未知连接状态下继续运行。
 
 ### Tickless 低功耗
 
@@ -122,7 +127,7 @@ sector-swap 能在一次未确认试运行后恢复旧应用，但不等于两�
 
 每次发布至少完成：
 
-1. `demo`、`demo_ble` 的 FreeRTOS 应用构建；
+1. `demo`、`demo_ble` 的 FreeRTOS 应用构建，并覆盖 `demo_ble` 最小服务和 production 配置；
 2. `demo` 的 RT-Thread 交叉后端构建；
 3. preloader、loader、upgrade 和 3-in-1 构建；
 4. boot Python 测试、设备树生成器测试和 host CTest；
@@ -136,7 +141,9 @@ sector-swap 能在一次未确认试运行后恢复旧应用，但不等于两�
 
 ## 已知边界
 
-- 当前仓库中的 demo 产品没有伪造硬件 watchdog/tickless provider，相关功能默认关闭；
+- `demo_ble` 已提供 GR5525 AON watchdog provider，但默认开发配置不启用，必须用
+  `release.conf` 构建并完成板级卡死/复位窗口验证；`demo` 尚无硬件 watchdog provider；
+- 两个 demo 都没有经目标板验证的 tickless provider，低功耗配置继续 fail closed；
 - demo 产品也没有量产 Link 密钥 provider，开启全局安全策略的负向构建应失败；
 - 仓库没有 STM32 产品目标；FDCAN 目前只有 backend 编译契约，STM32 直寄存器驱动默认
   fail closed，不能作为量产支持声明；

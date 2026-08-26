@@ -4,16 +4,19 @@
 
 extern "C" int main(void);
 
-namespace {
-
 using CppInitFunction = void (*)();
 
+// Linker-defined ABI symbols must have global C linkage. Declaring them
+// inside an unnamed namespace gives them internal linkage with newer GCC and
+// leaves references that the linker script cannot satisfy.
 extern "C" {
 extern CppInitFunction __preinit_array_start[];
 extern CppInitFunction __preinit_array_end[];
 extern CppInitFunction __init_array_start[];
 extern CppInitFunction __init_array_end[];
 }
+
+namespace {
 
 void run_cpp_init_array(CppInitFunction *begin, CppInitFunction *end)
 {
