@@ -35,8 +35,8 @@ struct AdcInjectedChannel {
 };
 
 struct AdcInjectedConfig {
-    uint32_t trigger_source;              // TIMER0 TRGO 等
-    uint16_t channel_count;               // 注入通道数 (1-4)
+    uint32_t trigger_source;
+    uint16_t channel_count;
     AdcInjectedChannel channels[4];
 };
 
@@ -46,29 +46,36 @@ public:
     [[nodiscard]] Status deinit();
     [[nodiscard]] bool is_initialized() const { return m_initialized; }
 
-    // 轮询单次转换
+    // Poll one routine conversion.
     [[nodiscard]] Status read(AdcChannel ch, uint16_t &value);
 
-    // 注入通道配置 (FOC 专用: TIMER0 TRGO 触发)
+    // Configure the acquisition time for a channel.
+    [[nodiscard]] Status set_sample_time(AdcChannel channel,
+                                         AdcSampleTime sample_time);
+
+    // Configure TIMER-triggered inserted channels for FOC sampling.
     [[nodiscard]] Status config_injected(const AdcInjectedConfig &cfg);
 
-    // 读注入通道结果
+    // Read one inserted result rank.
     [[nodiscard]] Status read_injected(uint8_t rank, uint16_t &value);
 
-    // 启动注入转换
+    // Start an inserted conversion.
     [[nodiscard]] Status start_injected();
 
-    // 模拟看门狗
-    [[nodiscard]] Status config_watchdog(AdcChannel ch, uint16_t high_threshold, uint16_t low_threshold);
+    // Configure the analog watchdog.
+    [[nodiscard]] Status config_watchdog(AdcChannel channel,
+                                         uint16_t high_threshold,
+                                         uint16_t low_threshold);
 
     using IrqCallback = void (*)(void *arg);
     [[nodiscard]] Status set_eoc_callback(IrqCallback cb, void *arg);
-    void isr_handler(osal::IsrContext& context);
+    void isr_handler(osal::IsrContext &context);
 
 protected:
     constexpr AdcBase(uintptr_t base) : m_base(base) {}
     uintptr_t m_base;
     bool m_initialized {false};
+    uint8_t m_injected_count {0U};
     IrqCallback m_eoc_cb {nullptr};
     void *m_eoc_arg {nullptr};
 };

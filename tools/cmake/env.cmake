@@ -26,12 +26,15 @@ else()
         message(FATAL_ERROR "Boot firmware type '${FIRMWARE_TYPE}' not found")
     endif()
     if(NOT EXISTS "${PROJECT_PRODUCT_DIR}")
-        message(FATAL_ERROR "Product boot config not found: ${PROJECT_PRODUCT_DIR}")
+        message(FATAL_ERROR
+            "Product boot config not found: ${PROJECT_PRODUCT_DIR}")
     endif()
 endif()
 
 if(DEFINED CONFIG_DIR)
-    get_filename_component(PROJECT_CONFIG_DIR "${CONFIG_DIR}" ABSOLUTE BASE_DIR "${CMAKE_SOURCE_DIR}")
+    get_filename_component(
+        PROJECT_CONFIG_DIR "${CONFIG_DIR}" ABSOLUTE
+        BASE_DIR "${CMAKE_SOURCE_DIR}")
 elseif(FIRMWARE_TYPE STREQUAL "app")
     set(PROJECT_CONFIG_DIR "${PROJECT_DIR}/config")
 else()
@@ -42,12 +45,11 @@ if(NOT EXISTS "${PROJECT_CONFIG_DIR}/board.dts")
     message(FATAL_ERROR "Missing board.dts in ${PROJECT_CONFIG_DIR}")
 endif()
 
-if(NOT DEFINED LINKER_SCRIPT)
-    if(FIRMWARE_TYPE STREQUAL "app" AND EXISTS "${PROJECT_DIR}/linker.ld")
-        set(PROJECT_LINKER_SCRIPT "${PROJECT_DIR}/linker.ld")
-    elseif(NOT FIRMWARE_TYPE STREQUAL "app" AND EXISTS "${PROJECT_PRODUCT_DIR}/linker.ld")
-        set(PROJECT_LINKER_SCRIPT "${PROJECT_PRODUCT_DIR}/linker.ld")
-    endif()
+if(FIRMWARE_TYPE STREQUAL "app" AND EXISTS "${PROJECT_DIR}/linker.ld")
+    set(PROJECT_LINKER_SCRIPT "${PROJECT_DIR}/linker.ld")
+elseif(NOT FIRMWARE_TYPE STREQUAL "app"
+       AND EXISTS "${PROJECT_PRODUCT_DIR}/linker.ld")
+    set(PROJECT_LINKER_SCRIPT "${PROJECT_PRODUCT_DIR}/linker.ld")
 endif()
 
 set(NULL_C ${TOOLS_DIR}/cmake/null.c)

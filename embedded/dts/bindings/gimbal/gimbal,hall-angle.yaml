@@ -1,0 +1,38 @@
+description: Dual analog Hall continuous-angle sensor
+
+compatible: "rtos_sdk,gimbal-hall-angle"
+
+include: base.yaml
+
+properties:
+  adc-dev:
+    type: phandle
+    required: true
+    description: ADC controller used by both Hall channels
+
+  channel-a:
+    type: int
+    required: true
+    description: First Hall ADC channel index
+
+  channel-b:
+    type: int
+    required: true
+    description: Quadrature Hall ADC channel index
+
+  sample-time:
+    type: int
+    required: true
+    description: ADC acquisition-time enum from Cycles4 through Cycles480
+
+cxx-driver:
+  adapter:
+    header: device_adapters/gimbal_hall_dt.h
+    macro: HAL_GIMBAL_HALL_DT_ADAPT
+  type-name: gimbal::HallAdcDevice
+  init: true
+  readiness: is-initialized
+  requires:
+    - phandle: adc-dev
+  init-level: application
+  init-priority: 70

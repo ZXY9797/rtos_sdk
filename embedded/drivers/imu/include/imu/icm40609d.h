@@ -45,16 +45,31 @@ struct ImuData {
     int16_t temp {};
 };
 
+inline constexpr size_t kIcm40609dWireBytes = 15U;
+
+struct Icm40609dRawFrame {
+    uint8_t wire[kIcm40609dWireBytes] {};
+};
+
 template <int SpiBusOrd, uintptr_t CsPortBase, uint8_t CsPin,
           uint32_t CsFlags>
 class Icm40609d {
     static_assert(CsPin < 32U);
 
 public:
+    using AsyncCallback = hal::SpiBase::AsyncCallback;
+
     Icm40609d() = default;
     int init(const ImuConfig& cfg);
     int deinit();
     bool read(ImuData& data);
+    [[nodiscard]] hal::Status begin_async(
+        AsyncCallback callback, void* argument);
+    [[nodiscard]] hal::Status start_read_async(
+        Icm40609dRawFrame& frame);
+    [[nodiscard]] hal::Status end_async();
+    [[nodiscard]] static bool decode(
+        const Icm40609dRawFrame& frame, ImuData& data);
     [[nodiscard]] bool is_initialized() const { return initialized_; }
 
 private:
@@ -82,6 +97,7 @@ private:
     hal::SpiDevice<SpiBusOrd, 0xFFU> spi_;
     hal::GpioPort<CsPortBase, CsPin, CsFlags> cs_;
     bool initialized_ {false};
+    uint8_t async_tx_[kIcm40609dWireBytes] {};
 
     static constexpr uint8_t REG_WHO_AM_I = 0x75U;
     static constexpr uint8_t REG_PWR_MGMT0 = 0x4EU;
@@ -149,7 +165,8 @@ int Icm40609d<SpiBusOrd, CsPortBase, CsPin, CsFlags>::init(const ImuConfig& cfg)
     }
 
     constexpr bool active_low = (CsFlags & GPIO_ACTIVE_LOW) != 0U;
-    const uint32_t initial_flags = active_low ? GPIO_OUTPUT_HIGH : GPIO_OUTPUT_LOW;
+    const uint32_t initial_flags = active_low
+        ? GPIO_OUTPUT_HIGH : GPIO_OUTPUT_LOW;
     if (cs_.configure(initial_flags) != 0) {
         return -2;
     }
@@ -163,6 +180,10 @@ int Icm40609d<SpiBusOrd, CsPortBase, CsPin, CsFlags>::init(const ImuConfig& cfg)
         return -3;
     }
     spi_.set_chip_select(chip_select, this);
+    async_tx_[0] = static_cast<uint8_t>(REG_ACCEL_DATA | READ_BIT);
+    for (size_t index = 1U; index < sizeof(async_tx_); ++index) {
+        async_tx_[index] = 0xFFU;
+    }
 
     uint8_t who_am_i = 0U;
     if (!read_reg(REG_WHO_AM_I, who_am_i) || who_am_i != WHO_AM_I_VAL) {
@@ -186,6 +207,7 @@ int Icm40609d<SpiBusOrd, CsPortBase, CsPin, CsFlags>::init(const ImuConfig& cfg)
 template <int SpiBusOrd, uintptr_t CsPortBase, uint8_t CsPin, uint32_t CsFlags>
 int Icm40609d<SpiBusOrd, CsPortBase, CsPin, CsFlags>::deinit()
 {
+    (void)end_async();
     initialized_ = false;
     cs_.off();
     return static_cast<int>(spi_.deinit());
@@ -208,6 +230,52 @@ bool Icm40609d<SpiBusOrd, CsPortBase, CsPin, CsFlags>::read(ImuData& data)
     data.gyro[0] = be16(&buf[8]);
     data.gyro[1] = be16(&buf[10]);
     data.gyro[2] = be16(&buf[12]);
+    return true;
+}
+
+template <int SpiBusOrd, uintptr_t CsPortBase, uint8_t CsPin,
+          uint32_t CsFlags>
+hal::Status Icm40609d<SpiBusOrd, CsPortBase, CsPin, CsFlags>::begin_async(
+    AsyncCallback callback, void* argument)
+{
+    if (!initialized_) {
+        return hal::Status::InvalidArgument;
+    }
+    return spi_.begin_async(callback, argument);
+}
+
+template <int SpiBusOrd, uintptr_t CsPortBase, uint8_t CsPin,
+          uint32_t CsFlags>
+hal::Status
+Icm40609d<SpiBusOrd, CsPortBase, CsPin, CsFlags>::start_read_async(
+    Icm40609dRawFrame& frame)
+{
+    if (!initialized_) {
+        return hal::Status::InvalidArgument;
+    }
+    return spi_.transfer_async(async_tx_, frame.wire, sizeof(frame.wire));
+}
+
+template <int SpiBusOrd, uintptr_t CsPortBase, uint8_t CsPin,
+          uint32_t CsFlags>
+hal::Status Icm40609d<SpiBusOrd, CsPortBase, CsPin, CsFlags>::end_async()
+{
+    return spi_.end_async();
+}
+
+template <int SpiBusOrd, uintptr_t CsPortBase, uint8_t CsPin,
+          uint32_t CsFlags>
+bool Icm40609d<SpiBusOrd, CsPortBase, CsPin, CsFlags>::decode(
+    const Icm40609dRawFrame& frame, ImuData& data)
+{
+    const uint8_t* const payload = &frame.wire[1U];
+    data.accel[0] = be16(&payload[0U]);
+    data.accel[1] = be16(&payload[2U]);
+    data.accel[2] = be16(&payload[4U]);
+    data.temp = be16(&payload[6U]);
+    data.gyro[0] = be16(&payload[8U]);
+    data.gyro[1] = be16(&payload[10U]);
+    data.gyro[2] = be16(&payload[12U]);
     return true;
 }
 

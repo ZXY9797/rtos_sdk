@@ -1,8 +1,7 @@
 /**
- * @brief GD32F50x 外设寄存器结构体定义
+ * @brief GD32F50x peripheral register layouts.
  *
- * 集中定义所有外设寄存器布局，供驱动 .cc 使用。
- * 消除各驱动文件重复的寄存器定义和 RCU 宏。
+ * Centralized layouts prevent divergent register definitions in drivers.
  */
 #pragma once
 
@@ -10,6 +9,11 @@
 #include "gd32f50x.h"
 
 namespace gd32 {
+
+static_assert(TIMER0_BASE == 0x40012C00U);
+static_assert(ADC0_BASE == 0x40012400U);
+static_assert(GPIOA_BASE == 0x40010800U);
+static_assert(RCU_BASE == 0x40021000U);
 
 /* ─── USART ─────────────────────────────────────────────────────── */
 
@@ -91,26 +95,27 @@ struct TimerRegs {
 /* ─── ADC ───────────────────────────────────────────────────────── */
 
 struct AdcRegs {
-    volatile uint32_t CTL0;     // 0x00
-    volatile uint32_t CTL1;     // 0x04
-    volatile uint32_t RSQ0;     // 0x08
-    volatile uint32_t RSQ1;     // 0x0C
-    volatile uint32_t RSQ2;     // 0x10
-    volatile uint32_t ISQ;      // 0x14
-    volatile uint32_t SAMPT0;   // 0x18
-    volatile uint32_t SAMPT1;   // 0x1C
-    volatile uint32_t IDATA0;   // 0x20
-    volatile uint32_t IDATA1;   // 0x24
-    volatile uint32_t IDATA2;   // 0x28
-    volatile uint32_t IDATA3;   // 0x2C
-    volatile uint32_t RDATA;    // 0x30
-    volatile uint32_t OVSAMPCTL;// 0x34
-    volatile uint32_t WDHIGH;   // 0x38
-    volatile uint32_t WDLOW;    // 0x3C
+    volatile uint32_t STAT;       // 0x00
+    volatile uint32_t CTL0;       // 0x04
+    volatile uint32_t CTL1;       // 0x08
+    volatile uint32_t SAMPT0;     // 0x0C
+    volatile uint32_t SAMPT1;     // 0x10
+    volatile uint32_t IOFF[4];    // 0x14-0x20
+    volatile uint32_t WDHIGH;     // 0x24
+    volatile uint32_t WDLOW;      // 0x28
+    volatile uint32_t RSQ0;       // 0x2C
+    volatile uint32_t RSQ1;       // 0x30
+    volatile uint32_t RSQ2;       // 0x34
+    volatile uint32_t ISQ;        // 0x38
+    volatile uint32_t LDATA[4];   // 0x3C-0x48
+    volatile uint32_t RDATA;      // 0x4C
+    volatile uint32_t IDATA;      // 0x50
+    volatile uint32_t LDCTL;      // 0x54
+    volatile uint32_t RESERVED[10];
+    volatile uint32_t OVSAMPCTL;  // 0x80
 };
 
-/* ─── RCU 寄存器访问 ────────────────────────────────────────────── */
-/* 使用 inline 函数避免宏污染全局命名空间 */
+/* RCU register accessors avoid leaking address macros. */
 
 inline volatile uint32_t &rcu_apb1en() {
     return *reinterpret_cast<volatile uint32_t *>(RCU_BASE + 0x1CU);
@@ -120,11 +125,19 @@ inline volatile uint32_t &rcu_apb2en() {
     return *reinterpret_cast<volatile uint32_t *>(RCU_BASE + 0x18U);
 }
 
+inline volatile uint32_t &rcu_cfg0() {
+    return *reinterpret_cast<volatile uint32_t *>(RCU_BASE + 0x04U);
+}
+
+inline volatile uint32_t &rcu_cfg1() {
+    return *reinterpret_cast<volatile uint32_t *>(RCU_BASE + 0x2CU);
+}
+
 inline volatile uint32_t &rcu_ahben() {
     return *reinterpret_cast<volatile uint32_t *>(RCU_BASE + 0x14U);
 }
 
-/* RCU 时钟使能位 */
+/* RCU clock enable bits. */
 namespace clk {
     /* APB2 */
     constexpr uint32_t USART0EN = (1U << 4);
@@ -142,16 +155,12 @@ namespace clk {
     constexpr uint32_t TIMER0EN = (1U << 11);
     constexpr uint32_t ADC0EN   = (1U << 9);
 
-    /* AHB */
-    constexpr uint32_t GPIOAEN  = (1U << 0);
-    constexpr uint32_t GPIOBEN  = (1U << 1);
-    constexpr uint32_t GPIOCEN  = (1U << 2);
-    constexpr uint32_t GPIODEN  = (1U << 3);
-    constexpr uint32_t GPIOEEN  = (1U << 4);
-    constexpr uint32_t GPIOFEN  = (1U << 5);
-    constexpr uint32_t GPIOGEN  = (1U << 6);
-    constexpr uint32_t GPIOHEN  = (1U << 7);
-    constexpr uint32_t GPIOIEN  = (1U << 8);
+    /* APB2 */
+    constexpr uint32_t GPIOAEN  = (1U << 2);
+    constexpr uint32_t GPIOBEN  = (1U << 3);
+    constexpr uint32_t GPIOCEN  = (1U << 4);
+    constexpr uint32_t GPIODEN  = (1U << 5);
+    constexpr uint32_t GPIOEEN  = (1U << 6);
 } // namespace clk
 
 } // namespace gd32

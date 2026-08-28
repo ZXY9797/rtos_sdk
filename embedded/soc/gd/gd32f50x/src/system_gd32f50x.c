@@ -1,143 +1,145 @@
-/*!
-    \file    system_gd32f50x.c
-    \brief   CMSIS Cortex-M4 Device Peripheral Access Layer Source File for GD32F50x
-*/
+/*
+ * GD32F50x system clock initialization.
+ *
+ * The 200 MHz sequence follows the vendor firmware library: HXTAL / 2 * 50,
+ * with staged AHB prescaler changes to limit Vcore transients.
+ */
 
 #include "gd32f50x.h"
+#include "gd32f50x_fmc.h"
+#include "gd32f50x_pmu.h"
+#include "gd32f50x_rcu.h"
 
-/* Default oscillator values */
-#ifndef HXTAL_VALUE
-#define HXTAL_VALUE    ((uint32_t)8000000U)
-#endif
+#define SYSTEM_CLOCK_HZ       ((uint32_t)200000000U)
+#define CLOCK_SWITCH_DELAY    ((uint32_t)0x50U)
 
-#ifndef IRC8M_VALUE
-#define IRC8M_VALUE    ((uint32_t)4000000U)
-#endif
+uint32_t SystemCoreClock = SYSTEM_CLOCK_HZ;
 
-/* System clock frequency (core clock) */
-uint32_t SystemCoreClock = IRC8M_VALUE;
+static void clock_fail_stop(void)
+{
+    __disable_irq();
+    for (;;) {
+        __WFI();
+    }
+}
 
-/* RCU Register Definitions */
-#define RCU_CTL         REG32(RCU_BASE + 0x00U)    /* Control register */
-#define RCU_CFG0        REG32(RCU_BASE + 0x04U)    /* Configuration register 0 */
-#define RCU_INT         REG32(RCU_BASE + 0x0CU)    /* Interrupt register */
-#define RCU_AHBEN       REG32(RCU_BASE + 0x14U)    /* AHB enable register */
-#define RCU_APB1EN      REG32(RCU_BASE + 0x1CU)    /* APB1 enable register */
-#define RCU_APB2EN      REG32(RCU_BASE + 0x18U)    /* APB2 enable register */
+static void clock_delay(uint32_t delay)
+{
+    volatile uint32_t index;
+    for (index = 0U; index < delay * 10U; ++index) {
+        __NOP();
+    }
+}
 
-/* RCU_CTL bits */
-#define RCU_CTL_IRC8MEN         BIT(0)              /* IRC8M enable */
-#define RCU_CTL_IRC8MSTB        BIT(1)              /* IRC8M stable flag */
-#define RCU_CTL_HXTALEN         BIT(16)             /* HXTAL enable */
-#define RCU_CTL_HXTALSTB        BIT(17)             /* HXTAL stable flag */
-#define RCU_CTL_PLL0EN          BIT(24)             /* PLL0 enable */
-#define RCU_CTL_PLL0STB         BIT(25)             /* PLL0 stable flag */
+static int wait_for_mask(volatile uint32_t *reg, uint32_t mask,
+                         uint32_t expected, uint32_t timeout)
+{
+    while (((*reg) & mask) != expected && timeout > 0U) {
+        --timeout;
+    }
+    return ((*reg) & mask) == expected;
+}
 
-/* RCU_CFG0 bits */
-#define RCU_CFG0_SCS_MASK       BITS(1,0)           /* System clock switch mask */
-#define RCU_CFG0_SCS_IRC8M      0x00000000U         /* IRC8M as system clock */
-#define RCU_CFG0_SCS_HXTAL      0x00000001U         /* HXTAL as system clock */
-#define RCU_CFG0_SCS_PLL0P      0x00000002U         /* PLL0P as system clock */
+static void set_ahb_prescaler(uint32_t prescaler)
+{
+    uint32_t value = RCU_CFG0;
+    value &= ~RCU_CFG0_AHBPSC;
+    value |= prescaler;
+    RCU_CFG0 = value;
+    clock_delay(CLOCK_SWITCH_DELAY);
+}
 
-#define RCU_CFG0_SCSS_MASK      BITS(3,2)           /* System clock switch status mask */
-#define RCU_CFG0_SCSS_IRC8M     0x00000000U         /* IRC8M used as system clock */
-#define RCU_CFG0_SCSS_HXTAL     0x00000004U         /* HXTAL used as system clock */
-#define RCU_CFG0_SCSS_PLL0P     0x00000008U         /* PLL0P used as system clock */
+static void enable_fmc_no_wait_load(void)
+{
+    if ((FMC_CTL0 & FMC_CTL0_LK) != 0U) {
+        FMC_KEY0 = UNLOCK_KEY0;
+        FMC_KEY0 = UNLOCK_KEY1;
+    }
+    FMC_CTL0 |= FMC_CTL0_NWLDE;
+    FMC_CTL0 |= FMC_CTL0_LK;
+}
 
-#define RCU_CFG0_AHBPSC_MASK    BITS(7,4)           /* AHB prescaler mask */
-#define RCU_CFG0_AHBPSC_DIV1    0x00000000U         /* AHB = CK_SYS */
-
-#define RCU_CFG0_APB1PSC_MASK   BITS(10,8)          /* APB1 prescaler mask */
-#define RCU_CFG0_APB1PSC_DIV2   0x00000400U         /* APB1 = AHB/2 */
-
-#define RCU_CFG0_APB2PSC_MASK   BITS(13,11)         /* APB2 prescaler mask */
-#define RCU_CFG0_APB2PSC_DIV1   0x00000000U         /* APB2 = AHB */
-
-#define RCU_CFG0_PLL0SRC_MASK   BIT(16)             /* PLL0 source mask */
-#define RCU_CFG0_PLL0SRC_HXTAL  0x00000000U         /* HXTAL as PLL0 source */
-#define RCU_CFG0_PLL0SRC_IRC48M BIT(16)             /* IRC48M as PLL0 source */
-
-#define RCU_CFG0_PLL0MF_MASK    BITS(25,18)         /* PLL0 multiply factor mask */
-#define RCU_CFG0_PLL0MF_MUL10   (0x08U << 18U)      /* PLL0 multiply by 10 */
-
-/* USART Register Definitions */
-#define USART_STAT(usartx)      REG32((usartx) + 0x00U)  /* Status register */
-#define USART_DATA(usartx)      REG32((usartx) + 0x04U)  /* Data register */
-#define USART_BAUD(usartx)      REG32((usartx) + 0x08U)  /* Baud rate register */
-#define USART_CTL0(usartx)      REG32((usartx) + 0x0CU)  /* Control register 0 */
-#define USART_CTL1(usartx)      REG32((usartx) + 0x10U)  /* Control register 1 */
-#define USART_CTL2(usartx)      REG32((usartx) + 0x14U)  /* Control register 2 */
-
-/* USART_STAT bits */
-#define USART_STAT_TBE          BIT(7)              /* Transmit buffer empty */
-#define USART_STAT_TC           BIT(6)              /* Transmission complete */
-#define USART_STAT_RBNE         BIT(5)              /* Read buffer not empty */
-
-/* USART_CTL0 bits */
-#define USART_CTL0_UEN          BIT(13)             /* USART enable */
-#define USART_CTL0_TEN          BIT(3)              /* Transmitter enable */
-#define USART_CTL0_REN          BIT(2)              /* Receiver enable */
-#define USART_CTL0_RBNEIE       BIT(5)              /* RBNE interrupt enable */
-
-/* GPIO Register Definitions */
-#define GPIO_CTL0(gpiox)        REG32((gpiox) + 0x00U)  /* Port control register 0 */
-#define GPIO_CTL1(gpiox)        REG32((gpiox) + 0x04U)  /* Port control register 1 */
-#define GPIO_OCTL(gpiox)        REG32((gpiox) + 0x0CU)  /* Port output control register */
-#define GPIO_ISTAT(gpiox)       REG32((gpiox) + 0x08U)  /* Port input status register */
-#define GPIO_BOP(gpiox)         REG32((gpiox) + 0x10U)  /* Port bit operation register */
-#define GPIO_BC(gpiox)          REG32((gpiox) + 0x14U)  /* Bit clear register */
-
-/* System initialization function */
-void SystemInit(void) {
-    /* Enable FPU */
-#if (__FPU_PRESENT == 1) && (__FPU_USED == 1)
-    SCB->CPACR |= ((3UL << 10 * 2) | (3UL << 11 * 2));
-#endif
-
-    /* Enable IRC8M */
+static void return_to_irc8m(void)
+{
     RCU_CTL |= RCU_CTL_IRC8MEN;
-    while (!(RCU_CTL & RCU_CTL_IRC8MSTB)) {}
+    if (!wait_for_mask(&RCU_CTL, RCU_CTL_IRC8MSTB,
+                       RCU_CTL_IRC8MSTB, IRC8M_STARTUP_TIMEOUT)) {
+        clock_fail_stop();
+    }
 
-    /* Reset clock configuration */
-    RCU_CFG0 = 0x00000000U;
+    if ((RCU_CFG0 & RCU_CFG0_SCSS) == RCU_SCSS_PLL0P) {
+        set_ahb_prescaler(RCU_AHB_CKSYS_DIV2);
+        set_ahb_prescaler(RCU_AHB_CKSYS_DIV4);
+    }
+    RCU_CFG0 = (RCU_CFG0 & ~RCU_CFG0_SCS) | RCU_CKSYSSRC_IRC8M;
+    if (!wait_for_mask(&RCU_CFG0, RCU_CFG0_SCSS,
+                       RCU_SCSS_IRC8M, IRC8M_STARTUP_TIMEOUT)) {
+        clock_fail_stop();
+    }
+}
 
-    /* Disable PLL */
-    RCU_CTL &= ~RCU_CTL_PLL0EN;
+static void reset_clock_tree(void)
+{
+    RCU_CTL &= ~(RCU_CTL_HXTALEN | RCU_CTL_HCKMEN
+                 | RCU_CTL_PLL0EN | RCU_CTL_PLL1EN);
+    RCU_CTL &= ~RCU_CTL_HXTALBPS;
+    RCU_CFG0 &= ~(RCU_CFG0_AHBPSC | RCU_CFG0_APB1PSC
+                  | RCU_CFG0_APB2PSC | RCU_CFG0_ADCPSC
+                  | RCU_CFG0_PLL0MF_0_3 | RCU_CFG0_PLL0MF_4_5);
+    RCU_CFG1 &= ~(RCU_CFG1_PREDIV0 | RCU_CFG1_PREDIV1
+                  | RCU_CFG1_PLL0SEL | RCU_CFG1_PLL1SEL);
+    RCU_ADDCTL &= ~(RCU_ADDCTL_FMCSEL | RCU_ADDCTL_FMCDIV
+                    | RCU_ADDCTL_PLL0DIV);
+    RCU_INT = 0x01BF0000U;
+    RCU_ADDINT = 0x00400000U;
+}
 
-    /* Disable all interrupts */
-    RCU_INT = 0x00000000U;
-
-    /* Enable HXTAL */
+static void configure_200mhz_hxtal(void)
+{
     RCU_CTL |= RCU_CTL_HXTALEN;
-    while (!(RCU_CTL & RCU_CTL_HXTALSTB)) {}
+    if (!wait_for_mask(&RCU_CTL, RCU_CTL_HXTALSTB,
+                       RCU_CTL_HXTALSTB, HXTAL_STARTUP_TIMEOUT)) {
+        clock_fail_stop();
+    }
 
-    /* Set AHB prescaler to 1 */
-    RCU_CFG0 &= ~RCU_CFG0_AHBPSC_MASK;
-    RCU_CFG0 |= RCU_CFG0_AHBPSC_DIV1;
+    RCU_APB1EN |= RCU_APB1EN_PMUEN;
+    PMU_CTL0 |= PMU_CTL0_LDOVS;
+    set_ahb_prescaler(RCU_AHB_CKSYS_DIV4);
+    RCU_CFG0 = (RCU_CFG0 & ~(RCU_CFG0_APB1PSC | RCU_CFG0_APB2PSC))
+        | RCU_APB1_CKAHB_DIV2 | RCU_APB2_CKAHB_DIV1;
 
-    /* Set APB1 prescaler to 2 */
-    RCU_CFG0 &= ~RCU_CFG0_APB1PSC_MASK;
-    RCU_CFG0 |= RCU_CFG0_APB1PSC_DIV2;
-
-    /* Set APB2 prescaler to 1 */
-    RCU_CFG0 &= ~RCU_CFG0_APB2PSC_MASK;
-    RCU_CFG0 |= RCU_CFG0_APB2PSC_DIV1;
-
-    /* Configure PLL: HXTAL as source, multiply by 10 */
-    RCU_CFG0 &= ~(RCU_CFG0_PLL0SRC_MASK | RCU_CFG0_PLL0MF_MASK);
-    RCU_CFG0 |= RCU_CFG0_PLL0SRC_HXTAL | RCU_CFG0_PLL0MF_MUL10;
-
-    /* Enable PLL */
+    RCU_CFG1 = (RCU_CFG1 & ~(RCU_CFG1_PLL0SEL | RCU_CFG1_PREDIV0))
+        | RCU_PLL0SRC_HXTAL | RCU_PREDIV0_DIV2;
+    RCU_CFG0 = (RCU_CFG0
+                & ~(RCU_CFG0_PLL0MF_0_3 | RCU_CFG0_PLL0MF_4_5))
+        | RCU_PLL0_MUL50;
     RCU_CTL |= RCU_CTL_PLL0EN;
-    while (!(RCU_CTL & RCU_CTL_PLL0STB)) {}
+    if (!wait_for_mask(&RCU_CTL, RCU_CTL_PLL0STB,
+                       RCU_CTL_PLL0STB, HXTAL_STARTUP_TIMEOUT)) {
+        clock_fail_stop();
+    }
 
-    /* Select PLL as system clock source */
-    RCU_CFG0 &= ~RCU_CFG0_SCS_MASK;
-    RCU_CFG0 |= RCU_CFG0_SCS_PLL0P;
+    RCU_ADDCTL = (RCU_ADDCTL
+                  & ~(RCU_ADDCTL_FMCSEL | RCU_ADDCTL_FMCDIV))
+        | RCU_FMC_CK_AHB | RCU_FMC_DIV1;
+    RCU_CFG0 = (RCU_CFG0 & ~RCU_CFG0_SCS) | RCU_CKSYSSRC_PLL0P;
+    if (!wait_for_mask(&RCU_CFG0, RCU_CFG0_SCSS,
+                       RCU_SCSS_PLL0P, HXTAL_STARTUP_TIMEOUT)) {
+        clock_fail_stop();
+    }
 
-    /* Wait till PLL is used as system clock source */
-    while ((RCU_CFG0 & RCU_CFG0_SCSS_MASK) != RCU_CFG0_SCSS_PLL0P) {}
+    set_ahb_prescaler(RCU_AHB_CKSYS_DIV2);
+    set_ahb_prescaler(RCU_AHB_CKSYS_DIV1);
+    SystemCoreClock = SYSTEM_CLOCK_HZ;
+}
 
-    /* Update SystemCoreClock */
-    SystemCoreClock = HXTAL_VALUE * 10;
+void SystemInit(void)
+{
+#if (__FPU_PRESENT == 1U) && (__FPU_USED == 1U)
+    SCB->CPACR |= ((3UL << (10U * 2U)) | (3UL << (11U * 2U)));
+#endif
+    enable_fmc_no_wait_load();
+    return_to_irc8m();
+    reset_clock_tree();
+    configure_200mhz_hxtal();
 }

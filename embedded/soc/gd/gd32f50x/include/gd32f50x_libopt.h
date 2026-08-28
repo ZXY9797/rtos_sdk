@@ -39,11 +39,17 @@ typedef enum {
 #define BIT(x) ((uint32_t)((uint32_t)0x01U << (x)))
 #endif
 
-/* Bits macro - set bits from high to low */
-#define BITS(high, low) ((uint32_t)(0xFFFFFFFFUL << (low)) & (uint32_t)(0xFFFFFFFFUL >> (31U - (high))))
+/* Vendor headers pass bit ranges as inclusive (start, end) indices. */
+#define BITS(start, end)                                                \
+    ((uint32_t)(0xFFFFFFFFUL << (start))                                \
+     & (uint32_t)(0xFFFFFFFFUL >> (31U - (end))))
 
-/* GET_BITS macro - extract bits from a value */
-#define GET_BITS(regval, high, low) (((uint32_t)(regval) & BITS((high), (low))) >> (low))
+/* Extract an inclusive (start, end) bit range. */
+#define GET_BITS(regval, start, end)                                    \
+    (((uint32_t)(regval) & BITS((start), (end))) >> (start))
+
+typedef char gd32_bits_macro_check[
+    BITS(2U, 3U) == 0x0000000CU ? 1 : -1];
 
 /* Register access macros */
 #define REG32(addr) (*(volatile uint32_t *)(uint32_t)(addr))
@@ -60,7 +66,7 @@ typedef enum {
 #endif
 
 #ifndef IRC8M_VALUE
-#define IRC8M_VALUE    ((uint32_t)4000000U)
+#define IRC8M_VALUE    ((uint32_t)8000000U)
 #endif
 
 #ifndef IRC48M_VALUE

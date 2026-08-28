@@ -11,7 +11,7 @@ target_sources(${MODULE_NAME}
         sensor_core.cc
         watchdog.cc
 )
-target_sources(system_fault PRIVATE fault.cc)
+target_sources(system_fault PRIVATE fault.cc syscalls.c)
 
 target_include_directories(${MODULE_NAME}
     PRIVATE

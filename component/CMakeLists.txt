@@ -2,5 +2,6 @@
 add_subdirectory(algo)
 add_subdirectory_ifdef(CONFIG_BLE_GR5525 ble/goodix)
 add_subdirectory_ifdef(CONFIG_FOC foc)
+add_subdirectory_ifdef(CONFIG_GIMBAL gimbal)
 add_subdirectory_ifdef(CONFIG_LINK link)
 add_subdirectory_ifdef(CONFIG_NVS nvs)

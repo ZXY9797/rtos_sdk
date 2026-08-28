@@ -47,6 +47,23 @@ properties:
     default: 0
     description: PWM timer period value
 
+  three-phase:
+    type: boolean
+    description: Configure channels 1 through 3 as one three-phase bridge
+
+  center-aligned:
+    type: boolean
+    description: Enable center-aligned timer counting
+
+  complementary:
+    type: boolean
+    description: Enable complementary outputs on an advanced timer
+
+  dead-time:
+    type: int
+    default: 0
+    description: Hardware dead-time register value for complementary PWM
+
   "#pwm-cells":
     const: 3
 

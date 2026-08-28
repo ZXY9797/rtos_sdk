@@ -2,7 +2,7 @@
 
 namespace hal {
 
-// TIM 寄存器结构体（映射 STM32H7 通用定时器）
+// STM32H7 general-purpose timer register layout.
 struct TimRegs {
     volatile uint32_t CR1;    // 0x00
     volatile uint32_t CR2;    // 0x04
@@ -30,10 +30,10 @@ struct TimRegs {
 constexpr uint32_t CR1_CEN   = (1U << 0);
 constexpr uint32_t CR1_ARPE  = (1U << 7);
 constexpr uint32_t CR1_CMS_Pos = 5;
-// CCMR1 OC1M 位（输出比较模式）
+// CCMR1 output compare modes.
 constexpr uint32_t CCMR1_OC1M_Pos = 4;
-constexpr uint32_t CCMR1_OC1M_PWM1 = (6U << 4); // PWM 模式 1
-constexpr uint32_t CCMR1_OC1PE     = (1U << 3);  // 预装载使能
+constexpr uint32_t CCMR1_OC1M_PWM1 = (6U << 4);
+constexpr uint32_t CCMR1_OC1PE     = (1U << 3);
 constexpr uint32_t CCMR1_OC2M_Pos = 12;
 constexpr uint32_t CCMR1_OC2M_PWM1 = (6U << 12);
 constexpr uint32_t CCMR1_OC2PE     = (1U << 11);
@@ -49,14 +49,18 @@ constexpr uint32_t CCER_CC1E = (1U << 0);
 constexpr uint32_t CCER_CC2E = (1U << 4);
 constexpr uint32_t CCER_CC3E = (1U << 8);
 constexpr uint32_t CCER_CC4E = (1U << 12);
-// BDTR
-constexpr uint32_t BDTR_MOE = (1U << 15);
 // DIER
-constexpr uint32_t DIER_UIE = (1U << 0); // 更新中断使能
+constexpr uint32_t DIER_UIE = (1U << 0);
 // EGR
 constexpr uint32_t EGR_UG   = (1U << 0);
 
 Status PwmBase::init(const PwmConfig &config) {
+    if (!is_valid_pwm_channel(m_channel)
+        || config.period == 0U
+        || config.three_phase || config.center_aligned
+        || config.complementary || config.dead_time != 0U) {
+        return Status::NotSupported;
+    }
     auto *regs = reinterpret_cast<TimRegs *>(m_base);
 
     regs->CR1 = 0;
@@ -64,26 +68,33 @@ Status PwmBase::init(const PwmConfig &config) {
     regs->ARR = config.period;
     regs->CR1 = CR1_ARPE;
 
-    // 配置对应通道为 PWM 模式
+    // Configure only the requested channel.
     switch (m_channel) {
     case PwmChannel::Ch1:
-        regs->CCMR1 = (regs->CCMR1 & ~(0x7U << CCMR1_OC1M_Pos)) | CCMR1_OC1M_PWM1 | CCMR1_OC1PE;
+        regs->CCMR1 =
+            (regs->CCMR1 & ~(0x7U << CCMR1_OC1M_Pos))
+            | CCMR1_OC1M_PWM1 | CCMR1_OC1PE;
         break;
     case PwmChannel::Ch2:
-        regs->CCMR1 = (regs->CCMR1 & ~(0x7U << CCMR1_OC2M_Pos)) | CCMR1_OC2M_PWM1 | CCMR1_OC2PE;
+        regs->CCMR1 =
+            (regs->CCMR1 & ~(0x7U << CCMR1_OC2M_Pos))
+            | CCMR1_OC2M_PWM1 | CCMR1_OC2PE;
         break;
     case PwmChannel::Ch3:
-        regs->CCMR2 = (regs->CCMR2 & ~(0x7U << CCMR2_OC3M_Pos)) | CCMR2_OC3M_PWM1 | CCMR2_OC3PE;
+        regs->CCMR2 =
+            (regs->CCMR2 & ~(0x7U << CCMR2_OC3M_Pos))
+            | CCMR2_OC3M_PWM1 | CCMR2_OC3PE;
         break;
     case PwmChannel::Ch4:
-        regs->CCMR2 = (regs->CCMR2 & ~(0x7U << CCMR2_OC4M_Pos)) | CCMR2_OC4M_PWM1 | CCMR2_OC4PE;
+        regs->CCMR2 =
+            (regs->CCMR2 & ~(0x7U << CCMR2_OC4M_Pos))
+            | CCMR2_OC4M_PWM1 | CCMR2_OC4PE;
         break;
+    default:
+        return Status::InvalidArgument;
     }
 
-    // 使能 BDTR MOE（仅高级定时器 TIM1/TIM8/TIM20 有 BDTR 寄存器）
-    // 通用定时器 (TIM2-TIM5, TIM12-TIM15) 没有 BDTR，访问偏移 0x44 会 HardFault
-    // 注意: STM32 高级定时器基地址需与实际芯片匹配
-    // 当前由 enable_output() 单独控制 MOE，此处不再无条件写入
+    // MOE is not touched here because general-purpose timers have no BDTR.
 
     m_initialized = true;
     return Status::Ok;
@@ -106,6 +117,7 @@ Status PwmBase::start() {
     case PwmChannel::Ch2: regs->CCER |= CCER_CC2E; break;
     case PwmChannel::Ch3: regs->CCER |= CCER_CC3E; break;
     case PwmChannel::Ch4: regs->CCER |= CCER_CC4E; break;
+    default: return Status::InvalidArgument;
     }
     regs->CR1 |= CR1_CEN;
     return Status::Ok;
@@ -121,6 +133,7 @@ Status PwmBase::stop() {
     case PwmChannel::Ch2: regs->CCER &= ~CCER_CC2E; break;
     case PwmChannel::Ch3: regs->CCER &= ~CCER_CC3E; break;
     case PwmChannel::Ch4: regs->CCER &= ~CCER_CC4E; break;
+    default: return Status::InvalidArgument;
     }
     return Status::Ok;
 }
@@ -128,12 +141,14 @@ Status PwmBase::stop() {
 Status PwmBase::set_pulse(uint32_t pulse) {
     if (!m_initialized) return Status::InvalidArgument;
     auto *regs = reinterpret_cast<TimRegs *>(m_base);
+    if (pulse > regs->ARR) return Status::InvalidArgument;
 
     switch (m_channel) {
     case PwmChannel::Ch1: regs->CCR1 = pulse; break;
     case PwmChannel::Ch2: regs->CCR2 = pulse; break;
     case PwmChannel::Ch3: regs->CCR3 = pulse; break;
     case PwmChannel::Ch4: regs->CCR4 = pulse; break;
+    default: return Status::InvalidArgument;
     }
     return Status::Ok;
 }
@@ -141,27 +156,41 @@ Status PwmBase::set_pulse(uint32_t pulse) {
 Status PwmBase::set_pulse(PwmChannel ch, uint32_t pulse) {
     if (!m_initialized) return Status::InvalidArgument;
     auto *regs = reinterpret_cast<TimRegs *>(m_base);
+    if (pulse > regs->ARR) return Status::InvalidArgument;
 
     switch (ch) {
     case PwmChannel::Ch1: regs->CCR1 = pulse; break;
     case PwmChannel::Ch2: regs->CCR2 = pulse; break;
     case PwmChannel::Ch3: regs->CCR3 = pulse; break;
     case PwmChannel::Ch4: regs->CCR4 = pulse; break;
+    default: return Status::InvalidArgument;
     }
     return Status::Ok;
+}
+
+Status PwmBase::set_three_phase_pulses(uint32_t channel_1,
+                                       uint32_t channel_2,
+                                       uint32_t channel_3)
+{
+    (void)channel_1;
+    (void)channel_2;
+    (void)channel_3;
+    return Status::NotSupported;
 }
 
 Status PwmBase::enable_output() {
     if (!m_initialized) return Status::InvalidArgument;
     auto *regs = reinterpret_cast<TimRegs *>(m_base);
-    regs->BDTR |= BDTR_MOE;
+    regs->CCER |= CCER_CC1E
+        << (static_cast<uint8_t>(m_channel) * 4U);
     return Status::Ok;
 }
 
 Status PwmBase::disable_output() {
     if (!m_initialized) return Status::InvalidArgument;
     auto *regs = reinterpret_cast<TimRegs *>(m_base);
-    regs->BDTR &= ~BDTR_MOE;
+    regs->CCER &= ~(CCER_CC1E
+        << (static_cast<uint8_t>(m_channel) * 4U));
     return Status::Ok;
 }
 

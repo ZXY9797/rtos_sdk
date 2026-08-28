@@ -8,6 +8,10 @@
     struct DeviceTrait<DT_ORD(node_id)> {                          \
         static constexpr uint32_t kChannel =                       \
             DT_PROP_OR(node_id, channel, 0U);                      \
+        static constexpr uint32_t kPrescaler =                     \
+            DT_PROP_OR(node_id, prescaler, 0U);                    \
+        static constexpr uint32_t kPeriod =                        \
+            DT_PROP_OR(node_id, period, 0U);                       \
                                                                    \
         static_assert(kChannel <= 3U, "PWM channel is invalid");   \
                                                                    \
@@ -19,9 +23,16 @@
         static int init()                                          \
         {                                                          \
             PwmConfig config{};                                    \
-            config.prescaler =                                    \
-                DT_PROP_OR(node_id, prescaler, 0U);                \
-            config.period = DT_PROP_OR(node_id, period, 0U);       \
+            config.prescaler = kPrescaler;                         \
+            config.period = kPeriod;                               \
+            config.three_phase =                                 \
+                DT_PROP_OR(node_id, three_phase, 0U) != 0U;       \
+            config.center_aligned =                              \
+                DT_PROP_OR(node_id, center_aligned, 0U) != 0U;   \
+            config.complementary =                               \
+                DT_PROP_OR(node_id, complementary, 0U) != 0U;    \
+            config.dead_time =                                   \
+                DT_PROP_OR(node_id, dead_time, 0U);               \
             return static_cast<int>(instance.init(config));        \
         }                                                          \
                                                                    \

@@ -1,0 +1,142 @@
+#include "../../demo/config/board.dts"
+
+/delete-node/ &motor0;
+/delete-node/ &can0;
+
+&timer0 {
+    prescaler = <0>;
+    period = <4999>;
+    three-phase;
+    center-aligned;
+};
+
+&timer6 {
+    /* 200 MHz / 12500 = 16 kHz, used only as the sensor trigger. */
+    prescaler = <0>;
+    period = <12499>;
+};
+
+/ {
+    model = "Three-axis Non-orthogonal Gimbal Reference";
+
+    aliases {
+        /delete-property/ motor0;
+        /delete-property/ can0;
+        hall-roll = &hall_roll;
+        hall-pitch = &hall_pitch;
+        hall-yaw = &hall_yaw;
+        motor-roll = &motor_roll;
+        motor-pitch = &motor_pitch;
+        motor-yaw = &motor_yaw;
+        heater-pwm = &heater_timer;
+        sensor-trigger = &timer6;
+    };
+
+    hall_roll: hall-roll {
+        compatible = "rtos_sdk,gimbal-hall-angle";
+        status = "okay";
+        adc-dev = <&adc0>;
+        channel-a = <3>;
+        channel-b = <4>;
+        sample-time = <5>;
+    };
+
+    hall_pitch: hall-pitch {
+        compatible = "rtos_sdk,gimbal-hall-angle";
+        status = "okay";
+        adc-dev = <&adc0>;
+        channel-a = <5>;
+        channel-b = <6>;
+        sample-time = <5>;
+    };
+
+    hall_yaw: hall-yaw {
+        compatible = "rtos_sdk,gimbal-hall-angle";
+        status = "okay";
+        adc-dev = <&adc0>;
+        channel-a = <7>;
+        channel-b = <8>;
+        sample-time = <5>;
+    };
+
+    motor_roll: motor-roll {
+        compatible = "rtos_sdk,gimbal-voltage-motor";
+        status = "okay";
+        pwm-dev = <&timer0>;
+        pwm-ch-u = <0>;
+        pwm-ch-v = <1>;
+        pwm-ch-w = <2>;
+        pwm-period-counts = <4999>;
+        nominal-bus-mv = <12000>;
+        maximum-modulation-milli = <850>;
+    };
+
+    motor_pitch: motor-pitch {
+        compatible = "rtos_sdk,gimbal-voltage-motor";
+        status = "okay";
+        pwm-dev = <&pitch_timer>;
+        pwm-ch-u = <0>;
+        pwm-ch-v = <1>;
+        pwm-ch-w = <2>;
+        pwm-period-counts = <4999>;
+        nominal-bus-mv = <12000>;
+        maximum-modulation-milli = <850>;
+    };
+
+    motor_yaw: motor-yaw {
+        compatible = "rtos_sdk,gimbal-voltage-motor";
+        status = "okay";
+        pwm-dev = <&yaw_timer>;
+        pwm-ch-u = <0>;
+        pwm-ch-v = <1>;
+        pwm-ch-w = <2>;
+        pwm-period-counts = <4999>;
+        nominal-bus-mv = <12000>;
+        maximum-modulation-milli = <850>;
+    };
+
+    soc {
+        pitch_timer: pwm@40000000 {
+            compatible = "gd,gd32-timer";
+            reg = <0x40000000 0x400>;
+            interrupts = <28 6>;
+            interrupt-names = "update";
+            status = "okay";
+            label = "PITCH_TIMER";
+            channel = <0>;
+            prescaler = <0>;
+            period = <4999>;
+            three-phase;
+            center-aligned;
+            #pwm-cells = <3>;
+        };
+
+        yaw_timer: pwm@40000c00 {
+            compatible = "gd,gd32-timer";
+            reg = <0x40000c00 0x400>;
+            interrupts = <75 6>;
+            interrupt-names = "update";
+            status = "okay";
+            label = "YAW_TIMER";
+            channel = <0>;
+            prescaler = <0>;
+            period = <4999>;
+            three-phase;
+            center-aligned;
+            #pwm-cells = <3>;
+        };
+
+        heater_timer: pwm@40000400 {
+            compatible = "gd,gd32-timer";
+            reg = <0x40000400 0x400>;
+            interrupts = <29 6>;
+            interrupt-names = "update";
+            status = "okay";
+            label = "IMU_HEATER_TIMER";
+            channel = <0>;
+            prescaler = <199>;
+            period = <999>;
+            #pwm-cells = <3>;
+        };
+    };
+};

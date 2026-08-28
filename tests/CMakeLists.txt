@@ -57,6 +57,32 @@ target_include_directories(can_dlc_test PRIVATE
     ../embedded/include)
 add_test(NAME can_dlc COMMAND can_dlc_test)
 
+add_executable(icm40609d_test
+    ../embedded/drivers/imu/tests/icm40609d_test.cc)
+target_compile_features(icm40609d_test PRIVATE cxx_std_17)
+target_include_directories(icm40609d_test PRIVATE
+    stubs
+    ../embedded/drivers/imu/include
+    ../embedded/include
+    ../embedded/include/osal
+    ../embedded/osal/baremetal)
+target_compile_definitions(icm40609d_test PRIVATE
+    CONFIG_NUM_IRQ_PRIO_BITS=4)
+add_test(NAME icm40609d COMMAND icm40609d_test)
+
+add_executable(sensor_batch_core_test
+    sensor_batch_core_test.cc
+    ../embedded/system/sensor_core.cc)
+target_compile_features(sensor_batch_core_test PRIVATE cxx_std_17)
+target_include_directories(sensor_batch_core_test PRIVATE
+    stubs
+    ../embedded/include
+    ../embedded/include/osal
+    ../embedded/osal/baremetal)
+target_compile_definitions(sensor_batch_core_test PRIVATE
+    CONFIG_NUM_IRQ_PRIO_BITS=4)
+add_test(NAME sensor_batch_core COMMAND sensor_batch_core_test)
+
 add_executable(boot_power_loss_test
     ../bootloader/common/tests/boot_power_loss_test.cc
     ../bootloader/common/src/boot_ctrl.cc
@@ -131,6 +157,31 @@ target_include_directories(device_pm_test PRIVATE
 target_compile_definitions(device_pm_test PRIVATE
     CONFIG_NUM_IRQ_PRIO_BITS=4)
 add_test(NAME device_pm COMMAND device_pm_test)
+
+add_executable(gimbal_core_test
+    ../component/gimbal/tests/gimbal_core_test.cc
+    ../component/gimbal/src/attitude_ekf.cc
+    ../component/gimbal/src/controller.cc
+    ../component/gimbal/src/dynamics.cc
+    ../component/gimbal/src/hall_calibration.cc
+    ../component/gimbal/src/hall_sensor.cc
+    ../component/gimbal/src/kinematics.cc
+    ../component/gimbal/src/math.cc
+    ../component/gimbal/src/motion_planner.cc
+    ../component/gimbal/src/parameters.cc
+    ../component/gimbal/src/safety_manager.cc
+    ../component/gimbal/src/thermal_controller.cc
+    ../component/gimbal/src/voltage_foc.cc)
+target_compile_features(gimbal_core_test PRIVATE cxx_std_17)
+target_include_directories(gimbal_core_test PRIVATE
+    stubs
+    ../component/gimbal/include
+    ../embedded/include
+    ../embedded/include/osal
+    ../embedded/osal/baremetal)
+target_compile_definitions(gimbal_core_test PRIVATE
+    CONFIG_NUM_IRQ_PRIO_BITS=4)
+add_test(NAME gimbal_core COMMAND gimbal_core_test)
 
 add_library(driver_header_contract OBJECT
     driver_header_contract.cc)

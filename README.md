@@ -112,6 +112,9 @@ SDK 提供开箱即用的 FOC（磁场定向控制）电机控制组件，基于
 
 详见 [doc/FOC.md](doc/FOC.md)
 
+三轴非正交手持云台的产品方案见
+[app/product/gimbal/doc/ARCHITECTURE.md](app/product/gimbal/doc/ARCHITECTURE.md)。
+
 ### 5. BLE 蓝牙组件 — 厂商无关 API
 
 SDK 提供厂商无关的 BLE API（`ble::` 命名空间），当前实现基于 Goodix GR5525。

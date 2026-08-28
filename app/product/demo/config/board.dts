@@ -142,9 +142,9 @@
         dma1: dma@40020400 {
             compatible = "gd,gd32-dma";
             reg = <0x40020400 0x400>;
-            interrupts = <56 6>, <57 6>, <58 6>, <59 6>, <60 6>, <68 6>, <69 6>;
+            interrupts = <56 6>, <57 6>, <58 6>, <59 6>, <60 6>;
             label = "DMA1";
-            dma-channels = <7>;
+            dma-channels = <5>;
             mux-channels = <5>;
             dma-offset = <7>;
             #dma-cells = <2>;
@@ -189,7 +189,7 @@
             status = "okay";
             label = "TIMER5";
             channel = <0>;
-            prescaler = <119>;   /* 120MHz / 120 = 1MHz */
+            prescaler = <199>;   /* 200MHz / 200 = 1MHz */
             period = <249>;      /* 1MHz / 250 = 4kHz */
             #pwm-cells = <3>;
         };
@@ -202,23 +202,23 @@
             status = "okay";
             label = "TIMER6";
             channel = <0>;
-            prescaler = <119>;   /* 120MHz / 120 = 1MHz */
+            prescaler = <199>;   /* 200MHz / 200 = 1MHz */
             period = <62>;       /* 1MHz / 63 ≈ 15.87kHz ≈ 16kHz */
             #pwm-cells = <3>;
         };
 
-        adc0: adc@40022800 {
+        adc0: adc@40012400 {
             compatible = "gd,gd32-adc";
-            reg = <0x40022800 0x400>;
+            reg = <0x40012400 0x400>;
             interrupts = <18 6>;
             status = "okay";
             label = "ADC0";
             #io-channel-cells = <1>;
         };
 
-        can0: can@40006400 {
+        can0: can@40015800 {
             compatible = "gd,gd32-can";
-            reg = <0x40006400 0x400>;
+            reg = <0x40015800 0x400>;
             port = <0>;
             interrupts = <19 6>;
             status = "okay";
@@ -250,7 +250,7 @@
             max-voltage-mv = <48000>;
             pwm-frequency = <20000>;
             current-bandwidth = <1000>;
-            timer-clock-hz = <120000000>;
+            timer-clock-hz = <200000000>;
             pwm-prescaler = <0>;
             dead-time-ns = <500>;
             adc-resolution-bits = <12>;

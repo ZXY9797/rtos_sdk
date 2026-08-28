@@ -43,7 +43,8 @@ constexpr uint32_t CTRL0_FRF_SPI     = (0U << 4);   /* Frame format: SPI */
 constexpr uint32_t CTRL0_SCPHA       = (1U << 6);   /* Serial Clock Phase */
 constexpr uint32_t CTRL0_SCPOL       = (1U << 7);   /* Serial Clock Polarity */
 constexpr uint32_t CTRL0_XFE_MODE    = (0U << 8);   /* TX and RX (normal) */
-constexpr uint32_t CTRL0_DFS_8BIT    = (7U << 16);  /* Data Frame Size = 8 (value = bits-1) */
+/* Data frame size is encoded as bits minus one. */
+constexpr uint32_t CTRL0_DFS_8BIT = (7U << 16);
 
 /* SSI_EN bits */
 constexpr uint32_t SSI_EN            = (1U << 0);
@@ -111,8 +112,7 @@ Status SpiBase::deinit() {
 }
 
 Status SpiBase::transfer(const uint8_t *tx, uint8_t *rx, size_t len,
-                         uint32_t timeout_ms, ChipSelectFn chip_select,
-                         void *chip_select_arg) {
+                         uint32_t timeout_ms, ChipSelect chip_select) {
     if (!is_initialized() || len == 0) return Status::InvalidArgument;
 
     osal::Deadline deadline(timeout_ms);
@@ -120,7 +120,8 @@ Status SpiBase::transfer(const uint8_t *tx, uint8_t *rx, size_t len,
     if (!lock.owns_lock()) {
         return Status::Busy;
     }
-    detail::SpiChipSelectGuard select_guard(chip_select, chip_select_arg);
+    detail::SpiChipSelectGuard select_guard(
+        chip_select.function, chip_select.argument);
     auto *regs = reinterpret_cast<Gr5525SpiRegs *>(m_base);
 
     for (size_t i = 0; i < len; i++) {
@@ -145,6 +146,22 @@ Status SpiBase::transfer(const uint8_t *tx, uint8_t *rx, size_t len,
 
     m_stats.xfer_count++;
     m_stats.xfer_bytes += len;
+    return Status::Ok;
+}
+
+Status SpiBase::begin_async(AsyncCallback, void*)
+{
+    return Status::NotSupported;
+}
+
+Status SpiBase::transfer_async(
+    const uint8_t*, uint8_t*, size_t, ChipSelect)
+{
+    return Status::NotSupported;
+}
+
+Status SpiBase::end_async()
+{
     return Status::Ok;
 }
 

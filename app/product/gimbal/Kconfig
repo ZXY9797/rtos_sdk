@@ -1,0 +1,27 @@
+menu "Gimbal Product Configuration"
+
+config APP_NAME
+    string "Application name"
+    default "gimbal"
+
+config GIMBAL_CLOSED_LOOP_STACK_SIZE
+    int "Sensor batch and closed-loop task stack bytes"
+    range 2048 12288
+    default 4096
+
+config GIMBAL_PLANNER_STACK_SIZE
+    int "Planner task stack bytes"
+    range 768 8192
+    default 1536
+
+config GIMBAL_SUPERVISOR_STACK_SIZE
+    int "Supervisor task stack bytes"
+    range 768 8192
+    default 1536
+
+config GIMBAL_THERMAL_STACK_SIZE
+    int "Thermal task stack bytes"
+    range 512 4096
+    default 1024
+
+endmenu

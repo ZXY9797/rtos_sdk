@@ -23,11 +23,11 @@ typedef enum {
 
     /* GD32F50x specific interrupt numbers */
     WWDGT_IRQn              = 0,
-    LVD_IRQn                = 1,
+    LVD_VAVD_IRQn           = 1,
     TAMPER_IRQn             = 2,
     RTC_IRQn                = 3,
     FMC_IRQn                = 4,
-    RCU_IRQn                = 5,
+    RCU_CTC_IRQn            = 5,
     EXTI0_IRQn              = 6,
     EXTI1_IRQn              = 7,
     EXTI2_IRQn              = 8,
@@ -46,9 +46,9 @@ typedef enum {
     CAN0_RX1_IRQn           = 21,
     CAN0_EWMC_IRQn          = 22,
     EXTI5_9_IRQn            = 23,
-    TIMER0_BRK_TIMER8_IRQn  = 24,
-    TIMER0_UP_TIMER9_IRQn   = 25,
-    TIMER0_TRG_CMT_TIMER10_IRQn = 26,
+    TIMER0_BRK_IRQn         = 24,
+    TIMER0_UP_IRQn          = 25,
+    TIMER0_TRG_CMT_IRQn     = 26,
     TIMER0_Channel_IRQn     = 27,
     TIMER1_IRQn             = 28,
     TIMER2_IRQn             = 29,
@@ -65,7 +65,13 @@ typedef enum {
     EXTI10_15_IRQn          = 40,
     RTC_Alarm_IRQn          = 41,
     USBFS_WKUP_IRQn         = 42,
-    TIMER4_IRQn             = 45,
+    TIMER7_BRK_IRQn         = 43,
+    TIMER7_UP_IRQn          = 44,
+    TIMER7_TRG_CMT_IRQn     = 45,
+    TIMER7_Channel_IRQn     = 46,
+    ADC2_IRQn               = 47,
+    RCU_CKFM_IRQn           = 49,
+    CMP_WAKEUP_IRQn         = 50,
     SPI2_IRQn               = 51,
     UART3_IRQn              = 52,
     UART4_IRQn              = 53,
@@ -76,39 +82,28 @@ typedef enum {
     DMA1_Channel2_IRQn      = 58,
     DMA1_Channel3_IRQn      = 59,
     DMA1_Channel4_IRQn      = 60,
-    ENET_IRQn               = 61,
-    ENET_WKUP_IRQn          = 62,
+    DAC_IRQn                = 61,
+    PMU_VUVD_VOVD_IRQn      = 62,
     CAN1_TX_IRQn            = 63,
     CAN1_RX0_IRQn           = 64,
     CAN1_RX1_IRQn           = 65,
     CAN1_EWMC_IRQn          = 66,
-    USBFS_IRQn              = 67,
-    DMA1_Channel5_IRQn      = 68,
-    DMA1_Channel6_IRQn      = 69,
-    USART5_IRQn             = 70,
-    I2C2_EV_IRQn            = 71,
-    I2C2_ER_IRQn            = 72,
-    USBHS_EP1_Out_IRQn      = 73,
-    USBHS_EP1_In_IRQn       = 74,
-    USBHS_WKUP_IRQn         = 75,
-    USBHS_IRQn              = 76,
-    DCI_IRQn                = 77,
-    CAU_IRQn                = 78,
-    HAU_TRNG_IRQn           = 79,
-    FPU_IRQn                = 80,
-    UART6_IRQn              = 81,
-    UART7_IRQn              = 82,
-    SPI3_IRQn               = 83,
-    SPI4_IRQn               = 84,
-    SPI5_IRQn               = 85,
-    TLI_IRQn                = 86,
-    TLI_ER_IRQn             = 87,
-    IPA_IRQn                = 88,
+    SRAM_ECC_IRQn           = 67,
+    FPU_IRQn                = 68,
+    CMP_IRQn                = 69,
+    DMAMUX_IRQn             = 70,
+    CAU_IRQn                = 71,
+    HAU_IRQn                = 72,
+    TRNG_IRQn               = 73,
+    USBFS_IRQn              = 74,
+    TIMER4_IRQn             = 75,
+    TIMER15_IRQn            = 76,
+    TIMER16_IRQn            = 77,
+    TIMER0_BRK_Channel_IRQn = 78,
+    TIMER7_BRK_Channel_IRQn = 79,
 } IRQn_Type;
 
-/* ================================================================================================================= */
-/*                  Peripheral memory map                                                                            */
-/* ================================================================================================================= */
+/* Peripheral memory map */
 /* Peripheral and SRAM base address */
 #define PERIPH_BASE                     ((uint32_t)0x40000000U)
 #define SRAM_BASE                       ((uint32_t)0x20000000U)
@@ -144,16 +139,16 @@ typedef enum {
 #define UART4_BASE                      (APB1_BUS_BASE + 0x00005000U)
 #define I2C0_BASE                       (APB1_BUS_BASE + 0x00005400U)
 #define I2C1_BASE                       (APB1_BUS_BASE + 0x00005800U)
-#define CAN0_BASE                       (APB1_BUS_BASE + 0x00006400U)
-#define CAN1_BASE                       (APB1_BUS_BASE + 0x00006800U)
+#define CAN0_BASE                       (APB2_BUS_BASE + 0x00005800U)
+#define CAN1_BASE                       (APB2_BUS_BASE + 0x00005C00U)
 #define PMU_BASE                        (APB1_BUS_BASE + 0x00007000U)
 #define DAC_BASE                        (APB1_BUS_BASE + 0x00007400U)
 #define UART6_BASE                      (APB1_BUS_BASE + 0x00007800U)
 #define UART7_BASE                      (APB1_BUS_BASE + 0x00007C00U)
 
 /* APB2 peripherals base address */
-#define TIMER0_BASE                     (APB2_BUS_BASE + 0x00000000U)
-#define TIMER7_BASE                     (APB2_BUS_BASE + 0x00000400U)
+#define TIMER0_BASE                     (TIMER_BASE + 0x00012C00U)
+#define TIMER7_BASE                     (TIMER_BASE + 0x00013400U)
 #define TIMER8_BASE                     (APB2_BUS_BASE + 0x00004000U)
 #define TIMER9_BASE                     (APB2_BUS_BASE + 0x00004400U)
 #define TIMER10_BASE                    (APB2_BUS_BASE + 0x00004800U)
@@ -161,8 +156,9 @@ typedef enum {
 #define USART0_BASE                     (APB2_BUS_BASE + 0x00003800U)
 #define USART5_BASE                     (APB2_BUS_BASE + 0x00005000U)
 
-#define ADC0_BASE                       (APB2_BUS_BASE + 0x00002000U)
-#define ADC1_BASE                       (APB2_BUS_BASE + 0x00002400U)
+#define ADC0_BASE                       (APB2_BUS_BASE + 0x00002400U)
+#define ADC1_BASE                       (APB2_BUS_BASE + 0x00002800U)
+#define ADC2_BASE                       (APB2_BUS_BASE + 0x00003C00U)
 
 #define SPI0_BASE                       (APB2_BUS_BASE + 0x00003000U)
 #define SPI3_BASE                       (APB2_BUS_BASE + 0x00003C00U)
@@ -190,8 +186,6 @@ typedef enum {
 #define DMA1_Channel2_BASE              (DMA1_BASE + 0x00000030U)
 #define DMA1_Channel3_BASE              (DMA1_BASE + 0x00000044U)
 #define DMA1_Channel4_BASE              (DMA1_BASE + 0x00000058U)
-#define DMA1_Channel5_BASE              (DMA1_BASE + 0x0000006CU)
-#define DMA1_Channel6_BASE              (DMA1_BASE + 0x00000080U)
 
 #define DMAMUX_BASE                    (AHB1_BUS_BASE + 0x00000800U)
 
@@ -205,7 +199,7 @@ typedef enum {
 #define ENET_PTP_BASE                   (ENET_BASE + 0x00000700U)
 #define ENET_DMA_BASE                   (ENET_BASE + 0x00001000U)
 
-#define GPIO_BASE                       (AHB1_BUS_BASE + 0x00000000U + 0x00020000U)
+#define GPIO_BASE                       (APB2_BUS_BASE + 0x00000800U)
 #define GPIOA_BASE                      (GPIO_BASE + 0x00000000U)
 #define GPIOB_BASE                      (GPIO_BASE + 0x00000400U)
 #define GPIOC_BASE                      (GPIO_BASE + 0x00000800U)

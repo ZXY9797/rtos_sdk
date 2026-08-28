@@ -11,8 +11,8 @@ constexpr uint32_t PUD_PULLUP      = 0x1U;
 
 void gpio_clock_enable(uintptr_t base) {
     uint32_t offset = (base - GPIO_BASE) / 0x400U;
-    if (offset <= 8) {
-        gd32::rcu_ahben() |= (1U << offset);
+    if (offset <= 4U) {
+        gd32::rcu_apb2en() |= (gd32::clk::GPIOAEN << offset);
     }
 }
 
@@ -59,7 +59,9 @@ void GpioPortBase::toggle(int pin) {
 }
 
 int GpioPortBase::get(int pin) const {
-    return (reinterpret_cast<const gd32::GpioRegs *>(base_)->ISTAT & pin_mask(pin)) ? 1 : 0;
+    const auto *regs =
+        reinterpret_cast<const gd32::GpioRegs *>(base_);
+    return (regs->ISTAT & pin_mask(pin)) != 0U ? 1 : 0;
 }
 
 } // namespace hal

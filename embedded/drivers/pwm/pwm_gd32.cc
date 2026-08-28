@@ -5,19 +5,19 @@ namespace hal {
 
 using namespace gd32;
 
-// TIMER 寄存器位定义
+namespace {
+
+// TIMER register bits.
 // CTL0
 constexpr uint32_t CTL0_CEN    = (1U << 0);
 constexpr uint32_t CTL0_ARPE   = (1U << 7);
-constexpr uint32_t CTL0_CAM_Pos = 5;  // 中心对齐模式
 constexpr uint32_t CTL0_CAM_Msk = (3U << 5);
-constexpr uint32_t CTL0_CAM_0  = (1U << 5); // CAM=01: 中心对齐模式1
-constexpr uint32_t CTL0_CAM_1  = (2U << 5); // CAM=10: 中心对齐模式2
-constexpr uint32_t CTL0_CAM_2  = (3U << 5); // CAM=11: 中心对齐模式3
-constexpr uint32_t CTL0_UPDIS  = (1U << 1); // 更新禁用
-// CTL1
-constexpr uint32_t CTL1_TI0S   = (1U << 7); // TI0 选择
-// CHCTL0 — CH0/CH1 输出比较模式
+constexpr uint32_t CTL0_CAM_2  = (3U << 5);
+constexpr uint32_t CTL0_UPDIS  = (1U << 1);
+// CTL1 master-mode trigger output.
+constexpr uint32_t CTL1_MMC_Msk = (7U << 4);
+constexpr uint32_t CTL1_MMC_TRGO = (2U << 4);
+// CHCTL0 output compare modes for channels 0 and 1.
 constexpr uint32_t CHCTL0_OC0M_Pos = 4;
 constexpr uint32_t CHCTL0_OC0M_Msk = (7U << 4);
 constexpr uint32_t CHCTL0_OC0M_PWM1 = (6U << 4);
@@ -26,121 +26,153 @@ constexpr uint32_t CHCTL0_OC1M_Pos = 12;
 constexpr uint32_t CHCTL0_OC1M_Msk = (7U << 12);
 constexpr uint32_t CHCTL0_OC1M_PWM1 = (6U << 12);
 constexpr uint32_t CHCTL0_OC1PE = (1U << 11);
-// CHCTL1 — CH2/CH3 输出比较模式
+// CHCTL1 output compare mode for channel 2.
 constexpr uint32_t CHCTL1_OC2M_Pos = 4;
 constexpr uint32_t CHCTL1_OC2M_Msk = (7U << 4);
 constexpr uint32_t CHCTL1_OC2M_PWM1 = (6U << 4);
 constexpr uint32_t CHCTL1_OC2PE = (1U << 3);
-// CHCTL1 — CH3 输出比较模式
+// CHCTL1 output compare mode for channel 3.
 constexpr uint32_t CHCTL1_OC3M_Pos = 12;
 constexpr uint32_t CHCTL1_OC3M_Msk = (7U << 12);
 constexpr uint32_t CHCTL1_OC3M_PWM1 = (6U << 12);
 constexpr uint32_t CHCTL1_OC3PE = (1U << 11);
-// CHCTL2 — 输出使能/极性
+// CHCTL2 output enables and polarities.
 constexpr uint32_t CHCTL2_CH0EN  = (1U << 0);
-constexpr uint32_t CHCTL2_CH0P   = (1U << 1);
 constexpr uint32_t CHCTL2_CH0NEN = (1U << 2);
-constexpr uint32_t CHCTL2_CH0NP  = (1U << 3);
 constexpr uint32_t CHCTL2_CH1EN  = (1U << 4);
-constexpr uint32_t CHCTL2_CH1P   = (1U << 5);
 constexpr uint32_t CHCTL2_CH1NEN = (1U << 6);
-constexpr uint32_t CHCTL2_CH1NP  = (1U << 7);
 constexpr uint32_t CHCTL2_CH2EN  = (1U << 8);
-constexpr uint32_t CHCTL2_CH2P   = (1U << 9);
 constexpr uint32_t CHCTL2_CH2NEN = (1U << 10);
-constexpr uint32_t CHCTL2_CH2NP  = (1U << 11);
 constexpr uint32_t CHCTL2_CH3EN  = (1U << 12);
-// CCHP — 死区和 MOE
+// CCHP dead time and main output enable.
 constexpr uint32_t CCHP_MOE   = (1U << 15);
-constexpr uint32_t CCHP_ROS   = (1U << 12); // 运行模式下输出安全状态
-constexpr uint32_t CCHP_IOS   = (1U << 11); // 空闲模式下输出安全状态
-constexpr uint32_t CCHP_OIS0  = (1U << 8);
-constexpr uint32_t CCHP_OIS1  = (1U << 9);
-constexpr uint32_t CCHP_OIS2  = (1U << 10);
 // SWEVG
-constexpr uint32_t SWEVG_UPG  = (1U << 0); // 软件更新事件
+constexpr uint32_t SWEVG_UPG  = (1U << 0);
 // DMAINTEN
-constexpr uint32_t DMAINTEN_UPIE = (1U << 0); // 更新中断使能
+constexpr uint32_t DMAINTEN_UPIE = (1U << 0);
 // INTF
-constexpr uint32_t INTF_UPIF = (1U << 0); // 更新中断标志
-// SMCFG
-constexpr uint32_t SMCFG_MMC_Pos = 4; // 主模式选择
-constexpr uint32_t SMCFG_MMC_Msk = (7U << 4);
-constexpr uint32_t SMCFG_MMC_TRGO = (2U << 4); // 更新事件 → TRGO
+constexpr uint32_t INTF_UPIF = (1U << 0);
+// Only advanced timers provide CCHP and complementary outputs.
+constexpr uint32_t kApb2Timer0Enable = (1U << 11);
+constexpr uint32_t kApb2Timer7Enable = (1U << 13);
+constexpr uint32_t kApb1Timer1Enable = (1U << 0);
+constexpr uintptr_t kTimerRegisterBlockStride = 0x400U;
+constexpr uint32_t kDeadTimeMask = 0xFFU;
 
-// 检测是否为高级定时器(TIMER0/TIMER7) — 有 CCHP 寄存器
 static constexpr bool is_advanced_timer(uintptr_t base) {
     return base == TIMER0_BASE || base == TIMER7_BASE;
 }
 
-Status PwmBase::init(const PwmConfig &config) {
-    auto *regs = reinterpret_cast<TimerRegs *>(m_base);
+constexpr uint32_t kMainThreePhaseMask =
+    CHCTL2_CH0EN | CHCTL2_CH1EN | CHCTL2_CH2EN;
+constexpr uint32_t kComplementaryThreePhaseMask =
+    CHCTL2_CH0NEN | CHCTL2_CH1NEN | CHCTL2_CH2NEN;
 
-    // 停止定时器
+[[nodiscard]] constexpr uint32_t channel_mask(PwmChannel channel)
+{
+    return CHCTL2_CH0EN << (static_cast<uint8_t>(channel) * 4U);
+}
+
+void configure_channel(TimerRegs &regs, PwmChannel channel)
+{
+    switch (channel) {
+    case PwmChannel::Ch1:
+        regs.CHCTL0 = (regs.CHCTL0 & ~CHCTL0_OC0M_Msk)
+                    | CHCTL0_OC0M_PWM1 | CHCTL0_OC0PE;
+        break;
+    case PwmChannel::Ch2:
+        regs.CHCTL0 = (regs.CHCTL0 & ~CHCTL0_OC1M_Msk)
+                    | CHCTL0_OC1M_PWM1 | CHCTL0_OC1PE;
+        break;
+    case PwmChannel::Ch3:
+        regs.CHCTL1 = (regs.CHCTL1 & ~CHCTL1_OC2M_Msk)
+                    | CHCTL1_OC2M_PWM1 | CHCTL1_OC2PE;
+        break;
+    case PwmChannel::Ch4:
+        regs.CHCTL1 = (regs.CHCTL1 & ~CHCTL1_OC3M_Msk)
+                    | CHCTL1_OC3M_PWM1 | CHCTL1_OC3PE;
+        break;
+    default:
+        break;
+    }
+}
+
+void configure_three_phase(TimerRegs &regs)
+{
+    configure_channel(regs, PwmChannel::Ch1);
+    configure_channel(regs, PwmChannel::Ch2);
+    configure_channel(regs, PwmChannel::Ch3);
+}
+
+[[nodiscard]] bool enable_timer_clock(uintptr_t base)
+{
+    switch (base) {
+    case TIMER0_BASE:
+        rcu_apb2en() |= kApb2Timer0Enable;
+        break;
+    case TIMER1_BASE:
+    case TIMER2_BASE:
+    case TIMER3_BASE:
+    case TIMER4_BASE:
+    case TIMER5_BASE:
+    case TIMER6_BASE: {
+        const uint32_t index = static_cast<uint32_t>(
+            (base - TIMER1_BASE) / kTimerRegisterBlockStride);
+        rcu_apb1en() |= kApb1Timer1Enable << index;
+        break;
+    }
+    case TIMER7_BASE:
+        rcu_apb2en() |= kApb2Timer7Enable;
+        break;
+    default:
+        return false;
+    }
+    return true;
+}
+
+} // namespace
+
+Status PwmBase::init(const PwmConfig &config) {
+    if (!is_valid_pwm_channel(m_channel)
+        || config.period == 0U
+        || config.dead_time > kDeadTimeMask
+        || (config.dead_time != 0U && !config.complementary)
+        || (config.complementary && !is_advanced_timer(m_base))) {
+        return Status::InvalidArgument;
+    }
+    if (!enable_timer_clock(m_base)) {
+        return Status::NotSupported;
+    }
+    auto *regs = reinterpret_cast<TimerRegs *>(m_base);
+    if (m_initialized && (regs->CTL0 & CTL0_CEN) != 0U) {
+        return Status::Busy;
+    }
     regs->CTL0 = 0;
     regs->PSC = config.prescaler;
     regs->CAR = config.period;
-
-    if (config.complementary && is_advanced_timer(m_base)) {
-        // === 三相互补 PWM 模式 ===
-
-        // 中心对齐模式 3（上下计数，CCR 在两个方向都比较）
-        regs->CTL0 = (regs->CTL0 & ~CTL0_CAM_Msk) | CTL0_CAM_2 | CTL0_ARPE;
-
-        // 死区时间
-        regs->CCHP = (regs->CCHP & 0xFF00) | (config.dead_time & 0xFF);
-
-        // CH0/CH1/CH2: PWM 模式 1 + 预装载
-        regs->CHCTL0 = (regs->CHCTL0 & ~(CHCTL0_OC0M_Msk | CHCTL0_OC1M_Msk))
-                       | CHCTL0_OC0M_PWM1 | CHCTL0_OC0PE
-                       | CHCTL0_OC1M_PWM1 | CHCTL0_OC1PE;
-        regs->CHCTL1 = (regs->CHCTL1 & ~CHCTL1_OC2M_Msk)
-                       | CHCTL1_OC2M_PWM1 | CHCTL1_OC2PE;
-
-        // 使能 CH0/CH1/CH2 正向 + 互补输出 (先清后设)
-        regs->CHCTL2 = (regs->CHCTL2
-                       & ~(CHCTL2_CH0EN | CHCTL2_CH0NEN
-                         | CHCTL2_CH1EN | CHCTL2_CH1NEN
-                         | CHCTL2_CH2EN | CHCTL2_CH2NEN))
-                       | CHCTL2_CH0EN | CHCTL2_CH0NEN
-                       | CHCTL2_CH1EN | CHCTL2_CH1NEN
-                       | CHCTL2_CH2EN | CHCTL2_CH2NEN;
-
-        // 配置 TRGO — 更新事件作为 ADC 触发源
-        regs->CTL1 = (regs->CTL1 & ~SMCFG_MMC_Msk) | SMCFG_MMC_TRGO;
-
-        // REP 寄存器 = 0（每次更新事件都产生 TRGO）
-        regs->CREP = 0;
-    } else {
-        // === 简单单通道 PWM 模式 ===
-        regs->CTL0 = CTL0_ARPE;
-
-        // 配置对应通道为 PWM 模式 1
-        switch (m_channel) {
-        case PwmChannel::Ch1:
-            regs->CHCTL0 = (regs->CHCTL0 & ~CHCTL0_OC0M_Msk)
-                           | CHCTL0_OC0M_PWM1 | CHCTL0_OC0PE;
-            break;
-        case PwmChannel::Ch2:
-            regs->CHCTL0 = (regs->CHCTL0 & ~CHCTL0_OC1M_Msk)
-                           | CHCTL0_OC1M_PWM1 | CHCTL0_OC1PE;
-            break;
-        case PwmChannel::Ch3:
-            regs->CHCTL1 = (regs->CHCTL1 & ~CHCTL1_OC2M_Msk)
-                           | CHCTL1_OC2M_PWM1 | CHCTL1_OC2PE;
-            break;
-        case PwmChannel::Ch4:
-            regs->CHCTL1 = (regs->CHCTL1 & ~CHCTL1_OC3M_Msk)
-                           | CHCTL1_OC3M_PWM1 | CHCTL1_OC3PE;
-            break;
-        }
-
-        // 高级定时器需要 MOE
-        if (is_advanced_timer(m_base)) {
-            regs->CCHP |= CCHP_MOE;
-        }
+    regs->CTL0 = CTL0_ARPE;
+    if (config.center_aligned) {
+        regs->CTL0 |= CTL0_CAM_2;
     }
-
+    m_three_phase = config.three_phase || config.complementary;
+    m_complementary = config.complementary;
+    if (m_three_phase) {
+        configure_three_phase(*regs);
+    } else {
+        configure_channel(*regs, m_channel);
+    }
+    regs->CHCTL2 &= ~(kMainThreePhaseMask
+                    | kComplementaryThreePhaseMask
+                    | CHCTL2_CH3EN);
+    if (is_advanced_timer(m_base)) {
+        regs->CCHP &= ~CCHP_MOE;
+        regs->CCHP = (regs->CCHP & ~kDeadTimeMask)
+                   | (config.dead_time & kDeadTimeMask);
+    }
+    if (m_three_phase) {
+        regs->CTL1 = (regs->CTL1 & ~CTL1_MMC_Msk) | CTL1_MMC_TRGO;
+        regs->CREP = 0;
+    }
     m_initialized = true;
     return Status::Ok;
 }
@@ -148,11 +180,14 @@ Status PwmBase::init(const PwmConfig &config) {
 Status PwmBase::deinit() {
     if (!m_initialized) return Status::Ok;
     auto *regs = reinterpret_cast<TimerRegs *>(m_base);
+    (void)disable_output();
     regs->DMAINTEN &= ~DMAINTEN_UPIE;
     regs->CTL0 = 0;
     m_update_cb = nullptr;
     m_update_arg = nullptr;
     m_initialized = false;
+    m_three_phase = false;
+    m_complementary = false;
     return Status::Ok;
 }
 
@@ -173,12 +208,14 @@ Status PwmBase::stop() {
 Status PwmBase::set_pulse(uint32_t pulse) {
     if (!m_initialized) return Status::InvalidArgument;
     auto *regs = reinterpret_cast<TimerRegs *>(m_base);
+    if (pulse > regs->CAR) return Status::InvalidArgument;
 
     switch (m_channel) {
     case PwmChannel::Ch1: regs->CH0CV = pulse; break;
     case PwmChannel::Ch2: regs->CH1CV = pulse; break;
     case PwmChannel::Ch3: regs->CH2CV = pulse; break;
     case PwmChannel::Ch4: regs->CH3CV = pulse; break;
+    default: return Status::InvalidArgument;
     }
     return Status::Ok;
 }
@@ -186,27 +223,70 @@ Status PwmBase::set_pulse(uint32_t pulse) {
 Status PwmBase::set_pulse(PwmChannel ch, uint32_t pulse) {
     if (!m_initialized) return Status::InvalidArgument;
     auto *regs = reinterpret_cast<TimerRegs *>(m_base);
+    if (pulse > regs->CAR) return Status::InvalidArgument;
 
     switch (ch) {
     case PwmChannel::Ch1: regs->CH0CV = pulse; break;
     case PwmChannel::Ch2: regs->CH1CV = pulse; break;
     case PwmChannel::Ch3: regs->CH2CV = pulse; break;
     case PwmChannel::Ch4: regs->CH3CV = pulse; break;
+    default: return Status::InvalidArgument;
     }
+    return Status::Ok;
+}
+
+Status PwmBase::set_three_phase_pulses(uint32_t channel_1,
+                                       uint32_t channel_2,
+                                       uint32_t channel_3)
+{
+    if (!m_initialized || !m_three_phase) {
+        return Status::InvalidArgument;
+    }
+    auto *regs = reinterpret_cast<TimerRegs *>(m_base);
+    if (channel_1 > regs->CAR || channel_2 > regs->CAR
+        || channel_3 > regs->CAR) {
+        return Status::InvalidArgument;
+    }
+    const uint32_t update_disable = regs->CTL0 & CTL0_UPDIS;
+    regs->CTL0 |= CTL0_UPDIS;
+    regs->CH0CV = channel_1;
+    regs->CH1CV = channel_2;
+    regs->CH2CV = channel_3;
+    regs->CTL0 = (regs->CTL0 & ~CTL0_UPDIS) | update_disable;
     return Status::Ok;
 }
 
 Status PwmBase::enable_output() {
     if (!m_initialized) return Status::InvalidArgument;
     auto *regs = reinterpret_cast<TimerRegs *>(m_base);
-    regs->CCHP |= CCHP_MOE;
+    if (m_three_phase) {
+        // Transfer the complete neutral/duty shadow set before exposing pins.
+        regs->SWEVG = SWEVG_UPG;
+        regs->CHCTL2 |= kMainThreePhaseMask;
+        if (m_complementary) {
+            regs->CHCTL2 |= kComplementaryThreePhaseMask;
+        }
+    } else {
+        regs->CHCTL2 |= channel_mask(m_channel);
+    }
+    if (is_advanced_timer(m_base)) {
+        regs->CCHP |= CCHP_MOE;
+    }
     return Status::Ok;
 }
 
 Status PwmBase::disable_output() {
     if (!m_initialized) return Status::InvalidArgument;
     auto *regs = reinterpret_cast<TimerRegs *>(m_base);
-    regs->CCHP &= ~CCHP_MOE;
+    if (is_advanced_timer(m_base)) {
+        regs->CCHP &= ~CCHP_MOE;
+    }
+    if (m_three_phase) {
+        regs->CHCTL2 &= ~(kMainThreePhaseMask
+                        | kComplementaryThreePhaseMask);
+    } else {
+        regs->CHCTL2 &= ~channel_mask(m_channel);
+    }
     return Status::Ok;
 }
 

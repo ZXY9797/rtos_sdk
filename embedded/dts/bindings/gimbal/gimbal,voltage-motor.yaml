@@ -1,0 +1,50 @@
+description: Hall-sensored three-phase voltage FOC motor
+
+compatible: "rtos_sdk,gimbal-voltage-motor"
+
+include: base.yaml
+
+properties:
+  pwm-dev:
+    type: phandle
+    required: true
+    description: Three-phase PWM timer
+
+  pwm-ch-u:
+    type: int
+    required: true
+
+  pwm-ch-v:
+    type: int
+    required: true
+
+  pwm-ch-w:
+    type: int
+    required: true
+
+  pwm-period-counts:
+    type: int
+    required: true
+    description: Timer reload period used for duty conversion
+
+  nominal-bus-mv:
+    type: int
+    required: true
+    description: Nominal bus voltage when bus sensing is unavailable
+
+  maximum-modulation-milli:
+    type: int
+    required: true
+    description: Maximum fraction of the SVPWM linear vector radius in per mille
+
+cxx-driver:
+  adapter:
+    header: device_adapters/gimbal_motor_dt.h
+    macro: HAL_GIMBAL_MOTOR_DT_ADAPT
+  type-name: gimbal::VoltageMotorDevice
+  init: false
+  readiness: is-initialized
+  requires:
+    - phandle: pwm-dev
+  init-level: application
+  init-priority: 80

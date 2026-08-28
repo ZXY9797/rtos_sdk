@@ -77,7 +77,13 @@ if(DEFINED PROJECT_LINKER_SCRIPT)
     set(DEFAULT_LINKER_SCRIPT ${PROJECT_LINKER_SCRIPT})
 endif()
 if(DEFINED LINKER_SCRIPT)
-    get_filename_component(LINKER_SCRIPT "${LINKER_SCRIPT}" ABSOLUTE BASE_DIR "${CMAKE_SOURCE_DIR}")
+    if(DEFINED SDK_LAST_DEFAULT_LINKER_SCRIPT
+       AND LINKER_SCRIPT STREQUAL SDK_LAST_DEFAULT_LINKER_SCRIPT)
+        set(LINKER_SCRIPT ${DEFAULT_LINKER_SCRIPT})
+    endif()
+    get_filename_component(
+        LINKER_SCRIPT "${LINKER_SCRIPT}" ABSOLUTE
+        BASE_DIR "${CMAKE_SOURCE_DIR}")
 else()
     set(LINKER_SCRIPT ${DEFAULT_LINKER_SCRIPT})
 endif()
@@ -85,6 +91,12 @@ if(NOT EXISTS "${LINKER_SCRIPT}")
     message(FATAL_ERROR "Linker script not found: ${LINKER_SCRIPT}")
 endif()
 set(LINKER_SCRIPT ${LINKER_SCRIPT} CACHE PATH "Linker script path" FORCE)
+get_filename_component(
+    _sdk_default_linker_script "${DEFAULT_LINKER_SCRIPT}" ABSOLUTE
+    BASE_DIR "${CMAKE_SOURCE_DIR}")
+set(SDK_LAST_DEFAULT_LINKER_SCRIPT
+    "${_sdk_default_linker_script}" CACHE INTERNAL
+    "Last automatically selected SDK linker script" FORCE)
 message(STATUS "Link script: ${LINKER_SCRIPT}")
 
 if(DEFINED FIRMWARE_OUTPUT_NAME)

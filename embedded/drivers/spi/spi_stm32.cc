@@ -94,8 +94,7 @@ void SpiBase::isr_handler(osal::IsrContext& context)
 }
 
 Status SpiBase::transfer(const uint8_t *tx, uint8_t *rx, size_t len,
-                         uint32_t timeout_ms, ChipSelectFn chip_select,
-                         void *chip_select_arg) {
+                         uint32_t timeout_ms, ChipSelect chip_select) {
     HAL_ASSERT_MSG(is_initialized(), "SPI not initialized");
     if (!is_initialized() || len == 0U || len > CR2_TSIZE_Msk) {
         return Status::InvalidArgument;
@@ -108,7 +107,8 @@ Status SpiBase::transfer(const uint8_t *tx, uint8_t *rx, size_t len,
     }
     while (m_xfer_sem.take(0U) == 0) {
     }
-    detail::SpiChipSelectGuard select_guard(chip_select, chip_select_arg);
+    detail::SpiChipSelectGuard select_guard(
+        chip_select.function, chip_select.argument);
     auto *regs = reinterpret_cast<SpiRegs *>(m_base);
 
     regs->IFCR = IFCR_EOTC | IFCR_TXTFC | IFCR_OVRC;
@@ -145,6 +145,22 @@ Status SpiBase::transfer(const uint8_t *tx, uint8_t *rx, size_t len,
 
     m_stats.xfer_count++;
     m_stats.xfer_bytes += len;
+    return Status::Ok;
+}
+
+Status SpiBase::begin_async(AsyncCallback, void*)
+{
+    return Status::NotSupported;
+}
+
+Status SpiBase::transfer_async(
+    const uint8_t*, uint8_t*, size_t, ChipSelect)
+{
+    return Status::NotSupported;
+}
+
+Status SpiBase::end_async()
+{
     return Status::Ok;
 }
 
