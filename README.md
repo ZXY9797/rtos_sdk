@@ -203,7 +203,16 @@ rtos_sdk/
 │
 ├── component/                    # 应用级组件
 │   ├── algo/                     # 纯算法组件
-│   ├── foc/                      # FOC 电机控制库
+│   ├── algo/                     # 数学、DSP 与单轴轨迹算法原语
+│   ├── control_contracts/        # 定长控制领域数据契约
+│   ├── motion/                   # 非正交运动学、动力学和三轴轨迹规划
+│   ├── attitude/                 # 姿态 EKF
+│   ├── control/                  # 频率整形反馈控制
+│   ├── position_sensor/          # 连续 Hall 与位置标定
+│   ├── thermal/                  # 恒温控制
+│   ├── safety/                   # 安全监督与故障锁存
+│   ├── foc/                      # 电压/电流 FOC 与统一 SVPWM
+│   ├── ipc/                      # 固定容量共享内存原语
 │   ├── nvs/                      # 非易失键值存储
 │   ├── link/                     # Link 通信协议栈
 │   └── ble/goodix/               # Goodix BLE 适配

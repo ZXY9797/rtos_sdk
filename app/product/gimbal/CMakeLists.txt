@@ -20,6 +20,7 @@ target_include_directories(${MODULE_NAME}
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/board
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_SOURCE_DIR}/services
     PRIVATE
         ${BSP_DIR}/include
@@ -33,6 +34,7 @@ target_sources(${MODULE_NAME}
         main.cc
         board/board_devices.cc
         services/gimbal_app.cc
+        services/parameters.cc
         services/parameter_store.cc
         ${DRIVERS_GENERATED_CC}
         ${PINCTRL_GENERATED_CC})
@@ -40,7 +42,15 @@ target_sources(${MODULE_NAME}
 target_link_libraries(${MODULE_NAME}
     PRIVATE
         boot_common
+        attitude_estimator
+        control_contracts
         drivers
+        feedback_control
+        foc
+        ipc
+        motion
         osal
-        gimbal_core
-        nvs)
+        nvs
+        position_sensor
+        safety_supervisor
+        thermal_control)

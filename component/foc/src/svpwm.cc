@@ -1,51 +1,85 @@
 #include <foc/svpwm.h>
+
 #include <algorithm>
 #include <cmath>
 
 namespace foc {
+namespace {
+
+constexpr float kMinimumBusVoltage = 0.1F;
+constexpr float kInverseSqrtThree = 0.5773502691896258F;
+constexpr float kSqrtThreeOverTwo = 0.8660254037844386F;
+
+[[nodiscard]] bool finite_vector(const Vec2 &value)
+{
+    return std::isfinite(value.a) && std::isfinite(value.b);
+}
+
+} // namespace
+
+bool Svpwm::set_modulation_limit(float limit)
+{
+    if (!std::isfinite(limit) || limit <= 0.0F || limit >= 1.0F) {
+        return false;
+    }
+    modulation_max_ = limit;
+    return true;
+}
+
+bool Svpwm::generate_duty(const Vec2 &v_ab, float vbus,
+                          PhaseDuty &duty) const
+{
+    duty = {};
+    if (!finite_vector(v_ab) || !std::isfinite(vbus)
+        || vbus < kMinimumBusVoltage) {
+        return false;
+    }
+
+    float alpha = v_ab.a;
+    float beta = v_ab.b;
+    const float magnitude = std::hypot(alpha, beta);
+    const float maximum_voltage =
+        vbus * modulation_max_ * kInverseSqrtThree;
+    if (magnitude > maximum_voltage && magnitude > 0.0F) {
+        const float scale = maximum_voltage / magnitude;
+        alpha *= scale;
+        beta *= scale;
+    }
+
+    float phase_u = alpha;
+    float phase_v = -0.5F * alpha + kSqrtThreeOverTwo * beta;
+    float phase_w = -0.5F * alpha - kSqrtThreeOverTwo * beta;
+    const float minimum_phase = std::min({phase_u, phase_v, phase_w});
+    const float maximum_phase = std::max({phase_u, phase_v, phase_w});
+    const float common_mode = -0.5F * (minimum_phase + maximum_phase);
+    const float voltage_to_duty = 1.0F / vbus;
+    duty.phase_u = std::clamp(
+        0.5F + (phase_u + common_mode) * voltage_to_duty,
+        0.0F, 1.0F);
+    duty.phase_v = std::clamp(
+        0.5F + (phase_v + common_mode) * voltage_to_duty,
+        0.0F, 1.0F);
+    duty.phase_w = std::clamp(
+        0.5F + (phase_w + common_mode) * voltage_to_duty,
+        0.0F, 1.0F);
+    return true;
+}
 
 void Svpwm::generate(const Vec2 &v_ab, float vbus, uint32_t period,
-                     uint32_t &duty_u, uint32_t &duty_v, uint32_t &duty_w) {
-    if (vbus <= 0.0f) {
-        duty_u = duty_v = duty_w = 0;
+                     uint32_t &duty_u, uint32_t &duty_v,
+                     uint32_t &duty_w)
+{
+    PhaseDuty duty {};
+    if (period == 0U || !generate_duty(v_ab, vbus, duty)) {
+        duty_u = 0U;
+        duty_v = 0U;
+        duty_w = 0U;
         return;
     }
-
-    float v_max = vbus * modulation_max_;
-    float va = v_ab.a;
-    float vb = v_ab.b;
-
-    // 限幅
-    float v_mag = sqrtf(va * va + vb * vb);
-    if (v_mag > v_max && v_mag > 0.0f) {
-        float scale = v_max / v_mag;
-        va *= scale;
-        vb *= scale;
-    }
-
-    // 逆 Clarke 变换 → 三相电压
-    float vu = va;
-    float vv = -0.5f * va + 0.8660254f * vb;   // -Va/2 + sqrt(3)/2 * Vb
-    float vw = -0.5f * va - 0.8660254f * vb;   // -Va/2 - sqrt(3)/2 * Vb
-
-    // SVM: 中心对齐，加入零序分量
-    float v_min = std::min({vu, vv, vw});
-    float v_max_ph = std::max({vu, vv, vw});
-    float v_zero = -(v_min + v_max_ph) * 0.5f;
-
-    vu += v_zero;
-    vv += v_zero;
-    vw += v_zero;
-
-    // 归一化到 [0, period]
-    const float half_period = static_cast<float>(period) * 0.5f;
-    const float volts_to_count = static_cast<float>(period) / vbus;
-    duty_u = static_cast<uint32_t>(std::clamp(
-        half_period + vu * volts_to_count, 0.0f, static_cast<float>(period)));
-    duty_v = static_cast<uint32_t>(std::clamp(
-        half_period + vv * volts_to_count, 0.0f, static_cast<float>(period)));
-    duty_w = static_cast<uint32_t>(std::clamp(
-        half_period + vw * volts_to_count, 0.0f, static_cast<float>(period)));
+    const float period_counts = static_cast<float>(period);
+    duty_u = static_cast<uint32_t>(duty.phase_u * period_counts);
+    duty_v = static_cast<uint32_t>(duty.phase_v * period_counts);
+    duty_w = static_cast<uint32_t>(duty.phase_w * period_counts);
 }
 
 } // namespace foc

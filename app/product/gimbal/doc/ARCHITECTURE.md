@@ -189,8 +189,8 @@ i_q_ref -> joint angular velocity
 CONFIG_GIMBAL_MOTOR_VOLTAGE_FOC=y
 CONFIG_GIMBAL_MOTOR_CURRENT_FOC=n
 CONFIG_GIMBAL_VBUS_SENSE=n
-CONFIG_GIMBAL_DRIVER_TEMP=n
-CONFIG_GIMBAL_MOS_TEMP=n
+CONFIG_GIMBAL_DRIVER_TEMP_SENSE=n
+CONFIG_GIMBAL_MOS_TEMP_SENSE=n
 ```
 
 选择电流 FOC 却没有配置电流 ADC 时，CMake/Kconfig 必须在配置阶段失败。
@@ -199,7 +199,9 @@ CONFIG_GIMBAL_MOS_TEMP=n
 
 当前实现使用独立的 `rtos_sdk,gimbal-voltage-motor` binding，只描述三相 PWM、
 标称母线电压和 SVPWM 调制度，不继承 `foc,motor` 对相电流与母线 ADC 的必选
-约束。电流 FOC 和可选遥测仍受构建门禁保护，补齐同步采样适配器前不能启用。
+约束。产品选择电压模式时会选择 `CONFIG_FOC_VOLTAGE_CONTROL`；只有 DTS 提供
+`foc,motor` 且同步采样链完成时，Kconfig 才允许选择
+`CONFIG_FOC_CURRENT_CONTROL`。可选遥测仍受构建门禁保护。
 
 ## 5. 单 IMU 姿态融合与手柄状态估计
 
@@ -477,34 +479,42 @@ Service: HallCalibration | KinematicCalibration | FrequencyIdentify
 
 ## 12. 组件目录边界
 
-产品无关组件已经按以下边界落地：
+产品无关能力已经按功能组件落地：
 
 ```text
-component/gimbal/
-  include/gimbal/
-    types.h shared_topics.h
-    hall_sensor.h hall_calibration.h hall_device.h
-    attitude_ekf.h kinematics.h dynamics.h
-    motion_planner.h controller.h
-    voltage_foc.h voltage_motor.h
-    thermal_controller.h safety_manager.h parameters.h
-  src/                 # 与产品、MCU 和 RTOS 无关的算法实现
+component/
+  algo/                # 空间数学、DSP 与单轴限加加速度轨迹原语
+  control_contracts/   # 定长领域类型和兼容别名，不含执行逻辑
+  motion/              # 非正交运动学、动力学和三轴轨迹规划
+  attitude/            # IMU 误差状态 EKF
+  control/             # 频率整形与 2DOF 前馈反馈控制
+  position_sensor/     # 连续双 Hall、机械零位和电角零位标定
+  thermal/             # IMU 恒温控制与升温诊断
+  safety/              # 故障检测、锁存和电机授权状态机
+  foc/                 # 电压/电流 FOC、统一 SVPWM 和 PWM 电机适配
+  ipc/                 # 固定容量快照主题与 SPSC 环形队列
 
 app/product/gimbal/
   board/               # 产品语义设备门面
   config/              # Kconfig 与参考设备树
-  services/            # 参数存储、传感器批次和任务编排
+  include/gimbal/      # 产品参数 schema 与共享主题集合
+  services/            # 参数存储、参数校验、传感器批次和任务编排
   doc/                 # 本产品设计、标定和验证文档
 ```
 
-设备适配仍放在 `embedded/`，产品接线、任务栈和参数实例放在
-`app/product/<product>/`。算法组件只接收接口和快照，不包含板级 ADC 通道号、
-GPIO 或 RTOS 句柄。
+设备适配仍放在 `embedded/`，产品接线、任务栈、参数 schema 和主题拓扑放在
+`app/product/<product>/`。通用空间类型位于 `algo`，跨功能固定布局消息位于
+`control_contracts`；算法组件只接收值对象或 HAL 抽象，不包含板级 ADC
+通道号、GPIO、RTOS 任务或产品持久化策略。公共头文件暂时保留 `gimbal::`
+领域命名空间以维持类型和 ABI 契约，但 `attitude`、`thermal`、`safety` 等组件
+不再仅为取得公共类型而链接 `motion`。
 
 当前实现已经完成上述边界迁移：连续双 Hall 使用独立的
 `rtos_sdk,gimbal-hall-angle` binding；基础电机使用不强制 ADC 的
-`rtos_sdk,gimbal-voltage-motor` binding；六扇区数字 Hall 与原有电流 FOC
-仍留在 `component/foc`，不会被本产品误用。设备树只承载硬件连接，工厂差异
+`rtos_sdk,gimbal-voltage-motor` binding；电压模式和相电流模式共同复用
+`component/foc` 的 SVPWM 内核，并由 `FOC_VOLTAGE_CONTROL`/
+`FOC_CURRENT_CONTROL` 分源编译。gimbal 基础固件只链接前者，不会误带入 ADC
+电流环、观测器和 SoC 专用电机实现。设备树只承载硬件连接，工厂差异
 由带 CRC 和代际号的双记录参数承载。
 
 参考 `board.dts` 中的 ADC 通道和 PWM 定时器只用于编译与集成基线。PWM 引脚、

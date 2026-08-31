@@ -2,18 +2,21 @@
 
 ## 定位
 
-`component/foc` 是产品无关的电机控制组件，依赖 PWM、ADC 公共驱动接口和算法
-组件。产品启动、LESO/位置环、保护策略、CLI 和 NVS 编排位于
+`component/foc` 是产品无关的电机控制组件。电压模式只依赖 PWM；电流模式
+额外依赖同步 ADC、算法组件和 `foc,motor` 设备描述。产品启动、LESO/位置环、
+保护策略、CLI 和 NVS 编排位于
 `app/product/<product>`，不能反向进入 FOC 组件。
 
 ```text
 产品控制与保护策略
         ↓
-foc::MotorDevice（DTS 复合设备）
+foc::VoltageMotorDevice 或 foc::MotorDevice
         ↓
-foc::Motor / FocController / SVPWM
+foc::VoltageFoc 或 foc::Motor / FocController
         ↓
-hal::Pwm + hal::Adc
+统一 foc::Svpwm
+        ↓
+hal::Pwm [+ hal::Adc]
         ↓
 SoC 后端与定时器/ADC 硬件
 ```
@@ -23,12 +26,17 @@ SoC 后端与定时器/ADC 硬件
 | 配置 | 内容 |
 |:---|:---|
 | DTS `foc,motor` | PWM/ADC phandle、三相通道、电机 R/L/磁链/极对数、限流限压、PWM/ADC 时序与采样换算、控制模式 |
-| `component/foc/Kconfig` | 是否编译 FOC、速度环更新频率等组件级编译策略 |
+| `component/foc/Kconfig` | `FOC_VOLTAGE_CONTROL`/`FOC_CURRENT_CONTROL` 源文件选择及速度环频率 |
 | 产品 Kconfig | 转矩常数、减速比、LESO/位置环、保护阈值、扫频等产品行为 |
 | NVS | 通过范围与有限值校验后的运行时标定覆盖；无效数据不得替换 DTS 安全默认值 |
 
 电机物理参数和 PWM/ADC 硬件参数不再在 Kconfig 中维护副本。修改电机或功率板时
 更新 DTS；修改产品行为时更新产品 Kconfig；现场标定只通过受校验的 NVS 数据。
+
+`FOC_VOLTAGE_CONTROL` 用于没有相电流采样的硬件，只提供 dq 电压到三相占空比的
+有界映射，不宣称电流、转矩或过流软件闭环。`FOC_CURRENT_CONTROL` 依赖
+`DT_HAS_FOC_MOTOR_ENABLED`，并编译电流采样、观测器、HFI 和电机运行状态机。
+两种模式复用相同的线性区限幅、零序注入和占空比生成代码。
 
 `foc,motor` 的全部电气、安全限制、PWM/ADC 换算和控制模式属性均为 required，binding
 不提供可静默落地的默认值。adapter 在编译期检查极对数、三相通道唯一性、限流/限压、

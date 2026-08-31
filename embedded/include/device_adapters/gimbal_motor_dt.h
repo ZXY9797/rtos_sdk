@@ -1,7 +1,7 @@
 #pragma once
 
 #include <device.h>
-#include <gimbal/voltage_motor.h>
+#include <foc/voltage_motor.h>
 
 #include <cstdint>
 
@@ -38,7 +38,7 @@
                       && kMaximumModulationMilli < 1000U,          \
                       "Motor modulation is outside (0, 1)");        \
                                                                    \
-        using type = gimbal::VoltageMotorDevice<                   \
+        using type = foc::VoltageMotorDevice<                      \
             DT_ORD(DT_PHANDLE(node_id, pwm_dev)),                  \
             static_cast<uint8_t>(kChannelU),                       \
             static_cast<uint8_t>(kChannelV),                       \
@@ -47,7 +47,7 @@
                                                                    \
         static int init()                                          \
         {                                                          \
-            gimbal::VoltageMotorConfig config {};                  \
+            foc::VoltageMotorConfig config {};                     \
             config.pwm_period_counts = kPeriod;                    \
             config.phase_u = static_cast<hal::PwmChannel>(         \
                 kChannelU);                                        \

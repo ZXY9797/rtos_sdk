@@ -12,6 +12,7 @@
 #include <gimbal/motion_planner.h>
 #include <gimbal/shared_topics.h>
 #include <gimbal/thermal_controller.h>
+#include <foc/voltage_motor.h>
 #include <imu/icm40609d.h>
 #include <init.h>
 #include <log.h>
@@ -201,10 +202,10 @@ void heartbeat_or_panic(WatchdogClient client)
     return parameters;
 }
 
-[[nodiscard]] gimbal::VoltageMotorConfig motor_config(
+[[nodiscard]] foc::VoltageMotorConfig motor_config(
     const gimbal::FactoryParameters &parameters, size_t axis)
 {
-    gimbal::VoltageMotorConfig config {};
+    foc::VoltageMotorConfig config {};
     const board::MotorPwmTopology &topology =
         board::kMotorTopologies[axis];
     config.foc = parameters.voltage_foc[axis];

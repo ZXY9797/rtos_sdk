@@ -13,32 +13,35 @@ enum class BiquadType : uint8_t {
 
 struct BiquadConfig {
     BiquadType type {BiquadType::LowPass};
-    float fs {1000.0f};
-    float f0 {100.0f};
-    float Q {0.707f};
+    float sample_frequency_hz {1000.0F};
+    float center_frequency_hz {100.0F};
+    float quality_factor {0.70710678F};
 };
 
 class BiquadFilter {
 public:
     BiquadFilter() = default;
 
-    void init(const BiquadConfig &cfg);
-    void set_params(float f0, float Q);
-    float update(float x);
+    [[nodiscard]] bool configure(const BiquadConfig &config);
+    void bypass();
+    [[nodiscard]] bool update(float input, float &output);
     void reset();
 
-    float b0() const { return b0_; }
-    float b1() const { return b1_; }
-    float b2() const { return b2_; }
-    float a1() const { return a1_; }
-    float a2() const { return a2_; }
+    [[nodiscard]] bool is_configured() const { return is_configured_; }
 
 private:
-    BiquadConfig cfg_;
-    float b0_{0}, b1_{0}, b2_{0}, a1_{0}, a2_{0};
-    float x1_{0}, x2_{0}, y1_{0}, y2_{0};
+    void set_identity_coefficients();
 
-    void calculate_coefficients();
+    float b0_ {1.0F};
+    float b1_ {0.0F};
+    float b2_ {0.0F};
+    float a1_ {0.0F};
+    float a2_ {0.0F};
+    float state1_ {0.0F};
+    float state2_ {0.0F};
+    bool is_configured_ {true};
 };
+
+[[nodiscard]] bool valid_biquad_config(const BiquadConfig &config);
 
 } // namespace algo

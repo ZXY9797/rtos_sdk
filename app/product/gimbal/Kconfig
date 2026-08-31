@@ -1,8 +1,90 @@
+menuconfig GIMBAL
+    bool "Three-axis handheld gimbal product"
+    select ATTITUDE_EKF
+    select FEEDBACK_CONTROL
+    select FOC
+    select MOTION
+    select POSITION_SENSOR
+    select SAFETY_SUPERVISOR
+    select THERMAL_CONTROL
+    help
+      Enable the gimbal product composition. Reusable algorithms remain in
+      function-oriented components; this symbol only owns product policy,
+      scheduling and hardware capability selection.
+
+if GIMBAL
+
 menu "Gimbal Product Configuration"
 
 config APP_NAME
     string "Application name"
     default "gimbal"
+
+choice GIMBAL_MOTOR_CONTROL_MODE
+    prompt "Gimbal motor control mode"
+    default GIMBAL_MOTOR_VOLTAGE_FOC
+
+config GIMBAL_MOTOR_VOLTAGE_FOC
+    bool "Hall-sensored voltage FOC"
+    select FOC_VOLTAGE_CONTROL
+    help
+      Baseline mode without phase-current sampling. This is not a torque loop.
+
+config GIMBAL_MOTOR_CURRENT_FOC
+    bool "Phase-current closed-loop FOC"
+    depends on DT_HAS_FOC_MOTOR_ENABLED
+    select FOC_CURRENT_CONTROL
+
+endchoice
+
+config GIMBAL_CONTROL_HZ
+    int "Attitude and rate control frequency"
+    range 500 2000
+    default 1000
+
+config GIMBAL_SENSOR_HZ
+    int "Synchronous sensor trigger frequency"
+    range 8000 32000
+    default 16000
+    help
+      Hardware timer rate used to launch asynchronous sensor DMA. It must be
+      an integer multiple of GIMBAL_CONTROL_HZ.
+
+config GIMBAL_PLANNER_HZ
+    int "Motion planner frequency"
+    range 100 500
+    default 200
+
+config GIMBAL_THERMAL_HZ
+    int "IMU thermal controller frequency"
+    range 10 100
+    default 20
+
+config GIMBAL_SUPERVISOR_HZ
+    int "Safety supervisor frequency"
+    range 10 200
+    default 100
+
+config GIMBAL_VBUS_SENSE
+    bool "Bus-voltage sampling is installed"
+    depends on ADC
+    default n
+
+config GIMBAL_PHASE_CURRENT_SENSE
+    bool "Phase-current sampling is installed"
+    depends on ADC
+    default y if GIMBAL_MOTOR_CURRENT_FOC
+    default n
+
+config GIMBAL_DRIVER_TEMP_SENSE
+    bool "Motor-driver temperature sensing is installed"
+    depends on ADC
+    default n
+
+config GIMBAL_MOS_TEMP_SENSE
+    bool "MOS temperature sensing is installed"
+    depends on ADC
+    default n
 
 config GIMBAL_CLOSED_LOOP_STACK_SIZE
     int "Sensor batch and closed-loop task stack bytes"
@@ -25,3 +107,5 @@ config GIMBAL_THERMAL_STACK_SIZE
     default 1024
 
 endmenu
+
+endif # GIMBAL

@@ -1,7 +1,9 @@
 set(MODULE_NAME foc)
 add_library(${MODULE_NAME} STATIC)
 
-target_sources(${MODULE_NAME}
+target_sources(${MODULE_NAME} PRIVATE src/svpwm.cc)
+
+target_sources_ifdef(CONFIG_FOC_CURRENT_CONTROL ${MODULE_NAME}
     PRIVATE
         src/angle_estimator.cc
         src/bldc_controller.cc
@@ -16,9 +18,13 @@ target_sources(${MODULE_NAME}
         src/motor.cc
         src/motor_measurement.cc
         src/position_controller.cc
-        src/svpwm.cc
         src/temperature.cc
 )
+
+target_sources_ifdef(CONFIG_FOC_VOLTAGE_CONTROL ${MODULE_NAME}
+    PRIVATE
+        src/voltage_foc.cc
+        src/voltage_motor.cc)
 
 target_include_directories(${MODULE_NAME}
     PUBLIC
@@ -29,9 +35,14 @@ target_include_directories(${MODULE_NAME}
 
 target_link_libraries(${MODULE_NAME}
     PUBLIC
-        algo
-        osal
         drivers
-    PRIVATE
-        soc
+        osal
 )
+
+if(CONFIG_FOC_CURRENT_CONTROL)
+    target_link_libraries(${MODULE_NAME}
+        PUBLIC
+            algo
+        PRIVATE
+            soc)
+endif()

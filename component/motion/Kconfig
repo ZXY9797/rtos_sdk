@@ -1,0 +1,5 @@
+menuconfig MOTION
+    bool "Three-axis motion model"
+    help
+      Enable fixed-size spatial math, non-orthogonal kinematics, rigid-body
+      feedforward dynamics and bounded trajectory planning.

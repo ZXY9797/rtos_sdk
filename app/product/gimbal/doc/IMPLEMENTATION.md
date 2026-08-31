@@ -2,9 +2,16 @@
 
 ## 1. 目录和依赖
 
-`component/gimbal` 是产品无关层，只依赖值类型、HAL 抽象和 OSAL 原子语义；
-不包含板级通道号、GPIO 或厂商 SDK。`app/product/gimbal` 负责设备树映射、
-参数实例、任务频率和产品状态编排。
+可复用能力按单一职责拆分：`algo` 提供定长空间数学、DSP 和单轴轨迹原语；
+`control_contracts` 提供固定布局数据契约；`motion` 提供非正交运动学、动力学和
+三轴轨迹规划；`attitude` 提供 EKF；`control` 提供带频率整形的 2DOF 控制；
+`position_sensor` 提供连续 Hall 与标定；`thermal` 和 `safety` 分别负责恒温与
+安全监督；`foc` 统一承载电压/电流 FOC 和 SVPWM；`ipc` 提供固定容量共享内存
+原语。各组件均有独立 CMake target 和 Kconfig 开关，不再通过 `gimbal_core`
+整包链接。
+
+`app/product/gimbal` 只负责设备树映射、产品参数 schema、共享主题集合、任务频率
+和产品状态编排。板级通道号、GPIO、RTOS 任务与产品策略不进入算法组件。
 
 数据流如下：
 

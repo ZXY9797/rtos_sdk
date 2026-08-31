@@ -158,30 +158,44 @@ target_compile_definitions(device_pm_test PRIVATE
     CONFIG_NUM_IRQ_PRIO_BITS=4)
 add_test(NAME device_pm COMMAND device_pm_test)
 
-add_executable(gimbal_core_test
-    ../component/gimbal/tests/gimbal_core_test.cc
-    ../component/gimbal/src/attitude_ekf.cc
-    ../component/gimbal/src/controller.cc
-    ../component/gimbal/src/dynamics.cc
-    ../component/gimbal/src/hall_calibration.cc
-    ../component/gimbal/src/hall_sensor.cc
-    ../component/gimbal/src/kinematics.cc
-    ../component/gimbal/src/math.cc
-    ../component/gimbal/src/motion_planner.cc
-    ../component/gimbal/src/parameters.cc
-    ../component/gimbal/src/safety_manager.cc
-    ../component/gimbal/src/thermal_controller.cc
-    ../component/gimbal/src/voltage_foc.cc)
-target_compile_features(gimbal_core_test PRIVATE cxx_std_17)
-target_include_directories(gimbal_core_test PRIVATE
+add_executable(gimbal_functional_test
+    gimbal_functional_test.cc
+    ../app/product/gimbal/services/parameters.cc
+    ../component/algo/src/biquad_filter.cc
+    ../component/algo/src/lead_lag_compensator.cc
+    ../component/algo/src/motion_profile.cc
+    ../component/algo/src/spatial_math.cc
+    ../component/attitude/src/attitude_ekf.cc
+    ../component/control/src/controller.cc
+    ../component/foc/src/svpwm.cc
+    ../component/foc/src/voltage_foc.cc
+    ../component/motion/src/dynamics.cc
+    ../component/motion/src/kinematics.cc
+    ../component/motion/src/motion_planner.cc
+    ../component/position_sensor/src/hall_calibration.cc
+    ../component/position_sensor/src/hall_sensor.cc
+    ../component/safety/src/safety_manager.cc
+    ../component/thermal/src/thermal_controller.cc)
+target_compile_features(gimbal_functional_test PRIVATE cxx_std_17)
+target_include_directories(gimbal_functional_test PRIVATE
     stubs
-    ../component/gimbal/include
+    ../app/product/gimbal/include
+    ../component/algo/include
+    ../component/attitude/include
+    ../component/control/include
+    ../component/control_contracts/include
+    ../component/foc/include
+    ../component/ipc/include
+    ../component/motion/include
+    ../component/position_sensor/include
+    ../component/safety/include
+    ../component/thermal/include
     ../embedded/include
     ../embedded/include/osal
     ../embedded/osal/baremetal)
-target_compile_definitions(gimbal_core_test PRIVATE
+target_compile_definitions(gimbal_functional_test PRIVATE
     CONFIG_NUM_IRQ_PRIO_BITS=4)
-add_test(NAME gimbal_core COMMAND gimbal_core_test)
+add_test(NAME gimbal_functional COMMAND gimbal_functional_test)
 
 add_library(driver_header_contract OBJECT
     driver_header_contract.cc)

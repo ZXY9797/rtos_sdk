@@ -16,7 +16,7 @@ import boot_layout  # noqa: E402
 
 class BootLayoutTest(unittest.TestCase):
     def test_repository_layouts_validate_and_emit_cmake(self) -> None:
-        self.assertEqual(("demo", "demo_ble"),
+        self.assertEqual(("demo", "demo_ble", "gimbal"),
                          boot_layout.canonical_layout_names())
         for product in boot_layout.canonical_layout_names():
             layout = boot_layout.load_layout(product)
@@ -31,11 +31,15 @@ class BootLayoutTest(unittest.TestCase):
         self.assertEqual("demo", boot_layout.load_layout("gd32f503")["name"])
         self.assertEqual("demo_ble",
                          boot_layout.load_layout("gr5525")["name"])
+        self.assertEqual(
+            "gimbal",
+            boot_layout.load_layout("gd32f503-gimbal")["name"])
 
     def test_scratch_is_carved_from_storage_tail(self) -> None:
         expected_storage_offsets = {
             "demo": 0x00058000,
             "demo_ble": 0x000F8000,
+            "gimbal": 0x00058000,
         }
         for product, expected_offset in expected_storage_offsets.items():
             layout = boot_layout.load_layout(product)

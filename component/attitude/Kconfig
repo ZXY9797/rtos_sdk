@@ -1,0 +1,3 @@
+menuconfig ATTITUDE_EKF
+    bool "Error-state attitude EKF"
+    depends on MOTION

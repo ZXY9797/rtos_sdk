@@ -1,10 +1,15 @@
 # 三轴非正交手持云台
 
-本目录是 GD32F503 参考产品，产品无关算法位于
-`component/gimbal`。当前实现包含双 Hall 连续角度、电角度/机械角度标定、
+本目录是 GD32F503 参考产品。通用原语和数据契约分别位于 `component/algo`
+与 `component/control_contracts`；可复用功能按职责分布在 `component/motion`、
+`component/attitude`、`component/control`、`component/position_sensor`、
+`component/thermal`、`component/safety`、`component/foc` 和 `component/ipc`；
+不存在聚合式 `component/gimbal`。当前实现包含双 Hall 连续角度、电角度/机械角度标定、
 相机 IMU EKF、无手柄 IMU 的非正交运动学反解、动力学前馈、带频率整形的
 反馈控制、SO(3) 平滑梯形规划、IMU 恒温、共享内存主题、A/B 参数存储、
 安全状态机和独立硬件看门狗。
+产品参数 schema、共享主题集合、设备映射和任务编排留在本产品目录，避免通用
+组件反向依赖具体产品策略。
 IMU 链路由 `SensorBatchCore` 管理：TIMER6 以 16 kHz 启动 SPI DMA，RX-DMA
 中断封存 ping-pong frame，每 16 点用 const 指针唤醒 1 kHz 闭环任务。
 控制输出还包含待机积分清零、三相 PWM 一致提交、重新 arm 前中性占空比装载和

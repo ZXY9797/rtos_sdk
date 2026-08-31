@@ -83,11 +83,19 @@ Boot 代码分为公共代码和固件私有代码。
 
 ## 组件依赖等级
 
-`component/algo` 是纯算法层。它不能依赖 OSAL、DTS、driver、bootloader
-或产品代码。
+`component/algo` 是纯算法层，承载定长空间数学、DSP 和单轴运动轮廓等
+无产品语义的计算原语。它不能依赖 OSAL、DTS、driver、bootloader 或产品代码。
+
+`component/control_contracts` 是头文件契约层，定义固定布局的领域数据并复用
+`algo` 的数值类型。功能组件不再为取得 `gimbal/types.h` 而伪依赖 `motion`。
 
 `component/foc` 是电机控制领域组件。它可以依赖 `algo` 和驱动抽象，但产品
 CLI、产品启动流程、boot 状态和板级策略应放在 `app/product`。
+
+三轴控制能力按职责拆为 `control_contracts`、`motion`、`attitude`、`control`、
+`position_sensor`、`thermal`、`safety` 和 `ipc`。组件之间只通过定长值类型
+和显式接口通信；产品参数 schema、共享主题集合、任务频率与设备映射留在
+`app/product/gimbal`。禁止用单一 `gimbal_core` 静态库重新聚合这些依赖。
 
 `component/link` 和 `component/nvs` 是服务组件。它们可以依赖 OSAL 和驱动
 抽象，但公开 API 必须保持产品无关。

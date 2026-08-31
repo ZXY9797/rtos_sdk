@@ -41,7 +41,7 @@ cxx-driver:
   adapter:
     header: device_adapters/gimbal_motor_dt.h
     macro: HAL_GIMBAL_MOTOR_DT_ADAPT
-  type-name: gimbal::VoltageMotorDevice
+  type-name: foc::VoltageMotorDevice
   init: false
   readiness: is-initialized
   requires:

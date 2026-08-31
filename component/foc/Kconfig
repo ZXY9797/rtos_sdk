@@ -1,13 +1,26 @@
 menuconfig FOC
     bool "FOC Motor Control"
-    depends on DT_HAS_FOC_MOTOR_ENABLED
     help
-      Enable FOC (Field-Oriented Control) motor control component.
+      Enable field-oriented motor modulation and control algorithms.
 
 if FOC
 
+config FOC_CURRENT_CONTROL
+    bool "Phase-current closed-loop FOC"
+    depends on DT_HAS_FOC_MOTOR_ENABLED
+    default y if DT_HAS_FOC_MOTOR_ENABLED
+    help
+      Enable the phase-current controller and foc,motor device integration.
+
+config FOC_VOLTAGE_CONTROL
+    bool "Open-loop voltage FOC"
+    help
+      Enable bounded dq-voltage modulation for hardware without phase-current
+      sensing. This mode does not provide a torque or current loop.
+
 config FOC_SPEED_LOOP_HZ
     int "Speed loop frequency (Hz)"
+    depends on FOC_CURRENT_CONTROL
     range 1 10000
     default 100
     help

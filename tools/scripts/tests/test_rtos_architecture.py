@@ -69,6 +69,73 @@ class RtosArchitectureContractTest(unittest.TestCase):
         self.assertIn("gpio0: gpio@40010000", board)
         self.assertIn("reg = <0x40010000 0x400>", board)
 
+    def test_gimbal_domain_is_split_into_functional_components(self):
+        self.assertFalse((REPO_ROOT / "component/gimbal").exists())
+        component_cmake = self.read("component/CMakeLists.txt")
+        for symbol, directory in (
+            ("CONFIG_ATTITUDE_EKF", "attitude"),
+            ("CONFIG_FEEDBACK_CONTROL", "control"),
+            ("CONFIG_MOTION", "motion"),
+            ("CONFIG_POSITION_SENSOR", "position_sensor"),
+            ("CONFIG_SAFETY_SUPERVISOR", "safety"),
+            ("CONFIG_THERMAL_CONTROL", "thermal"),
+        ):
+            self.assertIn(
+                f"add_subdirectory_ifdef({symbol} {directory})",
+                component_cmake,
+            )
+        self.assertIn("add_subdirectory(ipc)", component_cmake)
+        self.assertIn("add_subdirectory(control_contracts)",
+                      component_cmake)
+
+    def test_gimbal_product_owns_policy_and_topic_topology(self):
+        product_cmake = self.read("app/product/gimbal/CMakeLists.txt")
+        product_kconfig = self.read("app/product/gimbal/Kconfig")
+        domain_types = self.read(
+            "component/control_contracts/include/gimbal/types.h")
+        self.assertIn("services/parameters.cc", product_cmake)
+        self.assertIn("${CMAKE_CURRENT_SOURCE_DIR}/include", product_cmake)
+        self.assertIn("select FOC_VOLTAGE_CONTROL", product_kconfig)
+        self.assertNotIn("ProductMode", domain_types)
+
+    def test_generic_algorithms_do_not_belong_to_motion(self):
+        algo_cmake = self.read("component/algo/CMakeLists.txt")
+        motion_cmake = self.read("component/motion/CMakeLists.txt")
+        controller = self.read("component/control/src/controller.cc")
+        self.assertIn("src/spatial_math.cc", algo_cmake)
+        self.assertIn("src/motion_profile.cc", algo_cmake)
+        self.assertNotIn("src/math.cc", motion_cmake)
+        self.assertIn("algo control_contracts", motion_cmake)
+        self.assertIn("algo::BiquadFilter", self.read(
+            "component/control/include/gimbal/controller.h"))
+        self.assertNotIn("FilterCoefficients", controller)
+        self.assertFalse((REPO_ROOT /
+                          "component/motion/include/gimbal/types.h").exists())
+        for component in ("attitude", "position_sensor", "safety", "thermal"):
+            cmake = self.read(f"component/{component}/CMakeLists.txt")
+            self.assertNotIn("PUBLIC motion", cmake)
+        for path in (
+            "component/algo/include/algo/motion_profile.h",
+            "component/algo/include/algo/spatial_math.h",
+            "component/algo/src/motion_profile.cc",
+            "component/algo/src/spatial_math.cc",
+        ):
+            source = self.read(path)
+            self.assertNotIn("gimbal", source)
+            self.assertNotIn("osal", source)
+
+    def test_voltage_and_current_foc_share_svpwm_but_split_sources(self):
+        foc_cmake = self.read("component/foc/CMakeLists.txt")
+        self.assertIn("target_sources(${MODULE_NAME} PRIVATE src/svpwm.cc)",
+                      foc_cmake)
+        self.assertIn("CONFIG_FOC_CURRENT_CONTROL", foc_cmake)
+        self.assertIn("CONFIG_FOC_VOLTAGE_CONTROL", foc_cmake)
+        voltage_start = foc_cmake.index("CONFIG_FOC_VOLTAGE_CONTROL")
+        voltage_end = foc_cmake.index(")", voltage_start)
+        voltage_sources = foc_cmake[voltage_start:voltage_end]
+        self.assertIn("src/voltage_foc.cc", voltage_sources)
+        self.assertIn("src/voltage_motor.cc", voltage_sources)
+
 
 if __name__ == "__main__":
     unittest.main()

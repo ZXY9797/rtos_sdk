@@ -1,34 +1,34 @@
 #pragma once
 
-#include <cstdint>
-
 namespace algo {
 
 struct LeadLagConfig {
-    float fs {1000.0f};
-    float fz {100.0f};
-    float fp {1000.0f};
-    float gain {1.0f};
+    float sample_frequency_hz {1000.0F};
+    float zero_frequency_hz {100.0F};
+    float pole_frequency_hz {200.0F};
+    float gain {1.0F};
 };
 
 class LeadLagCompensator {
 public:
     LeadLagCompensator() = default;
 
-    void init(const LeadLagConfig &cfg);
-    void set_params(float fz, float fp);
-    float update(float x);
+    [[nodiscard]] bool configure(const LeadLagConfig &config);
+    void bypass();
+    [[nodiscard]] bool update(float input, float &output);
     void reset();
 
-    float fz() const { return cfg_.fz; }
-    float fp() const { return cfg_.fp; }
+    [[nodiscard]] bool is_configured() const { return is_configured_; }
 
 private:
-    LeadLagConfig cfg_;
-    float b0_{0}, b1_{0}, a1_{0};
-    float x1_{0}, y1_{0};
-
-    void calculate_coefficients();
+    float b0_ {1.0F};
+    float b1_ {0.0F};
+    float a1_ {0.0F};
+    float previous_input_ {0.0F};
+    float previous_output_ {0.0F};
+    bool is_configured_ {true};
 };
+
+[[nodiscard]] bool valid_lead_lag_config(const LeadLagConfig &config);
 
 } // namespace algo
