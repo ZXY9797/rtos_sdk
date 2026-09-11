@@ -78,6 +78,21 @@ void test_fragment_index_cannot_wrap()
     CHECK(output == payload);
 }
 
+void test_new_first_fragment_resynchronizes_interrupted_stream()
+{
+    link::Reassembler reassembler;
+    const uint8_t stale_first[] = {0x00U, 0x11U};
+    const uint8_t new_complete[] = {0x80U, 0x22U};
+    CHECK(!link::Fragmenter::recv(
+        stale_first, sizeof(stale_first), reassembler));
+    CHECK(link::Fragmenter::recv(
+        new_complete, sizeof(new_complete), reassembler));
+
+    uint8_t output = 0U;
+    CHECK(reassembler.read(&output, 1U) == 1);
+    CHECK(output == 0x22U);
+}
+
 } // namespace
 
 int main()
@@ -85,6 +100,7 @@ int main()
     test_streaming_read();
     test_out_of_order_is_discarded();
     test_fragment_index_cannot_wrap();
+    test_new_first_fragment_resynchronizes_interrupted_stream();
     std::puts("Link fragmentation tests passed");
     return 0;
 }

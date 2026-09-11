@@ -156,29 +156,172 @@ inline uint8_t bcc(const uint8_t* data, size_t len)
 
 uint16_t crc16_ccitt(const uint8_t* data, size_t len);
 
+inline constexpr uint8_t HANDLER_STATUS_OK = 0x00U;
+inline constexpr uint8_t HANDLER_STATUS_IN_PROGRESS = 0x01U;
+inline constexpr uint8_t HANDLER_STATUS_INVALID_RESULT = 0xFAU;
+inline constexpr uint8_t HANDLER_STATUS_TIMEOUT = 0xFBU;
+inline constexpr uint8_t HANDLER_STATUS_QUEUE_FULL = 0xFCU;
+inline constexpr uint8_t HANDLER_STATUS_REPLAY_CONFLICT = 0xFDU;
+inline constexpr uint8_t HANDLER_STATUS_AUTH_REQUIRED = 0xFEU;
+inline constexpr uint8_t HANDLER_STATUS_NOT_FOUND = 0xFFU;
+
+/**
+ * Correlates one deferred handler completion with its request.
+ *
+ * The value may be copied to a handler-owned static queue. Router validates
+ * every field before accepting a completion, so callers must treat it as an
+ * opaque value and must not modify it. A token becomes invalid after its
+ * handler completes, times out, or Router is deinitialized.
+ */
+struct CompletionToken {
+    uint32_t id {};
+    uint32_t router_epoch {};
+    uint16_t sequence {};
+    uint16_t source_link_id {};
+    uint8_t source_link_index {};
+    uint8_t sender {};
+    uint8_t receiver {};
+    uint8_t command_set {};
+    uint8_t command_id {};
+    AckMode request_ack_mode {AckMode::No};
+    EncMode encryption_mode {EncMode::None};
+    Priority priority {Priority::Low};
+
+    [[nodiscard]] bool is_valid() const
+    {
+        return id != 0U && router_epoch != 0U;
+    }
+};
+
+enum class HandlerDisposition : uint8_t {
+    Completed = 0U,
+    Deferred = 1U,
+};
+
+struct HandlerResult {
+    HandlerDisposition disposition {HandlerDisposition::Completed};
+    uint8_t status {HANDLER_STATUS_OK};
+    const uint8_t* data {nullptr};
+    size_t data_len {0U};
+
+    [[nodiscard]] static HandlerResult completed(
+        uint8_t result_status = HANDLER_STATUS_OK,
+        const uint8_t* result_data = nullptr,
+        size_t result_data_len = 0U)
+    {
+        return {
+            HandlerDisposition::Completed,
+            result_status,
+            result_data,
+            result_data_len,
+        };
+    }
+
+    [[nodiscard]] static HandlerResult deferred()
+    {
+        return {HandlerDisposition::Deferred, HANDLER_STATUS_IN_PROGRESS,
+                nullptr, 0U};
+    }
+};
+
+using HandlerCallback = void (*)(const Frame& frame, void* arg);
+using AsyncHandlerCallback = HandlerResult (*)(
+    const Frame& frame, const CompletionToken& token, void* arg);
+
 struct Handler {
-    uint8_t cmd_set;
-    uint8_t cmd_id;
-    void (*cb)(const Frame& frame, void* arg);
-    void* arg;
-    uint8_t flags;
+    uint8_t receiver {};
+    uint8_t receiver_mask {};
+    uint8_t cmd_set {};
+    uint8_t cmd_set_mask {};
+    uint8_t cmd_id {};
+    uint8_t cmd_id_mask {};
+    HandlerCallback cb {nullptr};
+    AsyncHandlerCallback async_cb {nullptr};
+    void* arg {nullptr};
+    uint32_t finish_timeout_ms {};
+    uint8_t flags {};
 };
 
 inline constexpr uint8_t HANDLER_REQUIRE_SECURE = 0x01U;
 
-#define LINK_HANDLER(set, id, cb, arg) \
+#define LINK_DETAIL_CONCAT_INNER(a, b) a##b
+#define LINK_DETAIL_CONCAT(a, b) LINK_DETAIL_CONCAT_INNER(a, b)
+
+#define LINK_DETAIL_SYNC_HANDLER( \
+    host, host_mask, set, set_mask, id, id_mask, callback, callback_arg, \
+    handler_flags, unique) \
     __attribute__((used, section(".link_handler"))) \
-    static const ::link::Handler _link_h_##set##_##id = {set, id, cb, arg, 0U}
+    static const ::link::Handler LINK_DETAIL_CONCAT( \
+        _link_handler_, unique) = { \
+            host, host_mask, set, set_mask, id, id_mask, callback, nullptr, \
+            callback_arg, 0U, handler_flags}
+
+#define LINK_DETAIL_ASYNC_HANDLER(host, host_mask, set, set_mask, id, id_mask, \
+                                  callback, callback_arg, timeout_ms, \
+                                  handler_flags, unique) \
+    __attribute__((used, section(".link_handler"))) \
+    static const ::link::Handler LINK_DETAIL_CONCAT( \
+        _link_handler_, unique) = { \
+            host, host_mask, set, set_mask, id, id_mask, nullptr, callback, \
+            callback_arg, timeout_ms, handler_flags}
+
+#define LINK_HANDLER(set, id, cb, arg) \
+    LINK_DETAIL_SYNC_HANDLER(0U, 0U, set, 0xFFU, id, 0xFFU, cb, arg, 0U, \
+                             __COUNTER__)
+
+#define LINK_HOST_HANDLER( \
+    host, host_mask, set, set_mask, id, id_mask, cb, arg) \
+    LINK_DETAIL_SYNC_HANDLER(host, host_mask, set, set_mask, id, id_mask, cb, \
+                             arg, 0U, __COUNTER__)
+
+#define LINK_ASYNC_HANDLER(set, id, cb, arg, timeout_ms) \
+    LINK_DETAIL_ASYNC_HANDLER(0U, 0U, set, 0xFFU, id, 0xFFU, cb, arg, \
+                              timeout_ms, 0U, __COUNTER__)
+
+#define LINK_HOST_ASYNC_HANDLER(host, host_mask, set, set_mask, id, id_mask, \
+                                cb, arg, timeout_ms) \
+    LINK_DETAIL_ASYNC_HANDLER(host, host_mask, set, set_mask, id, id_mask, cb, \
+                              arg, timeout_ms, 0U, __COUNTER__)
 
 #if defined(CONFIG_LINK_SECURITY)
 #define LINK_SECURE_HANDLER(set, id, cb, arg) \
-    __attribute__((used, section(".link_handler"))) \
-    static const ::link::Handler _link_h_##set##_##id = { \
-        set, id, cb, arg, ::link::HANDLER_REQUIRE_SECURE}
+    LINK_DETAIL_SYNC_HANDLER(0U, 0U, set, 0xFFU, id, 0xFFU, cb, arg, \
+                             ::link::HANDLER_REQUIRE_SECURE, __COUNTER__)
+
+#define LINK_SECURE_ASYNC_HANDLER(set, id, cb, arg, timeout_ms) \
+    LINK_DETAIL_ASYNC_HANDLER( \
+        0U, 0U, set, 0xFFU, id, 0xFFU, cb, arg, timeout_ms, \
+        ::link::HANDLER_REQUIRE_SECURE, __COUNTER__)
+
+#define LINK_SECURE_HOST_HANDLER(host, host_mask, set, set_mask, id, id_mask, \
+                                 cb, arg) \
+    LINK_DETAIL_SYNC_HANDLER( \
+        host, host_mask, set, set_mask, id, id_mask, cb, arg, \
+        ::link::HANDLER_REQUIRE_SECURE, __COUNTER__)
+
+#define LINK_SECURE_HOST_ASYNC_HANDLER( \
+    host, host_mask, set, set_mask, id, id_mask, cb, arg, timeout_ms) \
+    LINK_DETAIL_ASYNC_HANDLER( \
+        host, host_mask, set, set_mask, id, id_mask, cb, arg, timeout_ms, \
+        ::link::HANDLER_REQUIRE_SECURE, __COUNTER__)
 #else
 #define LINK_SECURE_HANDLER(set, id, cb, arg) \
     static_assert(false, \
         "LINK_SECURE_HANDLER requires CONFIG_LINK_SECURITY=y")
+
+#define LINK_SECURE_ASYNC_HANDLER(set, id, cb, arg, timeout_ms) \
+    static_assert(false, \
+        "LINK_SECURE_ASYNC_HANDLER requires CONFIG_LINK_SECURITY=y")
+
+#define LINK_SECURE_HOST_HANDLER(host, host_mask, set, set_mask, id, id_mask, \
+                                 cb, arg) \
+    static_assert(false, \
+        "LINK_SECURE_HOST_HANDLER requires CONFIG_LINK_SECURITY=y")
+
+#define LINK_SECURE_HOST_ASYNC_HANDLER( \
+    host, host_mask, set, set_mask, id, id_mask, cb, arg, timeout_ms) \
+    static_assert(false, \
+        "LINK_SECURE_HOST_ASYNC_HANDLER requires CONFIG_LINK_SECURITY=y")
 #endif
 
 } // namespace link

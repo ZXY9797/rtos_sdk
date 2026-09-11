@@ -1,5 +1,6 @@
 #include <link/codec.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdio>
 #include <cstdlib>
@@ -64,6 +65,80 @@ void test_round_trip()
     for (size_t index = 0U; index < payload.size(); ++index) {
         CHECK(frame.data[index] == payload[index]);
     }
+}
+
+void test_v1_wire_compatibility_vector()
+{
+    static_assert(link::PROTOCOL_VERSION == 1U);
+    static_assert(link::HEADER_SIZE == 11U);
+    static_assert(link::CRC_SIZE == 2U);
+
+    constexpr std::array<uint8_t, 5U> payload {
+        1U, 2U, 3U, 4U, 5U,
+    };
+    constexpr std::array<uint8_t, 18U> expected {
+        0xAAU, 0x12U, 0x04U, 0xBCU, 0x24U, 0x11U,
+        0x22U, 0x34U, 0x12U, 0x03U, 0x07U, 0x01U,
+        0x02U, 0x03U, 0x04U, 0x05U, 0x7BU, 0x31U,
+    };
+    link::PackArgs args {};
+    args.sender = 0x11U;
+    args.receiver = 0x22U;
+    args.cmd_set = 0x03U;
+    args.cmd_id = 0x07U;
+    args.ack_mode = link::AckMode::Finish;
+    args.priority = link::Priority::High;
+    args.seq = 0x1234U;
+
+    std::array<uint8_t, CONFIG_LINK_MAX_FRAME_SIZE> raw {};
+    const size_t length = link::FrameCodec::pack(
+        raw.data(), raw.size(), args, payload.data(), payload.size());
+
+    CHECK(length == expected.size());
+    for (size_t index = 0U; index < expected.size(); ++index) {
+        if (raw[index] != expected[index]) {
+            std::fprintf(stderr,
+                         "v1 byte %zu: expected 0x%02x, got 0x%02x\n",
+                         index, expected[index], raw[index]);
+            std::abort();
+        }
+    }
+}
+
+void test_v1_legacy_crc_vector()
+{
+    // Link v1 historically shipped this lookup table. The result intentionally
+    // differs from the CRC-16/CCITT-FALSE check value 0x29B1; changing it would
+    // silently break existing v1 peers.
+    constexpr std::array<uint8_t, 9U> check {
+        '1', '2', '3', '4', '5', '6', '7', '8', '9',
+    };
+    CHECK(link::crc16_ccitt(check.data(), check.size()) == 0xA9B1U);
+}
+
+void test_v1_ack_wire_compatibility_vector()
+{
+    constexpr std::array<uint8_t, 1U> response {
+        link::HANDLER_STATUS_OK,
+    };
+    constexpr std::array<uint8_t, 14U> expected {
+        0xAAU, 0x0EU, 0x04U, 0xA0U, 0x01U, 0x22U, 0x11U,
+        0x34U, 0x12U, 0x03U, 0x07U, 0x00U, 0x8DU, 0xFAU,
+    };
+    link::PackArgs args {};
+    args.sender = 0x22U;
+    args.receiver = 0x11U;
+    args.cmd_set = 0x03U;
+    args.cmd_id = 0x07U;
+    args.is_ack = true;
+    args.seq = 0x1234U;
+
+    std::array<uint8_t, CONFIG_LINK_MAX_FRAME_SIZE> raw {};
+    const size_t length = link::FrameCodec::pack(
+        raw.data(), raw.size(), args, response.data(), response.size());
+
+    CHECK(length == expected.size());
+    CHECK(std::equal(expected.begin(), expected.end(), raw.begin()));
 }
 
 void test_corruption_and_bounds()
@@ -150,6 +225,9 @@ void test_address_contract()
 int main()
 {
     test_round_trip();
+    test_v1_wire_compatibility_vector();
+    test_v1_legacy_crc_vector();
+    test_v1_ack_wire_compatibility_vector();
     test_corruption_and_bounds();
     test_protocol_validation();
     test_in_place_payload();

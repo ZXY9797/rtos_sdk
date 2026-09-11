@@ -1,30 +1,78 @@
 menuconfig LINK
-	bool "Link 通信协议栈"
-	default y
+	bool "Link communication stack"
+	default n
 	depends on OSAL_HAS_THREADS
+	depends on OSAL_HAS_STATIC_THREADS
 	depends on OSAL_HAS_STATIC_PERIODIC_THREADS
+	depends on OSAL_HAS_MESSAGE_QUEUES
 
 if LINK
 
 config LINK_MAX_FRAME_SIZE
-	int "最大帧长度 (字节)"
+	int "Maximum frame size (bytes)"
 	range 16 1023
 	default 512
 
 config LINK_MAX_LINKS
-	int "最大链路数"
+	int "Maximum physical links"
 	range 1 255
 	default 8
 
 config LINK_MAX_ROUTES
-	int "最大路由规则数"
+	int "Maximum static route rules"
 	range 1 1024
 	default 16
 
 config LINK_MAX_PENDING
-	int "最大待确认帧数"
+	int "Maximum requests awaiting ACK"
 	range 1 1024
 	default 8
+
+config LINK_ACK_NOW_TIMEOUT_MS
+	int "Delivery ACK timeout (ms)"
+	range 1 1000
+	default 50
+	help
+	  Retry interval while a request has not yet been accepted by its peer.
+
+config LINK_ACK_NOW_RETRIES
+	int "Delivery retry count"
+	range 0 10
+	default 2
+	help
+	  Maximum retransmissions before an ACK_NOW request, or the delivery
+	  stage of a staged request, is reported as timed out.
+
+config LINK_MAX_LOCAL_ADDRESSES
+	int "Maximum local protocol addresses"
+	range 1 16
+	default 4
+	help
+	  One Router can terminate commands for several logical hosts while the
+	  first configured address remains the source for locally initiated frames.
+
+config LINK_WORK_QUEUE_DEPTH
+	int "Per-priority handler work queue depth"
+	range 2 32
+	default 4
+	help
+	  High- and low-priority requests use separate statically allocated queues.
+	  The parser never blocks waiting for business handlers.
+
+config LINK_HIGH_PRIORITY_BURST
+	int "Maximum consecutive high-priority handler requests"
+	range 1 32
+	default 4
+	help
+	  Services low-priority work after this many high-priority requests when
+	  both queues are non-empty, preventing starvation without losing priority.
+
+config LINK_MAX_ASYNC_REQUESTS
+	int "Maximum deferred handler completions"
+	range 1 32
+	default 4
+	help
+	  Bounds the number of long-running requests holding completion tokens.
 
 config LINK_REPLAY_CACHE_SIZE
 	int "Acknowledged request replay-cache entries"
@@ -40,37 +88,59 @@ config LINK_REPLAY_RETENTION_MS
 	default 10000
 	help
 	  Must exceed the longest sender retry horizon. Sequence reuse is accepted
-	  only after this interval has elapsed.
+	  only after this interval has elapsed. Every asynchronous handler timeout
+	  and sender completion timeout must be strictly shorter than this interval.
+
+config LINK_REPLAY_RESPONSE_SIZE
+	int "Maximum cached ACK response data (bytes)"
+	range 16 1009
+	default 320
+	help
+	  Bounds RAM used to replay response data without executing a duplicate
+	  request. The effective limit is also capped by LINK_MAX_FRAME_SIZE.
 
 config LINK_SECURITY
-    bool "Product-provided authenticated encryption"
-    default n
-    help
-      Compile and require app/product/<product>/common/link_security.cc.
-      Enable this for selective LINK_SECURE_HANDLER commands as well as the
-      global plaintext-rejection policy.
+	bool "Product-provided authenticated encryption"
+	default n
+	help
+	  Compile and require app/product/<product>/common/link_security.cc.
+	  Enable this for selective LINK_SECURE_HANDLER commands as well as the
+	  global plaintext-rejection policy.
 
 config LINK_REQUIRE_SECURE_COMMANDS
-    bool "Reject all plaintext commands"
-    select LINK_SECURITY
-    default n
-    help
-      Require authenticated encryption for every locally handled command.
+	bool "Reject all plaintext commands"
+	select LINK_SECURITY
+	default n
+	help
+	  Require authenticated encryption for every locally handled command.
 
 config LINK_PROCESS_HZ
-	int "Link 处理任务频率 (Hz)"
+	int "Link parser task frequency (Hz)"
 	range 1 SYS_CLOCK_TICKS_PER_SEC
 	default 1000
 
 config LINK_PROCESS_STACK
-	int "Link 处理任务栈大小 (字节)"
+	int "Link parser task stack size (bytes)"
 	range 1024 65536
 	default 2048
 
 config LINK_PROCESS_PRIO
-	int "Link 处理任务优先级"
+	int "Link parser task priority"
 	range 0 31
 	default 5
+
+config LINK_WORKER_STACK
+	int "Link handler worker stack size (bytes)"
+	range 2048 65536
+	default 4096
+
+config LINK_WORKER_PRIO
+	int "Link handler worker priority"
+	range 0 31
+	default 4
+	help
+	  Keep the parser task above this worker so transport draining, ACK matching,
+	  and timeout maintenance remain deterministic under slow business handlers.
 
 config LINK_INIT_PRIORITY
 	int "Link lifecycle init priority"
@@ -96,5 +166,25 @@ config LINK_UART_TX_TIMEOUT_MS
 	help
 	  Maximum time the dedicated Link processing task may wait for one UART
 	  frame to finish. Size this from baud rate and LINK_MAX_FRAME_SIZE.
+
+config LINK_DIAGNOSTICS
+	bool "Versioned remote Link diagnostics command"
+	default y
+	help
+	  Reserves one command for bounded, versioned aggregate and per-link runtime
+	  counters. Requests must be unicast and use FINISH or PROGRESS ACK mode.
+
+config LINK_DIAGNOSTICS_COMMAND_SET
+	hex "Remote diagnostics command set"
+	range 0x01 0xFE
+	default 0xFE
+	depends on LINK_DIAGNOSTICS
+
+config LINK_DIAGNOSTICS_REQUIRE_SECURE
+	bool "Require authenticated diagnostics requests"
+	default y
+	depends on LINK_DIAGNOSTICS && LINK_SECURITY
+	help
+	  Prevents unauthenticated peers from learning topology and fault counters.
 
 endif

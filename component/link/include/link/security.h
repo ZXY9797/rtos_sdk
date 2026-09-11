@@ -30,10 +30,14 @@ struct SecurityContext {
  * Product-owned authenticated-encryption provider.
  *
  * Implementations must bind every SecurityContext field as authenticated
- * data, use a unique nonce for each distinct protected message, and verify the
- * tag before releasing plaintext. A duplicate request can cause protect() to
- * be called again with the exact same ACK context and plaintext; a provider
- * deriving its nonce from that context must reproduce the exact same payload.
+ * data, use a unique transmitted nonce for every protect() call, and verify
+ * the tag before releasing plaintext. All Link v1 ACKs carry AckMode::No, so
+ * Progress intermediate and terminal responses share the same ACK security
+ * context and a nonce must not be derived only from SecurityContext. The
+ * protected payload must carry the nonce or an
+ * equivalent boot-epoch/counter value that the receiver can replay-check.
+ * A duplicate request can cause protect() to be called again with the exact
+ * same ACK context and plaintext; that call also requires a fresh nonce.
  * Exact request retransmissions are filtered by Router before unprotect(); all
  * other replayed nonces must be rejected.
  * The retransmit bit is deliberately excluded because Router sets it on an

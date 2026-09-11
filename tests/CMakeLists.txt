@@ -35,6 +35,27 @@ target_include_directories(link_replay_cache_test PRIVATE
     ../component/link/include)
 add_test(NAME link_replay_cache COMMAND link_replay_cache_test)
 
+add_executable(link_diagnostics_test
+    ../component/link/tests/diagnostics_test.cc
+    ../component/link/src/diagnostics.cc)
+target_compile_features(link_diagnostics_test PRIVATE cxx_std_17)
+target_include_directories(link_diagnostics_test PRIVATE
+    ../component/link/include)
+add_test(NAME link_diagnostics COMMAND link_diagnostics_test)
+
+add_executable(link_router_policy_test
+    ../component/link/tests/router_policy_test.cc)
+target_compile_features(link_router_policy_test PRIVATE cxx_std_17)
+target_include_directories(link_router_policy_test PRIVATE
+    stubs
+    ../component/link/include
+    ../embedded/include
+    ../embedded/include/osal
+    ../embedded/osal/baremetal)
+target_compile_definitions(link_router_policy_test PRIVATE
+    CONFIG_NUM_IRQ_PRIO_BITS=4)
+add_test(NAME link_router_policy COMMAND link_router_policy_test)
+
 add_library(link_router_contract OBJECT
     ../component/link/src/router.cc)
 target_compile_features(link_router_contract PRIVATE cxx_std_17)
