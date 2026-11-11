@@ -7,7 +7,7 @@ set(CMAKE_C_COMPILER_ID GNU)
 set(CMAKE_CXX_COMPILER_ID GNU)
 
 # GCC 9.x 工具链（用于兼容 libble_sdk.a）
-# 优先级：环境变量 ARMGCC9_TOOLCHAIN_PATH > PATH
+# 优先级：环境变量 ARMGCC9_TOOLCHAIN_PATH > CMake 变量 > PATH
 if(DEFINED ENV{ARMGCC9_TOOLCHAIN_PATH})
     set(_TOOLCHAIN_BIN "$ENV{ARMGCC9_TOOLCHAIN_PATH}/bin")
 elseif(DEFINED ARMGCC9_TOOLCHAIN_PATH)
@@ -23,19 +23,21 @@ else()
 endif()
 
 if(_TOOLCHAIN_BIN)
+    # CMake serializes tool paths into scripts, so use forward slashes on Windows.
+    file(TO_CMAKE_PATH "${_TOOLCHAIN_BIN}" _TOOLCHAIN_BIN)
     set(TOOLCHAIN_PREFIX "${_TOOLCHAIN_BIN}/arm-none-eabi-")
 else()
     set(TOOLCHAIN_PREFIX "arm-none-eabi-")
 endif()
 
 # 工具链设置
-set(CMAKE_C_COMPILER    ${TOOLCHAIN_PREFIX}gcc${_EXE})
-set(CMAKE_CXX_COMPILER  ${TOOLCHAIN_PREFIX}g++${_EXE})
-set(CMAKE_ASM_COMPILER  ${TOOLCHAIN_PREFIX}gcc${_EXE})
-set(CMAKE_AR            ${TOOLCHAIN_PREFIX}ar${_EXE})
-set(CMAKE_OBJCOPY       ${TOOLCHAIN_PREFIX}objcopy${_EXE})
-set(CMAKE_OBJDUMP       ${TOOLCHAIN_PREFIX}objdump${_EXE})
-set(CMAKE_SIZE          ${TOOLCHAIN_PREFIX}size${_EXE})
+set(CMAKE_C_COMPILER    "${TOOLCHAIN_PREFIX}gcc${_EXE}")
+set(CMAKE_CXX_COMPILER  "${TOOLCHAIN_PREFIX}g++${_EXE}")
+set(CMAKE_ASM_COMPILER  "${TOOLCHAIN_PREFIX}gcc${_EXE}")
+set(CMAKE_AR            "${TOOLCHAIN_PREFIX}ar${_EXE}")
+set(CMAKE_OBJCOPY       "${TOOLCHAIN_PREFIX}objcopy${_EXE}")
+set(CMAKE_OBJDUMP       "${TOOLCHAIN_PREFIX}objdump${_EXE}")
+set(CMAKE_SIZE          "${TOOLCHAIN_PREFIX}size${_EXE}")
 
 set(CMAKE_OUTPUT_SUFFIX ".elf")
 set(CMAKE_EXECUTABLE_SUFFIX_ASM     ${CMAKE_OUTPUT_SUFFIX})
