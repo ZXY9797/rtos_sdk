@@ -1,0 +1,4 @@
+interface:
+  display_name: "MCU AI Debug"
+  short_description: "Evidence-based MCU debug, verified images and live-state care"
+  default_prompt: "Use $mcu-ai-debug to preserve the existing MCU session, verify firmware identity, and diagnose the fault through evidence and authorized debugger operations."
