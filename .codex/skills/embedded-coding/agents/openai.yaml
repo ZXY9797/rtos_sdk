@@ -1,0 +1,4 @@
+interface:
+  display_name: "Embedded Coding"
+  short_description: "Embedded C/C++ changes, upstream sync and build evidence"
+  default_prompt: "Use $embedded-coding to make a scoped firmware change, preserve local fixes, and verify the affected configuration and artifacts."

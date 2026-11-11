@@ -1,31 +1,99 @@
 
 # 代码风格与格式规范
 
+先遵循用户本次明确的格式要求，再遵循当前项目的 formatter、编译规则和邻近代码。
+下列行宽、留白和函数长度等为缺省参考，
+不要求重排未修改内容；具体符号可见性还需保留启动入口、ISR、弱符号、链接段和生成器契约。
+
 ## 行宽
 
-每行最多80列。超过80列的行必须换行。在逻辑断点处换行：
+用户没有另行指定时，项目已有 `.clang-format`、formatter 配置或明确约定的，以项目为准。
+没有项目规定时，默认目标行宽为 **100 列**；这属于可读性约定，不是安全要求。
+
+- 普通代码优先保持在 100 列以内，在参数组、运算符或逻辑边界处自然换行。
+- 一行能清楚表达的短调用可以保留，不因旧的 80 列限制把参数机械拆成多行。
+- 项目明确采用 80 或 120 列时沿用该值，不自动覆盖已有格式配置。
+- URL、不可拆分标识符或字符串等按项目格式器支持的例外处理；不要改变内容以满足行宽。
+- 修改只格式化相关代码，不为调整默认行宽重排整个仓库。
+
+使用 clang-format 且项目未规定行宽时，对应选项为：
+
+```yaml
+ColumnLimit: 100
+```
+
+该选项含义见 [Clang-Format 文档](https://clang.llvm.org/docs/ClangFormatStyleOptions.html#columnlimit)。
+这是格式配置示例，不要求仅因加载本 skill 就创建或修改项目配置。
 
 ```c
-/* 正面示例 - 在80列处换行 */
-int result = very_long_function_name(
-    first_parameter,
-    second_parameter,
-    third_parameter);
+/* 这个调用在 100 列内，可以保持单行。 */
+int result = very_long_function_name(first_parameter, second_parameter, third_parameter);
 
-/* 正面示例 - 条件表达式换行 */
-if (status == STATUS_READY &&
-    buffer_count > MIN_BUFFER_COUNT &&
-    timeout_remaining > 0) {
-    process_data();
+/* 参数较长时，按语义分组换行。 */
+int result = configure_peripheral_dma_transfer(
+    peripheral_handle, dma_channel_config,
+    receive_buffer, receive_buffer_size, completion_callback);
+```
+
+## 空行与逻辑分段
+
+横向行宽和纵向留白分别控制。100 列不意味着把更多语句或函数挤在一起。
+没有项目明确约定时，采用以下默认规则：
+
+- **函数之间**：相邻函数定义之间保留 1 个空行，类内成员函数定义也适用。
+  函数文档注释紧贴其声明或定义，分隔空行放在文档注释之前。
+  同组函数声明可以连续排列，不要求每条原型之间留空行。
+- **函数内部**：参数校验、准备数据、主要处理、提交结果/清理等不同逻辑段之间
+  保留 1 个空行。按职责分段，不按固定语句数分段；短小且完整的一组操作不强行拆散。
+- **控制结构**：保护性提前返回结束后，通常留 1 个空行再开始主体逻辑。
+  完成一个循环或条件块后，若接下来进入独立步骤，留 1 个空行。
+  `if`/`else if`/`else`、`do`/`while` 属于同一控制结构，其相邻分支之间不额外插空行。
+- **块的边缘**：不在左大括号后的第一条语句前、右大括号前机械留空行。
+  同一逻辑段内连续赋值、相关变量声明或连续寄存器配置保持相邻。
+- **留白数量**：通常 1 个空行即可，不用连续多个空行代替模块划分。
+  不为了压缩代码、缩短回复或满足函数行数目标而删除已有的合理分段。
+- **单行代码**：短调用可以保持单行，不意味着可以把任意函数体或分支折叠为单行。
+  项目允许的简单 getter/setter 可沿用，但仍应保持函数之间的分隔。
+
+例如，校验与发送是不同步骤；同一次发送的返回值检查仍紧贴该调用：
+
+```c
+int packet_send(const Packet_t *packet)
+{
+    if (packet == NULL) {
+        return ERR_INVALID_ARG;
+    }
+
+    int ret = validate_packet(packet);
+    if (ret != ERR_OK) {
+        return ret;
+    }
+
+    ret = transport_send(packet->data, packet->length);
+    if (ret != ERR_OK) {
+        return ret;
+    }
+
+    record_packet_sent(packet);
+    return ERR_OK;
 }
 
-/* 反面示例 - 超过80列 */
-int result = very_long_function_name(first_parameter, second_parameter, third_parameter);
+void packet_reset(Packet_t *packet)
+{
+    packet->length = 0;
+    packet->valid = false;
+}
 ```
+
+完成编辑或运行 formatter 后，检查实际差异中的函数分隔和逻辑分段。
+若格式器删除了用户要求的空行，查明并处理具体配置冲突；不要把这种输出直接视为
+符合要求，也不要为了本次局部修改重排整个仓库。空行不能表达清楚的职责边界，再考虑拆函数。
 
 ## 函数长度
 
-每个函数最多80行。如果函数接近此限制，提取子函数：
+按职责、控制流和可读性评估函数长度。接近或超过 80 行是复查信号，不是硬上限。
+不得通过删除空行、合并多条语句或压缩分支来凑行数。
+确有独立职责或重复子流程时再提取函数，同时保留接口、时序和资源生命周期契约：
 
 ```c
 /* 反面示例 - 单体函数 */

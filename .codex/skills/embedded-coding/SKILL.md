@@ -1,180 +1,80 @@
 ---
 name: embedded-coding
-description: 嵌入式C/C++编码规范，适用于安全关键嵌入式系统。强制执行OOP设计模式、内存安全、线程安全、硬件交互规则和强制的编辑后安全审查。在编写、修改或审查C/C++代码、嵌入式固件、驱动、HAL代码、RTOS任务或任何运行在嵌入式平台上的代码时使用此Skill。当用户提到C/C++、嵌入式系统、MCU、STM32、驱动、外设或固件开发时也会触发。
+description: 编写、修改和审查 MCU/RTOS 的 C/C++ 固件、驱动与 HAL；处理 SDK 上游同步、私有修复保护和构建集成。用于涉及中断、并发、DMA、资源生命周期或嵌入式配置的实际代码任务；仅分析日志或控制调试器时使用相应调试流程。
 ---
 
-# 嵌入式编码规范（安全关键嵌入式系统）
+# Embedded Coding
 
-这是安全关键嵌入式系统代码。缺陷可能导致系统故障甚至安全事故。
-每一行代码都必须以极其谨慎的态度编写和审查。
+以当前源码、配置和调用链为依据，完成范围明确、可以验证的嵌入式修改。
+先保留项目已有的架构与行为契约，再选择必要的抽象和验证；不因普通固件任务
+自动套用安全认证流程、OOP 重构或统一线程模型。
 
-## 核心原则
+功能开发或调试需要验证 KP 协议请求、应答、订阅和 USB/UART/CAN 通信时，
+自动结合全局 `kptools-debug` Skill 与 `kptools` MCP 获取本次协议证据。
+纯代码修改无需启动 KPtools；已有设备会话应复用，不能另开通信进程抢占端口。
 
-1. **安全第一** - 这是安全关键嵌入式系统软件，对每一次修改
-   都要像生命攸关一样对待
-2. **SOLID 原则** - 在 C 中使用函数指针接口和不透明类型，
-   在 C++ 中使用虚函数或 CRTP 静态多态
-3. **Clean Code** - 函数只做一件事、命名揭示意图、不重复、
-   无副作用、一致的抽象层级
-4. **OOP 设计** - 使用面向对象设计模式；在 C 中通过
-   结构体+函数指针实现，在 C++ 中使用类和 RAII；
-   仅通过统一的外部接口访问设备
-5. **零开销抽象**（C++） - 只使用编译期解析或零额外运行时开销的
-   C++ 特性；禁用异常和 RTTI
-6. **零容忍阻塞** - 如果应用层使用事件驱动框架 / RTC（运行至完成）
-   执行模型，整个调用链必须是非阻塞的
-7. **验证到底层** - 检查硬件交互到寄存器级别；
-   永远不要假设API是非阻塞的
-8. **防御性编程** - 断言内部契约、校验外部输入、传播错误、
-   绝不静默吞掉失败
+## 开始工作
 
-## 决策树：应该阅读哪个参考文档
+1. 检查 `git status`、适用的仓库指令和目标文件附近实现，保留 staged、unstaged、
+   untracked 工作。找到实际调用者、配置入口、工具链与构建产物，不能只看目录名。
+2. 确认执行上下文：初始化、普通线程、ISR、DMA 回调或 run-to-completion 事件处理。
+   明确状态/缓冲的所有者、时序预算、错误返回、取消与清理契约。
+3. 普通修复沿证据收窄改动；上游导入先读
+   [upstream-sync.md](references/upstream-sync.md)，完成路径映射、基线比较和私有修复保护。
+4. 修改驱动、配置或 SDK 时，读 [build-validation.md](references/build-validation.md)，
+   确认修改进入实际生成配置、编译链接和目标镜像。
+5. 优先从已有上下文发现路径和参数；只询问会改变目标、行为或授权边界的缺失信息。
 
-在编写或修改代码之前，判断哪些参考文档适用：
+## 实现中的关键约束
 
-```
-编写/修改代码？
-├── 设计模块结构、接口、回调？
-│   ├── 阅读 references/architecture.md
-│   └── 阅读 references/design-patterns.md
-│
-├── 编写函数、命名、错误处理？
-│   └── 阅读 references/clean-code.md
-│
-├── 使用 C++ 编写嵌入式代码？
-│   └── 阅读 references/cpp-embedded.md
-│
-├── 使用堆内存、线程、共享资源？
-│   └── 阅读 references/memory-safety.md
-│
-├── 与硬件、外设、HAL交互？
-│   └── 阅读 references/hardware-interaction.md
-│
-├── 编写中断服务程序（ISR）？
-│   └── 阅读 references/interrupt-handling.md
-│
-├── 使用 RTOS（FreeRTOS/RT-Thread）？
-│   └── 阅读 references/rtos-programming.md
-│
-├── 实现低功耗功能？
-│   └── 阅读 references/low-power-design.md
-│
-├── 实现调试日志系统？
-│   └── 阅读 references/debug-logging.md
-│
-├── 实现通信协议（SPI/I2C/UART）？
-│   └── 阅读 references/communication-protocols.md
-│
-├── 编写测试代码？
-│   └── 阅读 references/embedded-testing.md
-│
-├── 实现安全相关功能？
-│   └── 阅读 references/embedded-security.md
-│
-├── 任何代码修改？
-│   ├── 阅读 references/code-style.md
-│   └── 阅读 references/safety-checklist.md（强制）
-│
-└── 编辑完成？
-    └── 阅读 references/safety-checklist.md
-        并执行每一个检查项（阶段1-12）
-```
+- **执行上下文**：ISR 与有非阻塞契约的事件调用链不得引入睡眠、互斥等待或无界轮询。
+  普通线程可按接口使用有界等待。沿 HAL 到具体实现核对阻塞性，不凭 API 名称推断。
+- **接口与资源**：明确缓冲借用期限、DMA/线程所有权交接、回调上下文、失败回收、
+  取消/关闭次序和再次进入条件。`volatile` 不替代同步、原子性或缓存一致性。
+- **硬件行为**：核对芯片对应的寄存器语义、读清/W1C、时钟、引脚、IRQ 与缓存/DMA 可达性。
+  配置值、单位、符号、采样窗口和保护索引必须沿调用链对应，不能类推扩大其他通道。
+- **架构选择**：复用已有设备接口、状态机和队列。只有确有替换/扩展需求时才增加函数表、
+  虚函数或 CRTP；按延迟、栈和调度预算选择工作线程、workqueue 或 ISR 安全事件投递。
+- **C/C++ 约定**：沿用项目格式、内存分配器、异常/RTTI 与语言标准配置。
+  未规定行宽时默认目标为 **100 列**，已有 formatter 或项目约定优先。
+  相邻函数定义之间、函数内不同职责的逻辑段之间默认保留 **1 个空行**；
+  同一逻辑段内保持连贯，不在每条语句或每个大括号后机械插空行。
+  不为缩短函数、控制行数或满足行宽而删除必要留白、合并多条语句或压缩分支。
+  排版细节见 [code-style.md](references/code-style.md)，用户本次明确的格式要求优先。
+  实时热路径避免不可控分配，资源适合时用 RAII，外部输入检查与内部断言分别处理。
+  不以统一行数、禁用某个容器或强制设计模式取代实际预算与项目规范。
+- **变更边界**：保留本地扩展与私有 bugfix；新行为要覆盖相应头文件、配置、生成器和消费者。
+  不为了通过构建而静默删保护、增缓冲掩盖泄漏，或恢复产品有意移除的上游 API。
 
-**如有疑问，阅读所有参考文档。** 对于安全关键代码，
-过度检查总好过检查不足。
+## 按需阅读
 
-## 强制的编辑后协议
+只加载本次机制所需的参考。下列旧有示例中的具体数值、线程模型、风格和库禁用项，
+在项目有对应约束时采用；用户要求和当前项目配置优先，不为满足示例重写无关代码。
 
-每次代码修改后，无论修改多小，都必须执行
-`references/safety-checklist.md` 中的完整安全审查。这不是可选的。
-一行代码的改动就可能引入内存泄漏、竞态条件或栈溢出。
-每次后续修复后也要重新执行检查清单——修复一个问题可能引入另一个。
+| 任务 | 参考 |
+|---|---|
+| 上游同步、HAL/CMSIS 更新、局部移植 | [upstream-sync.md](references/upstream-sync.md) |
+| CMake/Kconfig/DTS、生成代码、ELF/map、验证范围 | [build-validation.md](references/build-validation.md) |
+| 模块边界、接口或回调设计 | [architecture.md](references/architecture.md)、[design-patterns.md](references/design-patterns.md) |
+| 函数、错误传播、命名和格式 | [clean-code.md](references/clean-code.md)、[code-style.md](references/code-style.md) |
+| C++、RAII、编译选项与 C ABI | [cpp-embedded.md](references/cpp-embedded.md) |
+| 内存所有权、并发和共享资源 | [memory-safety.md](references/memory-safety.md) |
+| HAL、寄存器、DMA、非阻塞调用链 | [hardware-interaction.md](references/hardware-interaction.md) |
+| ISR、优先级与任务协作 | [interrupt-handling.md](references/interrupt-handling.md)、[rtos-programming.md](references/rtos-programming.md) |
+| 低功耗、时钟与唤醒 | [low-power-design.md](references/low-power-design.md) |
+| 日志、断言和崩溃记录 | [debug-logging.md](references/debug-logging.md) |
+| 总线、协议帧和错误恢复 | [communication-protocols.md](references/communication-protocols.md) |
+| 主机、集成或 HIL 测试设计 | [embedded-testing.md](references/embedded-testing.md) |
+| 安全启动、密码学和不可信输入边界 | [embedded-security.md](references/embedded-security.md) |
+| 修改后的风险核对 | [safety-checklist.md](references/safety-checklist.md) |
 
-## 速查表：硬性规则
+## 验证与交付
 
-以下是不可商量的约束：
+对完成的一组相关修改，按 [safety-checklist.md](references/safety-checklist.md) 检查受影响
+的逻辑、资源、并发和硬件契约；不相关项可注明不适用。修复后重跑受影响的检查与项目要求。
+检查需针对可观察行为和故障机制，不为可逆的小改编写重复实现的形式测试。
 
-| 规则 | 限制 |
-|------|------|
-| 最大函数长度 | 80行 |
-| 最大嵌套深度 | 4层 |
-| 最大行宽 | 80列 |
-| 最大函数参数数 | 5个（超过则组合成结构体） |
-| 线程中大型局部变量 | 评估栈使用，紧张时用堆 |
-| 魔法数字 | 禁止，C 用宏，C++ 用 `constexpr` |
-| 死代码/未使用代码 | 必须删除 |
-| 非公共符号 | 必须声明为 `static`（C）或匿名命名空间（C++） |
-| 未修改的指针/引用 | 必须使用 `const` |
-| 头文件 | 必须有头文件保护宏（`#pragma once` 或 include guard） |
-| 注释语言 | 推荐英文，或与项目一致 |
-| C++ 异常 | 禁止（`-fno-exceptions`） |
-| C++ RTTI | 禁止（`-fno-rtti`） |
-| C++ 堆分配 | 仅允许在初始化阶段，运行时禁止 |
-
-## 上下文感知编码
-
-在编写任何代码之前，先检查周围的代码库：
-
-1. **信号/插槽用法** - 查看同目录下的兄弟文件如何使用信号、
-   回调和事件机制；遵循相同的模式
-2. **头文件包含路径** - 搜索项目中其他文件如何包含同一头文件；
-   使用相同的路径格式
-3. **堆内存API** - 嵌入式平台可能使用非标准的malloc/free；
-   检查其他文件如何分配和释放内存
-4. **设备打开/关闭** - 不要直接访问设备指针；找到其他模块
-   如何打开/关闭同一设备并遵循该模式
-5. **编码风格** - 匹配同目录下文件的结构和格式约定
-
-## 驱动开发检查清单
-
-编写新驱动时：
-
-1. 内部工作线程 + 消息队列实现非阻塞操作
-2. 周期性轮询留在驱动内部，不对外暴露
-3. 错误状态变化通过回调通知应用层
-4. 不暴露与业务无关的接口
-5. 完成后文档化应用层使用须知，包括：初始化顺序、
-   线程安全保证、回调上下文和清理要求
-
-## SOLID速查
-
-设计或修改模块结构时：
-
-- **SRP（单一职责）**：一个模块 = 一个职责 = 一个变更理由
-- **OCP（开闭原则）**：C 中通过函数指针表扩展，C++ 中通过虚函数/模板扩展
-- **LSP（里氏替换）**：所有接口实现遵守相同的契约
-- **ISP（接口隔离）**：使用者只依赖其使用的接口
-- **DIP（依赖倒置）**：高层依赖抽象，而非底层；C++ 中优先使用 CRTP 而非虚函数
-
-## Clean Code速查
-
-编写任何函数时：
-
-- **一件事**：函数只做一件事
-- **同层级**：所有操作处于相同的抽象层级
-- **无副作用**：查询函数不修改状态
-- **DRY**：如果在复制粘贴，提取共享函数
-- **表驱动**：用查找表替代冗长的if-else/switch
-- **防御性**：断言契约、校验输入、传播错误
-
-## 参考文档
-
-按领域组织的详细规格：
-
-| 参考文档 | 何时阅读 |
-|---------|---------|
-| [architecture.md](references/architecture.md) | 模块设计、OOP模式、接口、回调 |
-| [design-patterns.md](references/design-patterns.md) | SOLID原则、GoF模式（状态机、观察者、策略、工厂） |
-| [clean-code.md](references/clean-code.md) | Clean Code + 华为规范：命名、防御性编程、错误处理、const/static |
-| [cpp-embedded.md](references/cpp-embedded.md) | C++ 嵌入式编程：RAII、constexpr、CRTP、编译器标志、C/C++ 混合编程 |
-| [memory-safety.md](references/memory-safety.md) | 堆分配、线程安全、共享资源、防御性编码 |
-| [hardware-interaction.md](references/hardware-interaction.md) | HAL、寄存器、外设、事件驱动框架 / RTC |
-| [interrupt-handling.md](references/interrupt-handling.md) | 中断服务程序、优先级管理、ISR安全API、中断调试 |
-| [rtos-programming.md](references/rtos-programming.md) | RTOS任务设计、同步原语、队列、内存管理、死锁防范 |
-| [low-power-design.md](references/low-power-design.md) | 时钟管理、睡眠模式、外设功耗、电源状态机 |
-| [debug-logging.md](references/debug-logging.md) | 日志级别、输出后端、断言、栈溢出检测、崩溃记录 |
-| [communication-protocols.md](references/communication-protocols.md) | SPI/I2C/UART驱动、协议帧格式、错误处理、重试机制 |
-| [embedded-testing.md](references/embedded-testing.md) | 单元测试、Mock/Stub、集成测试、HIL测试、覆盖率 |
-| [embedded-security.md](references/embedded-security.md) | 输入验证、密码学、安全启动、通信安全、审计日志 |
-| [code-style.md](references/code-style.md) | 格式、命名、注释、宏、头文件保护 |
-| [safety-checklist.md](references/safety-checklist.md) | **每次编辑后强制执行** - 12阶段安全审查 |
+报告修改解决的触发条件、关键源码/产物证据、实际命令与结果，以及剩余验证边界。
+源码/主机测试、目标构建、烧录回读和板上实测分别说明。
+最后检查差异范围，提交/推送按用户请求执行。
+需要操作真实目标时使用可用的 `$mcu-ai-debug`；源码任务不隐含烧录、复位或暂停授权。
