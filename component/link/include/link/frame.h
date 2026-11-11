@@ -11,16 +11,21 @@ inline constexpr size_t HEADER_SIZE = 11U;
 inline constexpr size_t CRC_SIZE = 2U;
 inline constexpr size_t MIN_FRAME_SIZE = HEADER_SIZE + CRC_SIZE;
 
-// ver_len: reserved[15:12], version[11:10], total frame length[9:0].
-inline constexpr uint16_t VER_LEN_VER_MASK = 0x03U;
+// ver_len: reserved[15:14], version[13:10], total frame length[9:0].
+inline constexpr uint16_t VER_LEN_VER_MASK = 0x0FU;
 inline constexpr uint16_t VER_LEN_LEN_MASK = 0x03FFU;
-inline constexpr uint16_t VER_LEN_RESERVED_MASK = 0xF000U;
+inline constexpr uint16_t VER_LEN_RESERVED_MASK = 0xC000U;
 inline constexpr int VER_LEN_VER_SHIFT = 10;
 
+static_assert(PROTOCOL_VERSION <= VER_LEN_VER_MASK);
+
+// Returns zero for values that cannot be represented by the wire fields.
 inline uint16_t pack_ver_len(uint8_t version, uint16_t total_len)
 {
-    return static_cast<uint16_t>(total_len & VER_LEN_LEN_MASK)
-         | static_cast<uint16_t>((version & VER_LEN_VER_MASK) << VER_LEN_VER_SHIFT);
+    if (version > VER_LEN_VER_MASK || total_len > VER_LEN_LEN_MASK) {
+        return 0U;
+    }
+    return total_len | static_cast<uint16_t>(version << VER_LEN_VER_SHIFT);
 }
 
 inline uint8_t unpack_ver(uint16_t ver_len)
@@ -142,18 +147,13 @@ struct Frame {
     [[nodiscard]] bool retransmit() const { return cmd_type_retransmit(cmd_type); }
 };
 
-inline uint8_t bcc(const uint8_t* data, size_t len)
-{
-    uint8_t sum = 0U;
-    if (data == nullptr) {
-        return sum;
-    }
-    for (size_t i = 0U; i < len; ++i) {
-        sum ^= data[i];
-    }
-    return sum;
-}
+// CRC-8/SMBUS: poly=0x07, init=0, refin=false, refout=false, xorout=0.
+// Covers SOF and ver_len. Check("123456789") = 0xF4.
+uint8_t crc8_smbus(const uint8_t* data, size_t len);
 
+// CRC-16/IBM-3740 (CCITT-FALSE): poly=0x1021, init=0xFFFF,
+// refin=false, refout=false, xorout=0. Check("123456789") = 0x29B1.
+// Covers all encoded header and payload bytes; stored low byte first.
 uint16_t crc16_ccitt(const uint8_t* data, size_t len);
 
 inline constexpr uint8_t HANDLER_STATUS_OK = 0x00U;

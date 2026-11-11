@@ -16,8 +16,8 @@ Link 是一个静态内存、多链路通信协议栈，支持 UART、CAN、BLE 
 偏移  字段          大小    说明
 ----  -----------   ----    ----
 0     SOF           1B      固定 0xAA
-1     ver_len       2B      len[9:0] | ver[11:10] | resv[15:12]
-3     head_crc      1B      前 3 字节 BCC(XOR)
+1     ver_len       2B      len[9:0] | ver[13:10] | resv[15:14]
+3     head_crc      1B      前 3 字节 CRC-8/SMBUS
 4     cmd_type      1B      is_ack | ack_mode | enc_mode | priority | retransmit
 5     sender_id     1B      host_id[7:4] | host_idx[3:0]
 6     receiver_id   1B      host_id[7:4] | host_idx[3:0]
@@ -25,23 +25,35 @@ Link 是一个静态内存、多链路通信协议栈，支持 UART、CAN、BLE 
 9     cmd_set       1B      命令集
 10    cmd_id        1B      命令 ID
 11    data[]        变长    载荷
-尾部  CRC16         2B      Link v1 历史 CRC16（见下文兼容性约束）
+尾部  CRC16         2B      CRC-16/IBM-3740（CCITT-FALSE），低字节在前
 ```
 
 帧头 11 字节，总帧长 = 11 + data_len + 2。
 
-### Link v1 兼容性约束
+### Link v1 校验与互通约束
 
-本次增强继续使用 `PROTOCOL_VERSION=1`，不引入 Link v2，也不改变 SOF、`ver_len`、
-11 字节帧头、CRC、地址或 `cmd_type` 位定义。新增的异步处理、重放保护、诊断和调度能力
-属于端点内部实现；诊断使用 v1 帧内预留的独立命令集。CI 中的 golden frame 测试固定
-校验一个完整 v1 字节序列，并继续验证 version 2 帧会被当前解析器拒绝。
+协议版本号保持 `PROTOCOL_VERSION=1`。`ver_len` 使用 10 位总帧长、4 位协议版本和
+2 位保留位，按小端发送；总帧长最大 1023 字节，包含帧头和尾部 CRC16。发送端保留位置零，
+接收端拒绝非零保留位、非 v1 版本和超出本机容量的长度。版本字段只标识线协议格式，
+不用于表达固件版本；`pack_ver_len()` 对超出位宽的输入返回零，避免截断后生成另一种含义。
 
-Link v1 的 CRC 实现使用项目历史查表，兼容性检查值为
-`CRC16("123456789") = 0xA9B1`，不是标准 CRC-16/CCITT-FALSE 的 `0x29B1`。
-在 Link v1 下修正表项会破坏已有设备互通，因此本次不改动算法，而是用已知检查值和
-golden frame 测试锁定现有线格式。若未来确认没有存量 v1 节点并决定切换到标准 CRC，
-必须作为显式的全链路迁移处理，不能在同一版本号下静默替换。
+| 校验 | 覆盖范围 | poly | init | refin/refout | xorout | `"123456789"` 检查值 |
+| --- | --- | --- | --- | --- | --- | --- |
+| CRC-8/SMBUS | 偏移 0..2，即 SOF 和 ver_len | `0x07` | `0x00` | false/false | `0x00` | `0xF4` |
+| CRC-16/IBM-3740（CCITT-FALSE） | 偏移 0 到尾部 CRC16 前，包含 head_crc、地址、序号、命令和全部载荷 | `0x1021` | `0xFFFF` | false/false | `0x0000` | `0x29B1` |
+
+CRC16 低字节先发送，计算不包含尾部 CRC16 自身。两个 CRC 的查表均在编译期生成，运行时按字节
+更新，不需要动态分配或运行期初始化。头部 CRC8 验证通过后才能采信长度，完整帧的 CRC16
+通过后才解析和分发业务。外部字节流发生断开或明确的接收间断时，调用方应重置 `FrameCodec`；
+纯编解码器不自行读取系统时间或推断传输层超时。
+
+此 v1 线格式使用 CRC8 和标准 CRC16，与早期使用 BCC、历史 CRC16 表
+（检查值 `0xA9B1`）的同号 v1 端点不兼容。App、Loader、上位机和其他对端必须配套更新；
+版本号 1 本身不能区分两种校验规则。编解码器只接受这里定义的规则，不自动尝试旧校验，
+不得在同一链路混用两种 v1 格式。地址、11 字节帧头、`cmd_type` 和 ACK 业务语义保持不变。
+
+主机测试使用固定请求/ACK 字节向量和标准检查值，逐位参考算法核对全部双字节输入，
+并覆盖头部及整帧的单/双 bit 误码、旧格式拒绝、版本/保留位、512/1023 字节容量和错误后恢复。
 
 ACK 保持原有 v1 规则：响应帧的 `ack_mode=No`、`priority=Low`，阶段由
 本地 pending 记录的原请求模式与响应 `status` 共同解释。对 `Progress` 请求，
@@ -324,8 +336,8 @@ deinit 后失效；重复完成返回 false。`Progress` 长任务可调用 `rep
 完成超时也不会重发，
 避免电机动作、Flash 写入等非幂等命令被执行两次。`Finish` 没有单独的受理阶段，
 因此只在初始送达窗口内重传；接收端 replay cache 保证副本不重复进入 handler。
-为兼容不会发送中间 `0x01` 的旧 v1 端点，Progress 在用完送达重试后仍会等待
-`finish_timeout_ms` 到期，期间可直接接受旧端返回的最终状态，但不再重发原命令。
+对于使用本节校验规则、但不会发送中间 `0x01` 的 v1 端点，Progress 在用完送达重试后仍会等待
+`finish_timeout_ms` 到期，期间可直接接受对端返回的最终状态，但不再重发原命令。
 
 ACK 回调优先绑定到单次发送，避免不同业务共享 sequence 状态：
 
@@ -520,7 +532,7 @@ component/link/
 ├── Kconfig
 ├── CMakeLists.txt
 ├── include/link/
-│   ├── frame.h        # 帧结构体、地址编码、BCC/CRC16
+│   ├── frame.h        # 帧结构体、地址编码、CRC8/CRC16 契约
 │   ├── codec.h        # FrameCodec 状态机 + 打包
 │   ├── link.h         # Link 基类 + LinkRegistry
 │   ├── fragment.h     # Reassembler + Fragmenter（分片重组）
@@ -531,7 +543,8 @@ component/link/
 │   └── ble_link.h     # BleLink 子类（分片 + 静态完整帧队列）
 └── src/
     ├── codec.cc       # FrameCodec 实现
-    ├── crc16.cc       # Link v1 历史 CRC16 兼容实现
+    ├── crc8.cc        # 标准 CRC-8/SMBUS
+    ├── crc16.cc       # 标准 CRC-16/IBM-3740（CCITT-FALSE）
     ├── diagnostics.cc # 诊断快照编码
     └── router.cc      # Router 实现 + SYS_INIT
 ```

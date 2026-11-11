@@ -4,6 +4,7 @@ add_library(${MODULE_NAME} STATIC)
 target_sources(${MODULE_NAME}
     PRIVATE
         src/codec.cc
+        src/crc8.cc
         src/crc16.cc
         src/diagnostics.cc
         src/router.cc

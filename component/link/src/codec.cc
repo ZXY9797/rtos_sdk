@@ -42,8 +42,8 @@ int FrameCodec::feed(uint8_t byte) {
             return -2;
         }
         buf_[widx_++] = byte;
-        // 验证前 3 字节 BCC
-        if (bcc(buf_, 3) != byte) {
+        // Verify SOF and ver_len before accepting the declared length.
+        if (crc8_smbus(buf_, 3U) != byte) {
             reset();
             return -1;  // head CRC 错误
         }
@@ -156,7 +156,7 @@ size_t FrameCodec::pack(uint8_t *buf, size_t buf_size,
         PROTOCOL_VERSION, static_cast<uint16_t>(total));
     buf[1] = ver_len & 0xFF;
     buf[2] = (ver_len >> 8) & 0xFF;
-    buf[3] = bcc(buf, 3);
+    buf[3] = crc8_smbus(buf, 3U);
     buf[4] = pack_cmd_type(args.is_ack, args.ack_mode, args.enc_mode,
                            args.priority, args.retransmit);
     buf[5] = args.sender;

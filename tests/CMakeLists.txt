@@ -21,11 +21,24 @@ add_test(NAME link_fragment COMMAND link_fragment_test)
 add_executable(link_codec_test
     ../component/link/tests/codec_test.cc
     ../component/link/src/codec.cc
+    ../component/link/src/crc8.cc
     ../component/link/src/crc16.cc)
 target_compile_features(link_codec_test PRIVATE cxx_std_17)
 target_include_directories(link_codec_test PRIVATE
     ../component/link/include)
 add_test(NAME link_codec COMMAND link_codec_test)
+
+add_executable(link_codec_max_frame_test
+    ../component/link/tests/codec_test.cc
+    ../component/link/src/codec.cc
+    ../component/link/src/crc8.cc
+    ../component/link/src/crc16.cc)
+target_compile_features(link_codec_max_frame_test PRIVATE cxx_std_17)
+target_compile_definitions(link_codec_max_frame_test PRIVATE
+    CONFIG_LINK_MAX_FRAME_SIZE=1023)
+target_include_directories(link_codec_max_frame_test PRIVATE
+    ../component/link/include)
+add_test(NAME link_codec_max_frame COMMAND link_codec_max_frame_test)
 
 add_executable(link_replay_cache_test
     ../component/link/tests/replay_cache_test.cc

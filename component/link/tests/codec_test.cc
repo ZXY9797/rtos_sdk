@@ -36,6 +36,38 @@ void update_crc(uint8_t* raw, size_t length)
     raw[crc_offset + 1U] = static_cast<uint8_t>(crc >> 8U);
 }
 
+uint8_t reference_crc8(const uint8_t* data, size_t length)
+{
+    uint8_t crc = 0U;
+    for (size_t index = 0U; index < length; ++index) {
+        crc ^= data[index];
+        for (uint8_t bit = 0U; bit < 8U; ++bit) {
+            if ((crc & 0x80U) != 0U) {
+                crc = static_cast<uint8_t>((crc << 1U) ^ 0x07U);
+            } else {
+                crc = static_cast<uint8_t>(crc << 1U);
+            }
+        }
+    }
+    return crc;
+}
+
+uint16_t reference_crc16(const uint8_t* data, size_t length)
+{
+    uint16_t crc = 0xFFFFU;
+    for (size_t index = 0U; index < length; ++index) {
+        crc ^= static_cast<uint16_t>(data[index]) << 8U;
+        for (uint8_t bit = 0U; bit < 8U; ++bit) {
+            if ((crc & 0x8000U) != 0U) {
+                crc = static_cast<uint16_t>((crc << 1U) ^ 0x1021U);
+            } else {
+                crc = static_cast<uint16_t>(crc << 1U);
+            }
+        }
+    }
+    return crc;
+}
+
 void test_round_trip()
 {
     const std::array<uint8_t, 5U> payload {1U, 2U, 3U, 4U, 5U};
@@ -67,7 +99,7 @@ void test_round_trip()
     }
 }
 
-void test_v1_wire_compatibility_vector()
+void test_v1_wire_vector()
 {
     static_assert(link::PROTOCOL_VERSION == 1U);
     static_assert(link::HEADER_SIZE == 11U);
@@ -77,9 +109,9 @@ void test_v1_wire_compatibility_vector()
         1U, 2U, 3U, 4U, 5U,
     };
     constexpr std::array<uint8_t, 18U> expected {
-        0xAAU, 0x12U, 0x04U, 0xBCU, 0x24U, 0x11U,
+        0xAAU, 0x12U, 0x04U, 0xAEU, 0x24U, 0x11U,
         0x22U, 0x34U, 0x12U, 0x03U, 0x07U, 0x01U,
-        0x02U, 0x03U, 0x04U, 0x05U, 0x7BU, 0x31U,
+        0x02U, 0x03U, 0x04U, 0x05U, 0x3FU, 0xD6U,
     };
     link::PackArgs args {};
     args.sender = 0x11U;
@@ -105,25 +137,37 @@ void test_v1_wire_compatibility_vector()
     }
 }
 
-void test_v1_legacy_crc_vector()
+void test_standard_crc_vectors()
 {
-    // Link v1 historically shipped this lookup table. The result intentionally
-    // differs from the CRC-16/CCITT-FALSE check value 0x29B1; changing it would
-    // silently break existing v1 peers.
     constexpr std::array<uint8_t, 9U> check {
         '1', '2', '3', '4', '5', '6', '7', '8', '9',
     };
-    CHECK(link::crc16_ccitt(check.data(), check.size()) == 0xA9B1U);
+    CHECK(link::crc8_smbus(check.data(), check.size()) == 0xF4U);
+    CHECK(link::crc16_ccitt(check.data(), check.size()) == 0x29B1U);
+    CHECK(link::crc8_smbus(nullptr, 0U) == 0U);
+    CHECK(link::crc16_ccitt(nullptr, 0U) == 0xFFFFU);
+
+    // Exercise every byte value and every two-byte sequence against the
+    // independent bit-at-a-time references, including all table transitions.
+    std::array<uint8_t, 2U> input {};
+    for (uint32_t value = 0U; value <= UINT16_MAX; ++value) {
+        input[0] = static_cast<uint8_t>(value >> 8U);
+        input[1] = static_cast<uint8_t>(value);
+        CHECK(link::crc8_smbus(input.data(), input.size())
+              == reference_crc8(input.data(), input.size()));
+        CHECK(link::crc16_ccitt(input.data(), input.size())
+              == reference_crc16(input.data(), input.size()));
+    }
 }
 
-void test_v1_ack_wire_compatibility_vector()
+void test_v1_ack_wire_vector()
 {
     constexpr std::array<uint8_t, 1U> response {
         link::HANDLER_STATUS_OK,
     };
     constexpr std::array<uint8_t, 14U> expected {
-        0xAAU, 0x0EU, 0x04U, 0xA0U, 0x01U, 0x22U, 0x11U,
-        0x34U, 0x12U, 0x03U, 0x07U, 0x00U, 0x8DU, 0xFAU,
+        0xAAU, 0x0EU, 0x04U, 0x05U, 0x01U, 0x22U, 0x11U,
+        0x34U, 0x12U, 0x03U, 0x07U, 0x00U, 0x3BU, 0x71U,
     };
     link::PackArgs args {};
     args.sender = 0x22U;
@@ -169,20 +213,42 @@ void test_protocol_validation()
         raw.data(), raw.size(), args, nullptr, 0U);
     CHECK(length == link::MIN_FRAME_SIZE);
 
-    raw[2] |= 0x10U;
-    raw[3] = link::bcc(raw.data(), 3U);
     link::FrameCodec codec;
-    CHECK(feed_frame(codec, raw.data(), 4U) == -2);
+    for (uint8_t reserved : {0x40U, 0x80U}) {
+        CHECK(link::FrameCodec::pack(
+            raw.data(), raw.size(), args, nullptr, 0U) == length);
+        raw[2] |= reserved;
+        raw[3] = link::crc8_smbus(raw.data(), 3U);
+        codec.reset();
+        CHECK(feed_frame(codec, raw.data(), 4U) == -2);
+    }
 
     CHECK(link::FrameCodec::pack(
         raw.data(), raw.size(), args, nullptr, 0U) == length);
-    const uint16_t version_two = link::pack_ver_len(
-        2U, static_cast<uint16_t>(length));
-    raw[1] = static_cast<uint8_t>(version_two & 0xFFU);
-    raw[2] = static_cast<uint8_t>(version_two >> 8U);
-    raw[3] = link::bcc(raw.data(), 3U);
-    codec.reset();
-    CHECK(feed_frame(codec, raw.data(), 4U) == -2);
+    for (uint8_t version = 0U; version <= link::VER_LEN_VER_MASK; ++version) {
+        if (version == link::PROTOCOL_VERSION) {
+            continue;
+        }
+        const uint16_t ver_len = link::pack_ver_len(
+            version, static_cast<uint16_t>(length));
+        raw[1] = static_cast<uint8_t>(ver_len);
+        raw[2] = static_cast<uint8_t>(ver_len >> 8U);
+        raw[3] = link::crc8_smbus(raw.data(), 3U);
+        codec.reset();
+        CHECK(feed_frame(codec, raw.data(), 4U) == -2);
+    }
+
+    for (uint16_t invalid_length : {
+             static_cast<uint16_t>(link::MIN_FRAME_SIZE - 1U),
+             static_cast<uint16_t>(CONFIG_LINK_MAX_FRAME_SIZE + 1U)}) {
+        const uint16_t ver_len = link::pack_ver_len(
+            link::PROTOCOL_VERSION, invalid_length);
+        raw[1] = static_cast<uint8_t>(ver_len);
+        raw[2] = static_cast<uint8_t>(ver_len >> 8U);
+        raw[3] = link::crc8_smbus(raw.data(), 3U);
+        codec.reset();
+        CHECK(feed_frame(codec, raw.data(), 4U) == -2);
+    }
 
     CHECK(link::FrameCodec::pack(
         raw.data(), raw.size(), args, nullptr, 0U) == length);
@@ -220,18 +286,141 @@ void test_address_contract()
     CHECK(link::is_unicast_addr(0xFEU));
 }
 
+void test_version_and_length_fields()
+{
+    constexpr std::array<uint16_t, 4U> lengths {13U, 255U, 256U, 1023U};
+    for (uint8_t version = 0U; version <= 15U; ++version) {
+        for (uint16_t length : lengths) {
+            const uint16_t word = link::pack_ver_len(version, length);
+            CHECK(link::unpack_ver(word) == version);
+            CHECK(link::unpack_len(word) == length);
+            CHECK((word & link::VER_LEN_RESERVED_MASK) == 0U);
+        }
+    }
+    CHECK(link::pack_ver_len(15U, 1023U) == 0x3FFFU);
+    CHECK(link::pack_ver_len(16U, 13U) == 0U);
+    CHECK(link::pack_ver_len(1U, 1024U) == 0U);
+}
+
+void test_maximum_frame()
+{
+    constexpr size_t capacity =
+        CONFIG_LINK_MAX_FRAME_SIZE - link::MIN_FRAME_SIZE;
+    std::array<uint8_t, capacity + 1U> payload {};
+    for (size_t index = 0U; index < payload.size(); ++index) {
+        payload[index] = static_cast<uint8_t>(index);
+    }
+    std::array<uint8_t, CONFIG_LINK_MAX_FRAME_SIZE> raw {};
+    link::PackArgs args {};
+    const size_t length = link::FrameCodec::pack(
+        raw.data(), raw.size(), args, payload.data(), capacity);
+    CHECK(length == raw.size());
+    CHECK(raw[3] == reference_crc8(raw.data(), 3U));
+    const uint16_t expected = reference_crc16(
+        raw.data(), length - link::CRC_SIZE);
+    CHECK(raw[length - 2U] == static_cast<uint8_t>(expected));
+    CHECK(raw[length - 1U] == static_cast<uint8_t>(expected >> 8U));
+
+    link::FrameCodec codec;
+    CHECK(feed_frame(codec, raw.data(), length) == 1);
+    CHECK(codec.frame().data_len == capacity);
+    CHECK(std::equal(payload.begin(), payload.begin() + capacity,
+                     codec.frame().data));
+    CHECK(link::FrameCodec::pack(raw.data(), raw.size(), args,
+                                 payload.data(), capacity + 1U) == 0U);
+}
+
+void test_header_crc_detects_xor_cancellation()
+{
+    // Both prefixes have XOR 0x8E, although their v1 lengths are 32 and 289.
+    constexpr std::array<uint8_t, 3U> first {0xAAU, 0x20U, 0x04U};
+    constexpr std::array<uint8_t, 3U> changed {0xAAU, 0x21U, 0x05U};
+    CHECK(link::crc8_smbus(first.data(), first.size()) == 0x7DU);
+    CHECK(link::crc8_smbus(changed.data(), changed.size()) == 0x6FU);
+    link::FrameCodec codec;
+    CHECK(feed_frame(codec, changed.data(), changed.size()) == 0);
+    CHECK(codec.feed(0x7DU) == -1);
+
+    // Check every one- and two-bit corruption of the three-byte prefix and
+    // its CRC8 byte, including errors in the check byte itself.
+    constexpr std::array<uint8_t, 4U> valid {0xAAU, 0x20U, 0x04U, 0x7DU};
+    for (size_t bit = 0U; bit < valid.size() * 8U; ++bit) {
+        auto raw = valid;
+        raw[bit / 8U] ^= static_cast<uint8_t>(1U << (bit % 8U));
+        CHECK(link::crc8_smbus(raw.data(), 3U) != raw[3]);
+        for (size_t other = bit + 1U; other < valid.size() * 8U; ++other) {
+            auto pair = raw;
+            pair[other / 8U] ^= static_cast<uint8_t>(1U << (other % 8U));
+            CHECK(link::crc8_smbus(pair.data(), 3U) != pair[3]);
+        }
+    }
+}
+
+void test_legacy_frames_are_rejected()
+{
+    std::array<uint8_t, 18U> legacy {
+        0xAAU, 0x12U, 0x04U, 0xBCU, 0x24U, 0x11U,
+        0x22U, 0x34U, 0x12U, 0x03U, 0x07U, 0x01U,
+        0x02U, 0x03U, 0x04U, 0x05U, 0x7BU, 0x31U,
+    };
+    link::FrameCodec codec;
+    CHECK(feed_frame(codec, legacy.data(), legacy.size()) == -1);
+
+    // A new header alone must not enable a fallback to the historical CRC16.
+    legacy[3] = link::crc8_smbus(legacy.data(), 3U);
+    codec.reset();
+    CHECK(feed_frame(codec, legacy.data(), legacy.size()) == -3);
+}
+
+void test_frame_bit_errors_and_recovery()
+{
+    constexpr std::array<uint8_t, 5U> payload {1U, 2U, 3U, 4U, 5U};
+    std::array<uint8_t, 18U> valid {};
+    link::PackArgs args {};
+    CHECK(link::FrameCodec::pack(valid.data(), valid.size(), args,
+                                 payload.data(), payload.size()) == valid.size());
+    for (size_t bit = 0U; bit < valid.size() * 8U; ++bit) {
+        auto raw = valid;
+        raw[bit / 8U] ^= static_cast<uint8_t>(1U << (bit % 8U));
+        link::FrameCodec single_codec;
+        CHECK(feed_frame(single_codec, raw.data(), raw.size()) != 1);
+        for (size_t other = bit + 1U; other < valid.size() * 8U; ++other) {
+            auto pair = raw;
+            pair[other / 8U] ^= static_cast<uint8_t>(1U << (other % 8U));
+            link::FrameCodec pair_codec;
+            CHECK(feed_frame(pair_codec, pair.data(), pair.size()) != 1);
+        }
+    }
+
+    link::FrameCodec codec;
+    auto corrupted = valid;
+    corrupted.back() ^= 1U;
+    CHECK(feed_frame(codec, corrupted.data(), corrupted.size()) == -3);
+    CHECK(feed_frame(codec, valid.data(), valid.size()) == 1);
+    CHECK(feed_frame(codec, valid.data(), valid.size()) == 1);
+
+    CHECK(feed_frame(codec, valid.data(), 3U) == 0);
+    codec.reset();
+    CHECK(feed_frame(codec, valid.data(), valid.size()) == 1);
+}
+
 } // namespace
 
 int main()
 {
     test_round_trip();
-    test_v1_wire_compatibility_vector();
-    test_v1_legacy_crc_vector();
-    test_v1_ack_wire_compatibility_vector();
+    test_v1_wire_vector();
+    test_standard_crc_vectors();
+    test_v1_ack_wire_vector();
     test_corruption_and_bounds();
     test_protocol_validation();
     test_in_place_payload();
     test_address_contract();
+    test_version_and_length_fields();
+    test_maximum_frame();
+    test_header_crc_detects_xor_cancellation();
+    test_legacy_frames_are_rejected();
+    test_frame_bit_errors_and_recovery();
     std::puts("Link codec tests passed");
     return 0;
 }
