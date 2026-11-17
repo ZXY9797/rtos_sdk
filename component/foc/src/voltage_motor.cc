@@ -1,3 +1,5 @@
+#include <system/output_safety.h>
+#include <irq.h>
 #include <foc/voltage_motor.h>
 
 #include <array>
@@ -46,6 +48,10 @@ hal::Status VoltageMotor::init(const VoltageMotorConfig &config)
         (void)pwm_.stop();
         return hal::Status::HardwareError;
     }
+    safety_output_ = system_safety::register_output(this, [](void* context) {
+        static_cast<VoltageMotor*>(context)->disarm();
+    });
+    if (safety_output_ < 0) { (void)pwm_.stop(); return hal::Status::NoMemory; }
     is_initialized_ = true;
     return hal::Status::Ok;
 }
@@ -53,6 +59,8 @@ hal::Status VoltageMotor::init(const VoltageMotorConfig &config)
 hal::Status VoltageMotor::deinit()
 {
     disarm();
+    system_safety::unregister_output(safety_output_);
+    safety_output_ = -1;
     if (!is_initialized_) {
         return hal::Status::Ok;
     }
@@ -63,7 +71,8 @@ hal::Status VoltageMotor::deinit()
 
 hal::Status VoltageMotor::arm()
 {
-    if (!is_initialized_) {
+    hal::IrqGuard guard;
+    if (!is_initialized_ || system_safety::latched()) {
         return hal::Status::InvalidArgument;
     }
     const PhaseDuty neutral {};

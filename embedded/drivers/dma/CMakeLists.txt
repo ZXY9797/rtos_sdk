@@ -1,6 +1,6 @@
 set(MODULE_NAME dma)
 
-add_library(${MODULE_NAME} ${NULL_C})
+sdk_add_library(${MODULE_NAME} ${NULL_C})
 
 target_sources_ifdef(CONFIG_DMA_GD32 ${MODULE_NAME}
     PRIVATE

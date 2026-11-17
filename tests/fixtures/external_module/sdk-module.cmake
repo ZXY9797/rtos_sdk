@@ -1,0 +1,1 @@
+set(SDK_MODULE_KCONFIG Kconfig)

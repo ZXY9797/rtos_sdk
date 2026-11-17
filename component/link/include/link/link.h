@@ -32,6 +32,9 @@ public:
     /** Returns true while the transport is able to send and receive. */
     virtual bool is_ready() const = 0;
 
+    // Called by the serialized Router owner during shutdown/reinitialization.
+    virtual void reset_session() {}
+
     /** Registers init-time transport maintenance such as CAN reassembly. */
     void set_poll(PollFunc function, void* arg = nullptr)
     {

@@ -1,0 +1,6 @@
+&pinctrl { status = "okay"; };
+
+/ { chosen { zephyr,console = &usart0; }; aliases { uart0 = &usart0; }; };
+
+&usart0 { status = "okay"; current-speed = <115200>; };
+&dma1 { status = "okay"; };

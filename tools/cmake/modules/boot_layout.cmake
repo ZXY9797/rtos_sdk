@@ -2,8 +2,14 @@ include_guard(GLOBAL)
 
 find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter)
 
-set(BOOT_LAYOUT_MANIFEST
-    "${BOOTLOADER_DIR}/product/${PROJECT_NAME}/layout.json")
+if(NOT DEFINED BOOT_LAYOUT)
+    set(BOOT_LAYOUT "${PROJECT_NAME}")
+endif()
+if(EXISTS "${BOOT_LAYOUT}")
+    get_filename_component(BOOT_LAYOUT_MANIFEST "${BOOT_LAYOUT}" ABSOLUTE)
+else()
+    set(BOOT_LAYOUT_MANIFEST "${BOOTLOADER_DIR}/product/${BOOT_LAYOUT}/layout.json")
+endif()
 set(BOOT_LAYOUT_SCRIPT "${BOOTLOADER_DIR}/scripts/boot_layout.py")
 if(NOT EXISTS "${BOOT_LAYOUT_MANIFEST}")
     message(FATAL_ERROR "Missing boot layout manifest: ${BOOT_LAYOUT_MANIFEST}")
@@ -16,7 +22,7 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
 set(_boot_layout_values
     "${BINARY_DIR_INCLUDE_GENERATED}/boot_layout_values.cmake")
 execute_process(
-    COMMAND ${Python3_EXECUTABLE} "${BOOT_LAYOUT_SCRIPT}" "${PROJECT_NAME}"
+    COMMAND ${Python3_EXECUTABLE} "${BOOT_LAYOUT_SCRIPT}" "${BOOT_LAYOUT_MANIFEST}"
             --cmake-output "${_boot_layout_values}"
     RESULT_VARIABLE _boot_layout_result
     ERROR_VARIABLE _boot_layout_error

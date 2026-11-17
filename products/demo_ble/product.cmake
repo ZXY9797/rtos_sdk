@@ -1,0 +1,1 @@
+set(SDK_DEFAULT_BOARD gr5525_demo)

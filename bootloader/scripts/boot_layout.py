@@ -30,8 +30,8 @@ def _integer(value: Any, field: str) -> int:
     return result
 
 
-def _load_canonical(product: str) -> dict[str, Any]:
-    path = PRODUCT_ROOT / product / "layout.json"
+def _load_canonical(product: str, path: Path | None = None) -> dict[str, Any]:
+    path = path or PRODUCT_ROOT / product / "layout.json"
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -134,6 +134,8 @@ def all_layouts() -> dict[str, dict[str, Any]]:
 
 
 def load_layout(name: str) -> dict[str, Any]:
+    if Path(name).is_file():
+        return _load_canonical(Path(name).parent.name, Path(name).resolve())
     try:
         return all_layouts()[name]
     except KeyError as exc:

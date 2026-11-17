@@ -28,9 +28,9 @@ struct Frame {
 };
 
 struct FaultRecord {
-    // Low byte is the persistent format version. Version 3 also records
+    // Low byte is the persistent format version. Version 4 binds records to the originating build; it also records
     // non-exception fatal events under the same commit-last contract.
-    static constexpr uint32_t MAGIC = 0xFA17FA03U;
+    static constexpr uint32_t MAGIC = 0xFA17FA04U;
     static constexpr int MAX_BACKTRACE = 16;
     static constexpr int STACK_SNAPSHOT_WORDS = 32;
     static constexpr size_t CONTEXT_SIZE = 24U;
@@ -54,6 +54,7 @@ struct FaultRecord {
     int backtraceDepth;
     uint32_t stackSnapshot[STACK_SNAPSHOT_WORDS];
     uint32_t snapshotSp;
+    char build_id[33]; // First 128 bits of the build SHA-256, hex encoded.
     uint32_t crc32;
 
     [[nodiscard]] uint32_t calculateCrc() const {
@@ -99,7 +100,10 @@ struct Cfsr {
     static constexpr uint32_t PRECISERR = 1U << 9U;
     static constexpr uint32_t IBUSERR = 1U << 8U;
     static constexpr uint32_t DIVBYZERO = 1U << 25U;
-    static constexpr uint32_t UNALIGNED = 1U << 24U;
+    static constexpr uint32_t UnalignedAccess = 1U << 24U;
+#if !defined(UNALIGNED)
+    static constexpr uint32_t UNALIGNED = UnalignedAccess;
+#endif
     static constexpr uint32_t NOCP = 1U << 19U;
     static constexpr uint32_t INVPC = 1U << 18U;
     static constexpr uint32_t INVSTATE = 1U << 17U;

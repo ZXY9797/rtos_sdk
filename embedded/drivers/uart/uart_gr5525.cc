@@ -1,3 +1,4 @@
+#include <irq.h>
 #include <drivers/uart.h>
 
 namespace hal {

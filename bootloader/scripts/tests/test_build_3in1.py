@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+import hashlib
+import json
 import sys
 import unittest
+import tempfile
 from unittest import mock
 
 
@@ -13,6 +16,43 @@ import build_3in1  # noqa: E402
 
 
 class BuildThreeInOneTest(unittest.TestCase):
+    def test_factory_images_must_share_board_and_canonical_layout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            layout = build_3in1.load_layout('demo')
+            checksum = hashlib.sha256(layout['path'].read_bytes()).hexdigest()
+            for image in ('preloader', 'loader', 'app'):
+                (root / image).mkdir()
+                (root / image / 'build-info.json').write_text(json.dumps({
+                    'product': 'demo', 'firmware': image, 'board': 'gd32_demo',
+                    'inputs': {'layout': checksum}}), encoding='utf-8')
+            build_3in1.verify_image_set(root, 'demo')
+            path = root / 'app/build-info.json'
+            info = json.loads(path.read_text(encoding='utf-8'))
+            info['board'] = 'other-board'
+            path.write_text(json.dumps(info), encoding='utf-8')
+            with self.assertRaisesRegex(SystemExit, 'board differs'):
+                build_3in1.verify_image_set(root, 'demo')
+            info['board'] = 'gd32_demo'
+            info['inputs']['layout'] = 'different-layout'
+            path.write_text(json.dumps(info), encoding='utf-8')
+            with self.assertRaisesRegex(SystemExit, 'canonical product layout'):
+                build_3in1.verify_image_set(root, 'demo')
+
+    def test_production_verifies_each_final_image_configuration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for image in ('preloader', 'loader', 'app'):
+                (root / image).mkdir()
+                policy = 'CONFIG_APP_PRODUCTION=y\nCONFIG_APP_WATCHDOG=y\n' if image == 'app' else 'CONFIG_BOOT_PRODUCTION=y\n'
+                (root / image / '.config').write_text(policy, encoding='utf-8')
+            build_3in1.verify_production_configs(root)
+            (root / 'app/.config').write_text('CONFIG_APP_PRODUCTION=y\n', encoding='utf-8')
+            with self.assertRaisesRegex(SystemExit, 'lacks watchdog'):
+                build_3in1.verify_production_configs(root)
+            (root / 'app/.config').write_text('# CONFIG_APP_PRODUCTION is not set\n', encoding='utf-8')
+            with self.assertRaisesRegex(SystemExit, 'CONFIG_APP_PRODUCTION'):
+                build_3in1.verify_production_configs(root)
     def test_user_paths_are_resolved_before_subprocesses_run(self) -> None:
         relative = Path("out/toolchains/gcc")
         self.assertEqual(relative.resolve(),
@@ -27,6 +67,8 @@ class BuildThreeInOneTest(unittest.TestCase):
                 Path("out/test"), "demo", "app", None)
 
         command = run_mock.call_args.args[0]
+        for stale_override in ('APPLICATION', 'BOARD', 'BOARD_ROOT', 'CONF_FILE', 'DTC_OVERLAY_FILE', 'MODULE_ROOTS'):
+            self.assertIn(f'-U{stale_override}', command)
         python_arg = (
             "-DPython3_EXECUTABLE="
             f"{Path(sys.executable).absolute().as_posix()}"

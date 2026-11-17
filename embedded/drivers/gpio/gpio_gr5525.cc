@@ -1,5 +1,4 @@
 #include <drivers/gpio.h>
-#include <arch/arch_interface.h>
 #include <irq.h>
 
 namespace hal {

@@ -1,6 +1,7 @@
 #ifndef ZEPHYR_INCLUDE_ARCH_ARM_IRQ_H_
 #define ZEPHYR_INCLUDE_ARCH_ARM_IRQ_H_
 #include <stdbool.h>
+#include <stdint.h>
 
 #ifdef _ASMLANGUAGE
 

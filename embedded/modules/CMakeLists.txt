@@ -1,5 +1,5 @@
 set(MODULE_NAME modules)
-add_library(${MODULE_NAME} ${NULL_C})
+sdk_add_library(${MODULE_NAME} ${NULL_C})
 
 add_subdirectory(cmsis)
 

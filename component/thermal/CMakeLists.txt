@@ -1,4 +1,4 @@
-add_library(thermal_control STATIC)
+sdk_add_library(thermal_control STATIC)
 
 target_sources(thermal_control PRIVATE src/thermal_controller.cc)
 target_include_directories(thermal_control

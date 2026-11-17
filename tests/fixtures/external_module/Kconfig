@@ -1,0 +1,3 @@
+config EXTERNAL_MODULE_PROBE
+    bool "External module contract probe"
+    default y

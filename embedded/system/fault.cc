@@ -1,6 +1,9 @@
+#include <build_info.h>
+#include <system/output_safety.h>
 #include <arch/arm/cortex_m/fault.h>
 #include <cmsis_core.h>
 #include <init.h>
+#include <sys/__assert.h>
 #include <cstdarg>
 
 extern "C" {
@@ -124,7 +127,7 @@ static void printRecord(const FaultRecord &rec) {
         if ((rec.cfsr & Cfsr::INVSTATE) != 0U)   print(" INVSTATE");
         if ((rec.cfsr & Cfsr::INVPC) != 0U)      print(" INVPC");
         if ((rec.cfsr & Cfsr::NOCP) != 0U)       print(" NOCP");
-        if ((rec.cfsr & Cfsr::UNALIGNED) != 0U)  print(" UNALIGNED");
+        if ((rec.cfsr & Cfsr::UnalignedAccess) != 0U)  print(" UNALIGNED");
         if ((rec.cfsr & Cfsr::DIVBYZERO) != 0U)  print(" DIVBYZERO");
         putc('\n');
     }
@@ -443,6 +446,8 @@ static void buildRecord(FaultRecord &rec, const Frame *frame,
     captureStackSnapshot(activeSp, rec);
 #endif
 
+    for (size_t i = 0U; i < sizeof(rec.build_id) - 1U; ++i) rec.build_id[i] = sdk_build::id[i];
+    rec.build_id[sizeof(rec.build_id) - 1U] = '\0';
     rec.crc32 = rec.calculateCrc();
 }
 
@@ -466,6 +471,8 @@ static void buildPanicRecord(FaultRecord &rec, FatalReason reason,
         ? rec.psp : rec.msp;
     captureStackSnapshot(activeSp, rec);
 #endif
+    for (size_t i = 0U; i < sizeof(rec.build_id) - 1U; ++i) rec.build_id[i] = sdk_build::id[i];
+    rec.build_id[sizeof(rec.build_id) - 1U] = '\0';
     rec.crc32 = rec.calculateCrc();
 }
 
@@ -483,6 +490,7 @@ static void buildPanicRecord(FaultRecord &rec, FatalReason reason,
 [[noreturn]] void panic(FatalReason reason, int32_t detail,
                         const char *context, uint32_t line) {
     __disable_irq();
+    system_safety::trip(static_cast<uint32_t>(reason));
     buildPanicRecord(s_activeFaultRecord, reason, detail, context, line);
     terminate(s_activeFaultRecord);
 }
@@ -502,6 +510,7 @@ void arm_fault_handler(const hal::fault::Frame *frame, uint32_t excReturn,
     __disable_irq();
 
     // 1. 构建完整记录
+    system_safety::trip(static_cast<uint32_t>(FatalReason::Exception));
     buildRecord(s_activeFaultRecord, frame, excReturn, activeSp);
 
     // 2. 遍历所有后端
@@ -511,7 +520,7 @@ void arm_fault_handler(const hal::fault::Frame *frame, uint32_t excReturn,
     // while still allowing a debugger to inspect the captured record.
 }
 
-void assert_print(const char *fmt, ...) {
+extern "C" void assert_print(const char *fmt, ...) {
     using namespace hal::fault;
     va_list ap;
     va_start(ap, fmt);
@@ -519,8 +528,14 @@ void assert_print(const char *fmt, ...) {
     va_end(ap);
 }
 
-[[gnu::weak]] void
+#if defined(CONFIG_ASSERT_NO_FILE_INFO)
+extern "C" [[gnu::weak]] void assert_post_action(void) {
+    hal::fault::panic(hal::fault::FatalReason::Assert, 0, "assert", 0U);
+}
+#else
+extern "C" [[gnu::weak]] void
 assert_post_action(const char *file, unsigned int line) {
     hal::fault::panic(hal::fault::FatalReason::Assert,
                       static_cast<int32_t>(line), file, line);
 }
+#endif

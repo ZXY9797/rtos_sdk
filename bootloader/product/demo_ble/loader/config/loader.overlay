@@ -1,0 +1,16 @@
+/ {
+    model = "GR5525 BLE Loader";
+    chosen {
+        zephyr,flash = &flash0;
+    };
+    aliases {
+        uart0 = &uart0;
+    };
+};
+
+&uart0 {
+    status = "okay";
+    current-speed = <115200>;
+    interrupts = <37 0>;
+    /delete-property/ interrupt-names;
+};

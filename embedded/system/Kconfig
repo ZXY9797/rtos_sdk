@@ -1,5 +1,11 @@
 menu "System Reliability"
 
+config DMA_CACHED_MEMORY
+    bool "DMA buffers require cache maintenance"
+    default y if CPU_CORTEX_M7
+    help
+      Require a product DMA memory/cache provider on cached CPU targets.
+
 config APP_PRODUCTION
     bool "Production application policy"
     depends on OSAL_HAS_THREADS

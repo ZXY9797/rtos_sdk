@@ -1,7 +1,7 @@
 set(MODULE_NAME system)
 
-add_library(${MODULE_NAME} OBJECT)
-add_library(system_fault OBJECT)
+sdk_add_library(${MODULE_NAME} OBJECT)
+sdk_add_library(system_fault OBJECT)
 
 target_sources(${MODULE_NAME}
     PRIVATE
@@ -10,8 +10,11 @@ target_sources(${MODULE_NAME}
         device_pm.cc
         sensor_core.cc
         watchdog.cc
+        dma_memory.cc
+        diagnostics.cc
+        clock.cc
 )
-target_sources(system_fault PRIVATE fault.cc syscalls.c)
+target_sources(system_fault PRIVATE fault.cc syscalls.c output_safety.cc)
 
 target_include_directories(${MODULE_NAME}
     PRIVATE
@@ -29,11 +32,14 @@ target_link_libraries(${MODULE_NAME}
     PRIVATE
         osal
         soc
+        runtime
+        boot_common
 )
 target_link_libraries(system_fault
     PRIVATE
         osal
         soc
+        runtime
 )
 
 if(CONFIG_APP_WATCHDOG)
@@ -43,4 +49,12 @@ if(CONFIG_APP_WATCHDOG)
             "CONFIG_APP_WATCHDOG requires product provider: ${APP_WATCHDOG_SOURCE}")
     endif()
     target_sources(${MODULE_NAME} PRIVATE "${APP_WATCHDOG_SOURCE}")
+endif()
+
+if(CONFIG_DMA_CACHED_MEMORY)
+    set(_dma_provider "${PROJECT_DIR}/common/dma_memory.cc")
+    if(NOT EXISTS "${_dma_provider}")
+        message(FATAL_ERROR "Cached DMA requires product memory provider: ${_dma_provider}")
+    endif()
+    target_sources(${MODULE_NAME} PRIVATE "${_dma_provider}")
 endif()

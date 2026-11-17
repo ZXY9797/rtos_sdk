@@ -1,0 +1,8 @@
+/dts-v1/;
+
+#include "../common/gd32f503-reference.dtsi"
+#include "pinctrl.dtsi"
+
+/ {
+    model = "DM-4340 Motor Controller";
+};

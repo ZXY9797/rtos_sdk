@@ -48,6 +48,13 @@ static_assert(kSensorTimerHz == CONFIG_GIMBAL_SENSOR_HZ,
 static_assert(hal::DeviceTrait<DT_ORD(DT_ALIAS(imu0))>::kSampleRate
                   == CONFIG_GIMBAL_SENSOR_HZ,
               "IMU ODR and Kconfig sample rates differ");
+static_assert(hal::device_supports<DT_ORD(DT_PARENT(DT_ALIAS(imu0))),
+                  hal::DeviceCapability::AsyncTransfer>
+              && hal::device_supports<DT_ORD(DT_PARENT(DT_ALIAS(imu0))),
+                  hal::DeviceCapability::Dma>
+              && hal::device_supports<DT_ORD(DT_PARENT(DT_ALIAS(imu0))),
+                  hal::DeviceCapability::Cancel>,
+              "Gimbal sampling requires cancellable DMA on the IMU bus");
 
 decltype(device_get(uart0)) console();
 decltype(device_get(imu0)) imu();

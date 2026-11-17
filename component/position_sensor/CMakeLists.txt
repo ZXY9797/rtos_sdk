@@ -1,4 +1,4 @@
-add_library(position_sensor STATIC)
+sdk_add_library(position_sensor STATIC)
 
 target_sources(position_sensor
     PRIVATE
@@ -9,5 +9,4 @@ target_include_directories(position_sensor
         ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(position_sensor
     PUBLIC
-        control_contracts
-        drivers)
+        control_contracts)

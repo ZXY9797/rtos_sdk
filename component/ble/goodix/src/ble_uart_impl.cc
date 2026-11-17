@@ -8,6 +8,7 @@
 #include "goodix_status.h"
 
 #include <atomic>
+#include <cstring>
 
 extern "C" {
 #include "gus.h"
@@ -19,6 +20,9 @@ static std::atomic<UartDataCallback> s_rx_cb {nullptr};
 static std::atomic<void *> s_rx_user_data {nullptr};
 static std::atomic<bool> s_tx_enabled {false};
 static std::atomic<bool> s_tx_busy {false};
+// The caller's fragment is borrowed only during send(); retain the vendor
+// payload until GUS_EVT_TX_DATA_SENT (or transport closure).
+static uint8_t s_tx_buffer[GUS_MAX_DATA_LEN] {};
 
 static void gus_evt_handler(gus_evt_t *p_evt) {
     if (p_evt == nullptr) {
@@ -73,8 +77,9 @@ Status BleUartService::send(uint8_t conn_idx, const uint8_t *data, size_t len) {
             expected, true, std::memory_order_acq_rel)) {
         return Status::Busy;
     }
+    std::memcpy(s_tx_buffer, data, len);
     const sdk_err_t error = gus_tx_data_send(
-        conn_idx, const_cast<uint8_t *>(data), static_cast<uint16_t>(len));
+        conn_idx, s_tx_buffer, static_cast<uint16_t>(len));
     const Status status = goodix::status_from_sdk(error);
     if (status != Status::Ok) {
         s_tx_busy.store(false, std::memory_order_release);

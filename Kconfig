@@ -1,4 +1,5 @@
 mainmenu "RTOS-SDK Configuration"
+source "$(KCONFIG_BINARY_DIR)/Kconfig.modules"
 
 source "bootloader/common/Kconfig"
 source "embedded/Kconfig"

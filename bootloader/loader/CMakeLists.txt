@@ -4,7 +4,7 @@ set(MODULE_NAME app)
 # Loader sources contain initcall-only translation units. An object library
 # makes their inclusion deterministic; a static archive could silently drop
 # them when no ordinary symbol referenced the object.
-add_library(${MODULE_NAME} OBJECT ${NULL_C})
+sdk_add_library(${MODULE_NAME} OBJECT ${NULL_C})
 target_compile_options(${MODULE_NAME} PRIVATE
     -fstack-usage
     -Wstack-usage=768)

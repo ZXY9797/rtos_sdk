@@ -1,0 +1,22 @@
+cmake_minimum_required(VERSION 3.20)
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    project(control_pipeline_example LANGUAGES CXX)
+    enable_testing()
+endif()
+get_filename_component(SDK_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+include("${SDK_ROOT}/tools/cmake/modules/sdk_component.cmake")
+foreach(component algo ipc runtime)
+    if(NOT TARGET ${component})
+        add_subdirectory("${SDK_ROOT}/component/${component}" "${CMAKE_CURRENT_BINARY_DIR}/${component}")
+    endif()
+endforeach()
+add_executable(control_pipeline main.cc
+    "${SDK_ROOT}/component/link/src/codec.cc"
+    "${SDK_ROOT}/component/link/src/crc8.cc"
+    "${SDK_ROOT}/component/link/src/crc16.cc")
+target_compile_features(control_pipeline PRIVATE cxx_std_17)
+target_include_directories(control_pipeline PRIVATE "${SDK_ROOT}/component/link/include")
+target_link_libraries(control_pipeline PRIVATE sdk::algo sdk::ipc sdk::runtime)
+target_compile_definitions(control_pipeline PRIVATE
+    HOST_COMPILER="${CMAKE_CXX_COMPILER_ID}-${CMAKE_CXX_COMPILER_VERSION}")
+add_test(NAME control_pipeline COMMAND control_pipeline "${CMAKE_CURRENT_BINARY_DIR}/benchmark.json")

@@ -1,3 +1,7 @@
+#include <system/clock.h>
+#include <system/diagnostics.h>
+#include <system/output_safety.h>
+#include <irq.h>
 #include "services/gimbal_app.h"
 
 #include "board/board_devices.h"
@@ -30,6 +34,12 @@
 
 namespace app {
 namespace {
+
+runtime::TimingMetrics closed_loop_timing;
+int register_gimbal_timing() {
+    return system_diagnostics::register_timing("g_closed", closed_loop_timing) ? 0 : -1;
+}
+SYS_INIT(register_gimbal_timing, INITCALL_LEVEL_APPLICATION, 95);
 
 constexpr float kSensorPeriodS = 1.0F / CONFIG_GIMBAL_SENSOR_HZ;
 constexpr float kControlPeriodS = 1.0F / CONFIG_GIMBAL_CONTROL_HZ;
@@ -176,7 +186,7 @@ void heartbeat_or_panic(WatchdogClient client)
 
 [[nodiscard]] uint32_t now_us()
 {
-    return osal::Kernel::uptime_ms() * 1000U;
+    return system_clock::now_us();
 }
 
 [[nodiscard]] gimbal::FactoryParameters commissioning_parameters()
@@ -279,6 +289,7 @@ public:
     void print_diagnostics() const;
 
 private:
+    int heater_safety_output_ {-1};
     [[nodiscard]] bool configure();
     [[nodiscard]] bool configure_motors();
     [[nodiscard]] bool start_heater();
@@ -454,6 +465,7 @@ bool GimbalRuntime::configure()
 
 bool GimbalRuntime::start_heater()
 {
+    hal::IrqGuard guard;
     auto &pwm = board::imu_heater_pwm();
     const hal::Status zero_status = pwm.set_pulse(0U);
     const hal::Status disable_status = pwm.disable_output();
@@ -465,6 +477,13 @@ bool GimbalRuntime::start_heater()
     }
     if (!factory_valid_ || !factory_.capabilities.has_imu_heater) {
         return true;
+    }
+    if (system_safety::latched()) return false;
+    if (heater_safety_output_ < 0) {
+        heater_safety_output_ = system_safety::register_output(&pwm, [](void* context) {
+            (void)static_cast<hal::PwmBase*>(context)->disable_output();
+        });
+        if (heater_safety_output_ < 0) return false;
     }
     if (pwm.start() != hal::Status::Ok
         || pwm.enable_output() != hal::Status::Ok) {
@@ -569,6 +588,11 @@ bool GimbalRuntime::start_sensor_pipeline()
     sensor_config.stack_buffer = closed_loop_stack_;
     sensor_config.stack_size = sizeof(closed_loop_stack_);
     sensor_config.priority = kClosedLoopPriority;
+    sensor_config.clock_us = system_clock::now_us;
+    sensor_config.timing = &closed_loop_timing;
+    sensor_config.execution = {"g_closed", runtime::Trigger::External,
+        1000000U / CONFIG_GIMBAL_CONTROL_HZ, 1000000U / CONFIG_GIMBAL_CONTROL_HZ,
+        CONFIG_GIMBAL_CONTROL_BUDGET_US, runtime::Overflow::Fault};
     if (!sensor_core_.configure(sensor_config)
         || sensor_core_.start() != 0) {
         return false;
@@ -651,6 +675,8 @@ void GimbalRuntime::stop()
     (void)heater.stop();
     thermal_.stop();
     started_ = false;
+    system_safety::unregister_output(heater_safety_output_);
+    heater_safety_output_ = -1;
 }
 
 void GimbalRuntime::read_halls(gimbal::JointState &joint,

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <osal/osal.h>
+#include <runtime/execution.h>
 #include <array>
 #include <atomic>
 #include <cstddef>
@@ -140,6 +141,9 @@ public:
         void* stack_buffer {nullptr};
         size_t stack_size {2048U};
         osal::Priority priority {5U};
+        uint32_t (*clock_us)() {nullptr};
+        runtime::TimingMetrics* timing {nullptr};
+        runtime::ExecutionSpec execution {};
     };
 
     struct Diagnostics {

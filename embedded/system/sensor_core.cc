@@ -1,3 +1,4 @@
+#include <system/output_safety.h>
 #include <sensor_core.h>
 #include <irq.h>
 
@@ -129,6 +130,11 @@ bool SensorBatchCore::valid_config(const Config& config) const
         || reinterpret_cast<uintptr_t>(config.stack_buffer)
             % alignof(std::max_align_t) != 0U
         || config.priority > osal::kPriorityMax) {
+        return false;
+    }
+    if (!config.execution.valid_options()
+        || (config.timing != nullptr
+            && (config.clock_us == nullptr || !config.execution.valid()))) {
         return false;
     }
     const uint32_t batch_size = config.sample_frequency_hz
@@ -342,7 +348,8 @@ void SensorBatchCore::on_timer_trigger()
 {
     const uint32_t sequence =
         trigger_count_.fetch_add(1U, std::memory_order_relaxed) + 1U;
-    const uint32_t capture_time = next_capture_time_us_;
+    const uint32_t capture_time = config_.clock_us != nullptr
+        ? config_.clock_us() : next_capture_time_us_;
     next_capture_time_us_ += timestamp_step_us_;
     timestamp_phase_ += timestamp_remainder_;
     if (timestamp_phase_ >= config_.sample_frequency_hz) {
@@ -351,13 +358,14 @@ void SensorBatchCore::on_timer_trigger()
     }
     if (!running_.load(std::memory_order_acquire)
         || transfer_active_.load(std::memory_order_acquire)) {
-        trigger_overrun_count_.fetch_add(1U,
-                                         std::memory_order_relaxed);
+        trigger_overrun_count_.fetch_add(1U, std::memory_order_relaxed);
+        if (config_.execution.overflow == runtime::Overflow::Fault) system_safety::trip(1U);
         return;
     }
     const uint8_t buffer = claim_free_buffer();
     if (buffer == kInvalidBuffer) {
         batch_overrun_count_.fetch_add(1U, std::memory_order_relaxed);
+        if (config_.execution.overflow == runtime::Overflow::Fault) system_safety::trip(2U);
         return;
     }
     BufferSlot& slot = slots_[buffer];
@@ -455,6 +463,7 @@ void SensorBatchCore::dispatch_full_buffer(uint8_t buffer_index)
     BufferSlot& slot = slots_[buffer_index];
     if (ready_mask_.load(std::memory_order_acquire) != 0U) {
         batch_overrun_count_.fetch_add(1U, std::memory_order_relaxed);
+        if (config_.execution.overflow == runtime::Overflow::Fault) system_safety::trip(2U);
         slot.frame_count = 0U;
         return;
     }
@@ -466,6 +475,7 @@ void SensorBatchCore::dispatch_full_buffer(uint8_t buffer_index)
     (void)claim_free_buffer();
     if (consumer_thread_.notify_from_isr() != 0) {
         dispatch_error_count_.fetch_add(1U, std::memory_order_relaxed);
+        if (config_.execution.overflow == runtime::Overflow::Fault) system_safety::trip(3U);
     }
 }
 
@@ -497,7 +507,12 @@ void SensorBatchCore::consume_ready_batch()
         slot.first_sequence, slot.first_capture_time_us,
         slot.last_capture_time_us,
     };
+    const uint32_t started = config_.clock_us != nullptr ? config_.clock_us() : 0U;
     config_.entry(config_.entry_context, batch);
+    if (config_.timing != nullptr && config_.clock_us != nullptr) {
+        config_.timing->record(config_.execution, batch.last_capture_time_us,
+                               started, config_.clock_us());
+    }
     slots_[index].frame_count = 0U;
     slots_[index].state.store(BufferState::Free,
                               std::memory_order_release);

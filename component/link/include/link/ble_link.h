@@ -2,6 +2,7 @@
 
 #include "link.h"
 #include "fragment.h"
+#include "frame_tx_queue.h"
 #include <osal.h>
 
 namespace link {
@@ -23,6 +24,7 @@ public:
                                         completed_frame_storage_,
                                         sizeof(completed_frame_storage_))
             && register_link(this);
+        set_poll(poll_tx, this);
     }
 
     // Task context only. Preserve each BLE packet boundary and serialize the
@@ -51,15 +53,16 @@ public:
     }
 
     int send(const uint8_t *data, size_t len) override {
-        osal::LockGuard lock(tx_config_mutex_);
-        if (!lock.owns_lock() || tx_func_ == nullptr || !is_ready()) {
-            return -1;
-        }
-        return Fragmenter::send<kMaxBleFragmentPayload>(
-            data, len, frag_payload_,
-            [this](const uint8_t *buf, size_t n) -> bool {
-                return tx_func_(buf, n, tx_arg_);
-            });
+        osal::LockGuard lock(tx_config_mutex_, 0U);
+        if (!lock.owns_lock()) return -2;
+        if (tx_func_ == nullptr || !is_ready() || data == nullptr || len == 0U
+            || len > Reassembler::MAX_FRAME || len > 128U * frag_payload_) return -1;
+        return tx_.enqueue(data, len, frag_payload_) ? static_cast<int>(len) : -2;
+    }
+
+    void reset_session() override {
+        { osal::LockGuard lock(tx_config_mutex_); if (lock.owns_lock()) tx_.reset(); }
+        reset_rx();
     }
 
     int recv(uint8_t *buf, size_t max_len) override {
@@ -98,6 +101,7 @@ public:
         } else {
             connected_.store(false, std::memory_order_release);
             rx_enabled_.store(false, std::memory_order_release);
+            reset_session();
         }
     }
 
@@ -121,7 +125,8 @@ public:
     }
 
     // 绑定 BLE 发送函数
-    // Return true only when the complete fragment was accepted for TX.
+    // Copy the complete fragment before returning true. The supplied view is
+    // valid only for this call; asynchronous providers retain their own copy.
     using TxFunc = bool (*)(const uint8_t *data, size_t len, void *arg);
     void set_tx_func(TxFunc func, void *arg = nullptr) {
         osal::LockGuard lock(tx_config_mutex_);
@@ -141,6 +146,16 @@ private:
         uint8_t data[Reassembler::MAX_FRAME] {};
     };
 
+    static void poll_tx(void* context) {
+        auto* self = static_cast<BleLink*>(context);
+        osal::LockGuard lock(self->tx_config_mutex_, 0U);
+        if (!lock.owns_lock() || !self->is_ready() || self->tx_func_ == nullptr) return;
+        self->tx_.process([self](const uint8_t* data, size_t size) {
+            return self->tx_func_(data, size, self->tx_arg_)
+                ? FragmentSendResult::Sent : FragmentSendResult::Busy;
+        }, 2U);
+    }
+    FrameTxQueue<Reassembler::MAX_FRAME, 2U, kMaxBleFragmentPayload> tx_;
     size_t frag_payload_;
     bool valid_ {false};
     std::atomic<bool> connected_ {false};

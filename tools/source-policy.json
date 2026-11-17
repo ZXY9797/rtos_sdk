@@ -1,0 +1,68 @@
+{
+  "schema": "rtos-sdk.source-policy.v1",
+  "principle": "Preserve vendor SDKs, kernel upstream packages and hardware resources in full. Unused in the current image is not evidence of redundancy.",
+  "scope": [
+    "embedded",
+    "component",
+    "tools",
+    "app",
+    "products",
+    "boards",
+    "bootloader",
+    "samples",
+    "share",
+    "tests",
+    "doc"
+  ],
+  "protected_roots": [
+    "embedded/modules/cmsis",
+    "embedded/osal/rtos",
+    "embedded/soc/gd/gd32f50x",
+    "embedded/soc/goodix/gr5525x",
+    "embedded/soc/st/stm32cube",
+    "embedded/dts/arm",
+    "component/ble/goodix/libraries",
+    "component/ble/goodix/profiles",
+    "component/ble/goodix/lib"
+  ],
+  "retention_groups": [
+    {
+      "root": "tools/scripts/pyelftools-0.28",
+      "keep": [],
+      "reason": "The incomplete 0.28 copy cannot import construct.lib; compression already requires environment pyelftools. Use the single pinned 0.32 dependency for compression and ELF analysis."
+    },
+    {
+      "root": "embedded/include",
+      "drop": [
+        "arch/arch_interface.h",
+        "spinlock.h",
+        "sys/atomic.h",
+        "sys/atomic_types.h",
+        "sys/slist.h",
+        "sys/list_gen.h",
+        "devicetree/mbox.h",
+        "devicetree/port-endpoint.h",
+        "devicetree/display.h"
+      ],
+      "reason": "No SDK consumer: empty architecture shim, unused Zephyr atomic/list/kernel spinlock APIs and driver domains without SDK implementations. STM32 backup-domain serialization uses the same local IRQ primitive directly."
+    },
+    {
+      "root": "embedded/drivers/cache",
+      "keep": [],
+      "reason": "No external cache-controller implementation/target exists. Native Cortex-M cache control remains in arch cache APIs and CMSIS; remove the nonfunctional external-driver menu."
+    },
+    {
+      "root": "tools",
+      "drop": [
+        "cmake/modules/user_cache.cmake",
+        "scripts/build/dir_is_writeable.py"
+      ],
+      "reason": "Only the removed generic Zephyr compiler-probe/runner layer referenced this cache; SDK compiler policy has no cache consumer."
+    },
+    {
+      "root": "tools/scripts/pylib/yaml",
+      "keep": [],
+      "reason": "No SDK script or CMake invocation adds this duplicate package to sys.path; use the existing pinned PyYAML build dependency."
+    }
+  ]
+}

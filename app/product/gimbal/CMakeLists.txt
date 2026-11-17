@@ -1,5 +1,9 @@
 set(MODULE_NAME app)
-add_library(${MODULE_NAME} ${NULL_C})
+sdk_add_library(${MODULE_NAME} ${NULL_C})
+math(EXPR _gimbal_period_us "1000000 / ${CONFIG_GIMBAL_CONTROL_HZ}")
+if(CONFIG_GIMBAL_CONTROL_BUDGET_US GREATER _gimbal_period_us)
+    message(FATAL_ERROR "Gimbal execution budget exceeds the control period")
+endif()
 
 if(CONFIG_GIMBAL_MOTOR_CURRENT_FOC)
     message(FATAL_ERROR

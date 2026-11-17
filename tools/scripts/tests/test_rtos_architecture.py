@@ -65,7 +65,10 @@ class RtosArchitectureContractTest(unittest.TestCase):
         self.assertIn("#define RT_USING_OVERFLOW_CHECK", config)
 
     def test_demo_ble_gpio0_address_matches_goodix_soc(self):
-        board = self.read("app/product/demo_ble/config/board.dts")
+        board = self.read("boards/gr5525_demo/board.dts")
+        overlay = self.read("app/product/demo_ble/config/app.overlay")
+        self.assertIn('&gpio0', overlay)
+        self.assertNotIn('current-speed', board)
         self.assertIn("gpio0: gpio@40010000", board)
         self.assertIn("reg = <0x40010000 0x400>", board)
 

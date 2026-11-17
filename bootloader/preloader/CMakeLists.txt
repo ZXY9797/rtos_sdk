@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 set(MODULE_NAME app)
-add_library(${MODULE_NAME} ${NULL_C})
+sdk_add_library(${MODULE_NAME} ${NULL_C})
 
 set(BOOT_SECURITY_SOURCE ${PROJECT_BOOT_COMMON_DIR}/boot_security.cc)
 if(CONFIG_BOOT_PRODUCTION AND NOT EXISTS "${BOOT_SECURITY_SOURCE}")

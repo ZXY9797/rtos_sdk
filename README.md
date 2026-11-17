@@ -1,18 +1,31 @@
 # RTOS SDK
 
+面向 MCU 实时控制，采用声明式硬件配置、静态资源和类型化组件的 C++ RTOS 开发框架。
+
+独立应用、板卡、模块、执行预算、统一诊断、资源报告和验证入口见
+[现代 RTOS 框架设计与使用](doc/MODERN_RTOS.md)。
+
+板卡、App/Boot overlay 和各镜像 profile 的目录与加载规则见
+[板卡与镜像配置](doc/BOARD_CONFIGURATION.md)。
+
+源码保留范围、精简结果和后续导入规则见
+[SDK 源码精简与维护](doc/SOURCE_SUBSET.md)。
+Python 构建依赖统一通过 `python -m pip install -r tools/requirements-ci.txt` 安装。
+
 > 产品化能力、必须提供的硬件适配和发布验收边界见
 > [产品级 RTOS 架构基线](doc/PRODUCT_RTOS.md)。
 
 <p align="center">
-  <b>轻量级嵌入式开发框架 | 基于 Zephyr 精简 · 设备树驱动 · 编译期零开销 · 产品级 Bootloader</b>
+  <b>面向实时控制的 C++ 框架 | 声明式硬件 · 静态设备与资源 · 多内核 OSAL · 产品级 Bootloader</b>
 </p>
 
 ---
 
 ## 为什么选择 RTOS SDK？
 
-> Zephyr 是一个优秀的工业级 RTOS，但对于中小型项目，它的复杂度往往超出需求。
-> RTOS SDK 保留了 Zephyr 最精华的设计（设备树、Kconfig、驱动模型），去掉了不必要的抽象层。
+RTOS SDK 用 DTS/Kconfig 描述硬件和镜像配置，以编译期设备、类型化组件和固定容量资源
+组织实时控制应用。FreeRTOS、RT-Thread 与 Baremetal 通过 OSAL 接入。厂商 SDK 和内核
+上游包完整保留，构建按实际依赖选择性编译，并记录来源和内容摘要。
 
 ### 对比一览
 
@@ -21,11 +34,11 @@
 | 构建系统 | CMake + Python + DTS/Kconfig | **CMake + 可测试的 Python 生成器 + DTS/Kconfig** |
 | 设备树层级 | 5+ 级 `.dtsi` 继承 | **2 级**（SoC + Board） |
 | 链接脚本 | 片段拼接 | **单一 `.ld` 文件** |
-| 环境搭建 | West + Python + CMake + Ninja + DTC | **CMake + GCC + Ninja** |
+| 环境搭建 | West + Python + CMake + Ninja + DTC | **Python + CMake + GCC + Ninja** |
 | 驱动模型 | 运行时 `struct device` + vtable | **编译期模板 + initcall + 依赖校验** |
 | 内存管理 | 动态分配 + Slab + Heap | **实时/故障路径固定容量，初始化分配显式检查** |
 | RTOS 绑定 | 仅支持 Zephyr 内核 | **OSAL 多内核**（FreeRTOS、RT-Thread） |
-| SoC 支持 | 内置 400+ | **STM32、GD32、Goodix GR5525** |
+| SoC 支持 | 内置 400+ | **STM32H7、GD32F50x、Goodix GR5525** |
 | BLE 支持 | 内置 | **GR5525 BLE（HID + UART 透传）** |
 | 启动升级 | MCUboot + Zephyr 配置体系 | **preloader/loader/upgrade + 三合一固件** |
 | 代码规模 | 大型通用生态 | **面向项目裁剪，按 target 选择性链接** |
@@ -91,7 +104,7 @@
 | | 运行时多态（Zephyr） | 编译期多态（RTOS SDK） |
 |:---|:---:|:---:|
 | 开销 | vtable + 间接调用 | **零** |
-| 二进制大小 | 链接所有子类 | **只实例化用到的** |
+| 二进制大小 | 按配置选择、链接裁剪 | **按配置生成具体设备类型、选择性链接** |
 | 优化 | 间接调用阻碍内联 | **编译器完全优化** |
 
 详见 [doc/DEVICE_TRAIT.md](doc/DEVICE_TRAIT.md)
@@ -191,6 +204,8 @@ namespace osal {     // OS 抽象层：线程、同步原语
 
 ```
 rtos_sdk/
+├── products/                     # App/Boot 共用的产品元数据与默认板卡
+├── boards/                       # 公共硬件、引脚与 SoC 默认配置
 ├── app/                          # 应用项目
 │   └── product/                  # 产品固件
 │       ├── demo/                 # GD32 FOC 电机控制 Demo
@@ -206,8 +221,8 @@ rtos_sdk/
 │   └── scripts/                  # 三合一固件构建与合并脚本
 │
 ├── component/                    # 应用级组件
-│   ├── algo/                     # 纯算法组件
 │   ├── algo/                     # 数学、DSP 与单轴轨迹算法原语
+│   ├── runtime/                  # 纯 C++ 执行描述、时序测量、输出锁存与编码工具
 │   ├── control_contracts/        # 定长控制领域数据契约
 │   ├── motion/                   # 非正交运动学、动力学和三轴轨迹规划
 │   ├── attitude/                 # 姿态 EKF

@@ -41,6 +41,7 @@ public:
     }
 
 private:
+    int safety_output_ {-1};
     [[nodiscard]] hal::Status write_duty(const PhaseDuty &duty);
 
     hal::PwmBase &pwm_;

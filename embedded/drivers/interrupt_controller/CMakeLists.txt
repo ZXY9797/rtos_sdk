@@ -1,5 +1,5 @@
 set(MODULE_NAME interrupt_controller)
-add_library(${MODULE_NAME} STATIC ${NULL_C})
+sdk_add_library(${MODULE_NAME} STATIC ${NULL_C})
 
 target_include_directories(${MODULE_NAME}
     PUBLIC

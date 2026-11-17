@@ -1,5 +1,5 @@
 set(MODULE_NAME osal)
-add_library(${MODULE_NAME} ${NULL_C})
+sdk_add_library(${MODULE_NAME} ${NULL_C})
 
 if(CONFIG_RTOS_BAREMETAL)
     set(RTOS_TYPE baremetal)
@@ -13,9 +13,13 @@ endif()
 
 add_subdirectory(${RTOS_TYPE})
 
+if(CONFIG_OSAL_HAS_THREADS)
+    target_sources(${MODULE_NAME} PRIVATE event_group.cc)
+endif()
+
 target_include_directories(${MODULE_NAME}
     PUBLIC
-        ${CMAKE_SOURCE_DIR}/embedded/include       # 公共头文件
-        ${CMAKE_SOURCE_DIR}/embedded/include/osal   # osal.h / osal_types.h
+        ${TOP_DIR}/embedded/include       # 公共头文件
+        ${TOP_DIR}/embedded/include/osal   # osal.h / osal_types.h
         ${CMAKE_CURRENT_SOURCE_DIR}/${RTOS_TYPE}     # OS 差异 osal_types.h
 )

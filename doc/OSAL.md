@@ -145,3 +145,17 @@ cmake --build out\demo_rtthread --parallel
 
 编译和 ELF 策略检查只能证明源代码、链接和静态契约成立。调度延迟、ISR 嵌套、栈
 水位、看门狗窗口、tickless 漂移仍必须在真实目标板上验证。
+
+
+## Portable EventGroup contract
+
+Threaded backends share `event_group.cc` and the bounded EventBits state machine.
+Bits 0..23 are usable. All matching waiters see the same pre-clear snapshot.
+`clear_bits()` returns the pre-clear value; set returns the remaining bits after
+wakeups. `sync()` publishes and joins the barrier atomically relative to other
+callers. Timeout returns the current snapshot. Invalid masks and waiter-capacity
+exhaustion return zero. The waiter limit is CONFIG_OSAL_EVENT_MAX_WAITERS.
+APIs are task-context only. Owners must join all waiters before destroy; active
+waiters on destroy trigger fatal diagnostics. Each wait uses a stack-owned static
+OSAL semaphore; no event object or waiter heap is required. Baremetal continues
+to report no event-group capability.

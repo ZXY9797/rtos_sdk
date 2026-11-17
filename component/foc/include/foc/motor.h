@@ -62,6 +62,7 @@ public:
     Motor(const MotorConfig &cfg,
           hal::PwmBase &pwm, hal::PwmChannel ch_u, hal::PwmChannel ch_v, hal::PwmChannel ch_w,
           hal::AdcBase &adc);
+    ~Motor();
 
     // 初始化
     [[nodiscard]] hal::Status init();
@@ -137,6 +138,7 @@ public:
     float board_temperature() const { return board_temp_celsius_.load(std::memory_order_relaxed); }
 
 private:
+    int safety_output_ {-1};
     // 硬件引用
     hal::PwmBase &pwm_;
     hal::PwmChannel ch_u_, ch_v_, ch_w_;

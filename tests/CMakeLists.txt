@@ -1,15 +1,49 @@
 cmake_minimum_required(VERSION 3.20)
 project(rtos_sdk_host_tests LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 enable_testing()
-
 add_compile_options(
     $<$<CXX_COMPILER_ID:MSVC>:/W4>
     $<$<CXX_COMPILER_ID:MSVC>:/WX>
+    $<$<CXX_COMPILER_ID:MSVC>:/utf-8>
     $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall>
     $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wextra>
     $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wpedantic>
     $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Werror>)
+add_subdirectory(../samples/control_pipeline control-pipeline)
+
+find_package(Threads REQUIRED)
+add_executable(event_group_runtime_test event_group_runtime_test.cc ../embedded/osal/event_group.cc)
+target_include_directories(event_group_runtime_test PRIVATE
+    ../embedded/include ../embedded/include/osal ../embedded/osal/baremetal)
+target_compile_definitions(event_group_runtime_test PRIVATE CONFIG_NUM_IRQ_PRIO_BITS=4)
+target_link_libraries(event_group_runtime_test PRIVATE Threads::Threads)
+add_test(NAME event_group_runtime COMMAND event_group_runtime_test)
+set_tests_properties(event_group_runtime PROPERTIES TIMEOUT 15)
+
+add_executable(runtime_contract_test runtime_contract_test.cc)
+target_include_directories(runtime_contract_test PRIVATE ../embedded/include ../component/ipc/include)
+target_link_libraries(runtime_contract_test PRIVATE sdk::runtime sdk::ipc)
+add_test(NAME runtime_contract COMMAND runtime_contract_test)
+
+add_executable(system_diagnostics_test system_diagnostics_test.cc ../embedded/system/diagnostics.cc)
+target_include_directories(system_diagnostics_test PRIVATE stubs ../embedded/include
+    ../embedded/include/osal ../embedded/osal/baremetal ../bootloader/include)
+target_compile_definitions(system_diagnostics_test PRIVATE CONFIG_NUM_IRQ_PRIO_BITS=4)
+target_link_libraries(system_diagnostics_test PRIVATE sdk::runtime)
+add_test(NAME system_diagnostics COMMAND system_diagnostics_test "${CMAKE_CURRENT_BINARY_DIR}/diagnostics.bin")
+
+add_executable(event_bits_test event_bits_test.cc)
+target_compile_features(event_bits_test PRIVATE cxx_std_17)
+target_include_directories(event_bits_test PRIVATE ../embedded/include)
+add_test(NAME event_bits COMMAND event_bits_test)
+
+add_executable(frame_tx_queue_test frame_tx_queue_test.cc)
+target_compile_features(frame_tx_queue_test PRIVATE cxx_std_17)
+target_include_directories(frame_tx_queue_test PRIVATE ../component/link/include)
+add_test(NAME frame_tx_queue COMMAND frame_tx_queue_test)
 
 add_executable(link_fragment_test
     ../component/link/tests/fragment_test.cc)
@@ -94,6 +128,7 @@ add_test(NAME can_dlc COMMAND can_dlc_test)
 add_executable(icm40609d_test
     ../embedded/drivers/imu/tests/icm40609d_test.cc)
 target_compile_features(icm40609d_test PRIVATE cxx_std_17)
+target_link_libraries(icm40609d_test PRIVATE sdk::runtime)
 target_include_directories(icm40609d_test PRIVATE
     stubs
     ../embedded/drivers/imu/include
@@ -108,6 +143,7 @@ add_executable(sensor_batch_core_test
     sensor_batch_core_test.cc
     ../embedded/system/sensor_core.cc)
 target_compile_features(sensor_batch_core_test PRIVATE cxx_std_17)
+target_link_libraries(sensor_batch_core_test PRIVATE sdk::runtime)
 target_include_directories(sensor_batch_core_test PRIVATE
     stubs
     ../embedded/include
@@ -234,6 +270,7 @@ add_test(NAME gimbal_functional COMMAND gimbal_functional_test)
 add_library(driver_header_contract OBJECT
     driver_header_contract.cc)
 target_compile_features(driver_header_contract PRIVATE cxx_std_17)
+target_link_libraries(driver_header_contract PRIVATE sdk::runtime)
 target_include_directories(driver_header_contract PRIVATE
     stubs
     ../embedded/include
@@ -241,3 +278,20 @@ target_include_directories(driver_header_contract PRIVATE
     ../embedded/osal/baremetal)
 target_compile_definitions(driver_header_contract PRIVATE
     CONFIG_NUM_IRQ_PRIO_BITS=4)
+
+# Handler archive retention is exercised by firmware builds.
+add_executable(dma_memory_test dma_memory_test.cc)
+target_compile_features(dma_memory_test PRIVATE cxx_std_17)
+target_include_directories(dma_memory_test PRIVATE ../embedded/include)
+add_test(NAME dma_memory COMMAND dma_memory_test)
+
+foreach(assert_variant file no_file)
+    add_executable(assert_abi_${assert_variant} assert_abi_test.cc assert_abi_backend.cc)
+    target_include_directories(assert_abi_${assert_variant} PRIVATE stubs/assert_api ../embedded/include)
+    target_compile_definitions(assert_abi_${assert_variant} PRIVATE
+        CONFIG_ASSERT=1 CONFIG_ASSERT_LEVEL=2 CONFIG_ASSERT_TEST=1)
+    if(assert_variant STREQUAL "no_file")
+        target_compile_definitions(assert_abi_${assert_variant} PRIVATE CONFIG_ASSERT_NO_FILE_INFO=1)
+    endif()
+    add_test(NAME assert_abi_${assert_variant} COMMAND assert_abi_${assert_variant})
+endforeach()

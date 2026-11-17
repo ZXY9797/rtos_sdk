@@ -1,5 +1,5 @@
 set(MODULE_NAME soc)
-add_library(${MODULE_NAME} ${NULL_C})
+sdk_add_library(${MODULE_NAME} ${NULL_C})
 
 set(SOC_YML_FILE "${CMAKE_CURRENT_SOURCE_DIR}/soc.yml")
 set(SOC_PARSER_SCRIPT "${TOOLS_DIR}/scripts/soc/generate_soc_cmake.py")

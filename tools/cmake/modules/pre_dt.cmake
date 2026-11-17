@@ -32,7 +32,8 @@ include(extensions)
 function(pre_dt_module_run)
   # Convert relative paths to absolute paths relative to the application
   # source directory.
-  set(DTS_ROOT ${BSP_DIR})
+  set(DTS_ROOT ${BSP_DIR} ${PROJECT_DIR} ${BOARD_DIR} ${DTS_ROOT})
+  list(APPEND DTS_ROOT ${MODULE_ROOTS})
   # DTS_ROOT always includes the application directory, the board
   # directory, shield directories, and ZEPHYR_BASE.
 

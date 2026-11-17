@@ -27,11 +27,53 @@ INIT_LEVEL_ORDER = {
     level: index for index, level in enumerate(INIT_LEVELS)
 }
 
+CAPABILITY_BITS = {'read': 1, 'write': 2, 'async-transfer': 4, 'cancel': 8,
+                   'dma': 16, 'power-management': 32}
+
+
+def stable_device_id(path):
+    value = 2166136261
+    for byte in path.encode('utf-8'):
+        value = ((value ^ byte) * 16777619) & 0xffffffff
+    return value
+
+
+def capability_mask(spec):
+    return sum(CAPABILITY_BITS[name] for name in spec.get('capabilities', []))
+
+
+def collect_resources(edt):
+    claims = []
+    owners = {}
+    for node in edt.nodes:
+        if not node_enabled(node):
+            continue
+        for prop in node.props.values():
+            if not isinstance(prop.val, list):
+                continue
+            for entry in prop.val:
+                controller = getattr(entry, 'controller', None)
+                data = getattr(entry, 'data', {})
+                if controller is None:
+                    continue
+                kind = 'dma' if prop.name == 'dmas' else 'gpio' if 'gpio' in prop.name else None
+                cell = 'channel' if kind == 'dma' else 'pin'
+                if kind is None or cell not in data:
+                    continue
+                key = (kind, controller.path, int(data[cell]))
+                previous = owners.get(key)
+                if previous is not None and (kind == 'dma' or previous != node.path):
+                    raise ValueError(f'{kind} resource conflict: {key} used by {previous} and {node.path}')
+                owners[key] = node.path
+                claims.append({'kind': kind, 'controller': controller.path,
+                               'index': int(data[cell]), 'owner': node.path})
+    return claims
+
 
 def parse_args():
     parser = argparse.ArgumentParser(allow_abbrev=False)
     parser.add_argument('--edt-pickle', required=True)
-    parser.add_argument('--bindings-dir', required=True)
+    parser.add_argument('--bindings-dir', required=True, action='append')
     parser.add_argument('--header-out', required=True)
     parser.add_argument('--source-out', required=True)
     parser.add_argument('--report-out', required=True)
@@ -259,16 +301,24 @@ def generate_specs(edt, drivers):
             'readiness': driver['readiness'],
             'device_base': driver['device_base'],
             'dependencies': resolve_dependencies(
-                node, driver['requires']),
+                node, driver['requires']) if enabled else [],
             'init_level': driver['init_level'],
             'init_priority': driver['init_priority'],
             'has_init': driver['has_init'],
             'has_isr': driver['has_isr'],
             'interrupts': interrupts,
+            'capabilities': driver.get('capabilities', []),
         }
         specs.append(spec)
-        used_headers.add(driver['adapter_header'])
+        if enabled:
+            used_headers.add(driver['adapter_header'])
 
+    identifiers = {}
+    for spec in specs:
+        identifier = stable_device_id(spec['path'])
+        if identifier in identifiers and identifiers[identifier] != spec['path']:
+            raise ValueError('stable device identifier collision')
+        identifiers[identifier] = spec['path']
     return specs, used_headers
 
 
@@ -366,7 +416,7 @@ def append_registry(lines, specs):
             spec['ord']))
     if not enabled_specs:
         lines.extend([
-            'inline const DeviceInfo *get_device_registry(size_t *count) {',
+            'const DeviceInfo *get_device_registry(size_t *count) {',
             '    if (count != nullptr) {',
             '        *count = 0;',
             '    }',
@@ -447,12 +497,14 @@ def append_registry(lines, specs):
             f'.resume = {resume}, .init_priority = {init_priority}U, '
             f'.supports_power_management = '
             f'detail::HasSuspend<DeviceTrait<{ordinal}>::type>::value && '
-            f'detail::HasResume<DeviceTrait<{ordinal}>::type>::value }},')
+            f'detail::HasResume<DeviceTrait<{ordinal}>::type>::value, '
+            f'.stable_id = {stable_device_id(spec["path"])}U, '
+            f'.capabilities = {capability_mask(spec)}U }},')
 
     lines.extend([
         '};',
         '',
-        'inline const DeviceInfo *get_device_registry(size_t *count) {',
+        'const DeviceInfo *get_device_registry(size_t *count) {',
         '    if (count != nullptr) {',
         f'        *count = {len(enabled_specs)};',
         '    }',
@@ -481,6 +533,12 @@ def render_header(specs, used_headers):
     for spec in specs:
         if not spec['enabled']:
             continue
+        lines.extend([
+            f'template <> struct DeviceMetadata<{spec["ord"]}> {{',
+            f'    static constexpr uint32_t stable_id = {stable_device_id(spec["path"])}U;',
+            f'    static constexpr uint32_t capabilities = {capability_mask(spec)}U;',
+            '};',
+        ])
         comment = spec['alias'] or spec['path']
         lines.extend([
             f'// {comment}',
@@ -495,7 +553,6 @@ def render_header(specs, used_headers):
         '}',
         '',
     ])
-    append_registry(lines, specs)
     lines.extend([
         '} // namespace hal',
         '',
@@ -642,6 +699,7 @@ def render_source(specs):
                 resolve_init_priority(spec),
             ))
 
+    append_registry(lines, specs)
     lines.extend([
         '} // namespace hal',
         '',
@@ -674,7 +732,7 @@ def render_source(specs):
     return '\n'.join(lines)
 
 
-def render_report(specs):
+def render_report(specs, resources=None):
     spec_by_ordinal = {spec['ord']: spec for spec in specs}
     devices = []
 
@@ -716,10 +774,13 @@ def render_report(specs):
             'binding': spec['binding_path'],
             'interrupts': spec['interrupts'],
             'dependencies': dependencies,
+            'stable_id': stable_device_id(spec['path']),
+            'capabilities': spec.get('capabilities', []),
         })
 
     report = {
-        'schema': 'rtos-sdk.devices.v6',
+        'schema': 'rtos-sdk.devices.v7',
+        'resources': resources or [],
         'device_count': len(devices),
         'enabled_count': sum(
             1 for device in devices if device['enabled']),
@@ -733,8 +794,11 @@ def main():
     args = parse_args()
     try:
         edt = load_edt(args.edt_pickle)
-        drivers = scan_bindings(args.bindings_dir)
+        drivers = {}
+        for directory in args.bindings_dir:
+            drivers.update(scan_bindings(directory))
         specs, used_headers = generate_specs(edt, drivers)
+        resources = collect_resources(edt)
         check_init_dependencies(specs)
 
         write_if_changed(
@@ -745,7 +809,7 @@ def main():
             render_source(specs))
         write_if_changed(
             args.report_out,
-            render_report(specs))
+            render_report(specs, resources))
     except (OSError, ValueError) as error:
         print(f'gen_device_traits.py: error: {error}',
               file=sys.stderr)

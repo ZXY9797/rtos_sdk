@@ -1,0 +1,37 @@
+/dts-v1/;
+
+#include "../common/gd32f503-reference.dtsi"
+#include "pinctrl.dtsi"
+
+/ {
+    model = "Three-axis Non-orthogonal Gimbal Reference";
+    soc {
+        pitch_timer: pwm@40000000 {
+            compatible = "gd,gd32-timer";
+            reg = <0x40000000 0x400>;
+            interrupts = <28 6>;
+            interrupt-names = "update";
+            status = "disabled";
+            label = "PITCH_TIMER";
+            #pwm-cells = <3>;
+        };
+        yaw_timer: pwm@40000c00 {
+            compatible = "gd,gd32-timer";
+            reg = <0x40000c00 0x400>;
+            interrupts = <75 6>;
+            interrupt-names = "update";
+            status = "disabled";
+            label = "YAW_TIMER";
+            #pwm-cells = <3>;
+        };
+        heater_timer: pwm@40000400 {
+            compatible = "gd,gd32-timer";
+            reg = <0x40000400 0x400>;
+            interrupts = <29 6>;
+            interrupt-names = "update";
+            status = "disabled";
+            label = "IMU_HEATER_TIMER";
+            #pwm-cells = <3>;
+        };
+    };
+};

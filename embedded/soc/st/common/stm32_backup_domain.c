@@ -1,5 +1,6 @@
 #include <stm32_ll_pwr.h>
-#include <spinlock.h>
+#include <arch/cpu.h>
+#include <stddef.h>
 
 #ifdef PWR_BDCR1_DBD3P
 #define ENABLE_BKUP_ACCESS	LL_PWR_EnableBkUpD3Access
@@ -11,11 +12,10 @@
 #define IS_ENABLED_BKUP_ACCESS	LL_PWR_IsEnabledBkUpAccess
 #endif
 
-static struct k_spinlock lock;
 static size_t refcount;
 void stm32_backup_domain_enable_access(void)
 {
-    k_spinlock_key_t key = k_spin_lock(&lock);
+    unsigned int key = arch_irq_lock();
 
 	if (refcount == 0U) {
 		ENABLE_BKUP_ACCESS();
@@ -24,12 +24,12 @@ void stm32_backup_domain_enable_access(void)
 	}
 	refcount++;
 
-    k_spin_unlock(&lock, key);
+    arch_irq_unlock(key);
 }
 
 void stm32_backup_domain_disable_access(void)
 {
-	k_spinlock_key_t key = k_spin_lock(&lock);
+	unsigned int key = arch_irq_lock();
 
 	if (refcount == 0U) {
 		// LOG_WRN_ONCE("Unbalanced backup domain access refcount");
@@ -40,5 +40,5 @@ void stm32_backup_domain_disable_access(void)
 		refcount--;
 	}
 
-	k_spin_unlock(&lock, key);
+	arch_irq_unlock(key);
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <osal_types.h>
+#include <osal/event_bits.h>
 
 #include <atomic>
 #include <cstddef>
@@ -362,6 +363,13 @@ private:
 
 class EventGroup {
 public:
+    // Task-context API; bits 0..23 are portable across all threaded backends.
+    static constexpr uint32_t kUsableBits = 0x00ffffffU;
+#if defined(CONFIG_OSAL_EVENT_MAX_WAITERS)
+    static constexpr size_t kMaxWaiters = CONFIG_OSAL_EVENT_MAX_WAITERS;
+#else
+    static constexpr size_t kMaxWaiters = 8U;
+#endif
     enum class WaitMode : uint8_t {
         Any = 0U,
         All = 1U,
@@ -389,6 +397,10 @@ public:
     [[nodiscard]] bool is_valid() const { return native_handle_ != nullptr; }
 
 private:
+    uint32_t wait_impl(uint32_t set, uint32_t mask, bool clear, WaitMode mode,
+                       Milliseconds timeout, bool barrier);
+    void notify_waiters();
+    detail::EventBits<kMaxWaiters> events_ {};
     void* native_handle_ {};
 };
 

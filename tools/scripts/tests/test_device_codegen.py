@@ -14,6 +14,7 @@ if SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)
 
 from device_bindings import parse_adapter
+from device_codegen_common import canonical_path
 from gen_device_traits import (
     check_init_dependencies,
     render_header,
@@ -21,6 +22,7 @@ from gen_device_traits import (
     render_source,
     resolve_dependencies,
     resolve_interrupts,
+    generate_specs,
 )
 
 
@@ -66,6 +68,23 @@ def fake_spec(has_init=False, interrupts=None):
 
 
 class BindingContractTest(unittest.TestCase):
+    def test_disabled_devices_do_not_require_driver_headers_or_dependencies(self):
+        data = valid_driver()
+        data['requires'] = [{'phandle': 'controller'}]
+        driver = parse_adapter(data, 'test.yaml', 'vendor,test')
+        node = fake_node()
+        node.binding_path = 'test.yaml'
+        node.matching_compat = 'vendor,test'
+        node.status = 'disabled'
+        drivers = {canonical_path('test.yaml'): driver}
+        specs, headers = generate_specs(SimpleNamespace(nodes=[node]), drivers)
+        self.assertEqual(headers, set())
+        self.assertEqual(specs[0]['dependencies'], [])
+        self.assertNotIn('device_adapters/test_dt.h', render_header(specs, headers))
+        node.status = 'okay'
+        with self.assertRaisesRegex(ValueError, 'required property'):
+            generate_specs(SimpleNamespace(nodes=[node]), drivers)
+
     def test_unknown_key_is_rejected(self):
         driver = valid_driver()
         driver['args'] = ['node-reg']
@@ -210,8 +229,7 @@ class GeneratedCodeTest(unittest.TestCase):
             })
             specs.append(spec)
 
-        header = render_header(
-            specs, {'device_adapters/test_dt.h'})
+        header = render_source(specs)
         self.assertIn('return detail::device_ready(*device);', header)
         self.assertIn(
             'readiness=device-base requires DeviceBase', header)
@@ -223,7 +241,7 @@ class GeneratedCodeTest(unittest.TestCase):
         self.assertIn('.supports_power_management = ', header)
 
     def test_empty_registry_is_safe(self):
-        header = render_header([], set())
+        header = render_source([])
         self.assertIn('if (count != nullptr)', header)
         self.assertIn('return nullptr;', header)
 
@@ -238,7 +256,7 @@ class GeneratedCodeTest(unittest.TestCase):
             'device_base': False,
         })
         report = render_report([spec])
-        self.assertIn('"schema": "rtos-sdk.devices.v6"', report)
+        self.assertIn('"schema": "rtos-sdk.devices.v7"', report)
 
     def test_registry_is_sorted_by_init_order(self):
         late = fake_spec()
@@ -247,15 +265,12 @@ class GeneratedCodeTest(unittest.TestCase):
         early = fake_spec()
         early.update({'ord': 2, 'alias': 'early',
                       'init_level': 'pre-kernel-1', 'init_priority': 10})
-        header = render_header(
-            [late, early], {'device_adapters/test_dt.h'})
+        header = render_source([late, early])
         self.assertLess(header.index('.alias = "early"'),
                         header.index('.alias = "late"'))
 
     def test_registry_requires_paired_power_callbacks(self):
-        header = render_header(
-            [fake_spec(has_init=False)],
-            {'device_adapters/test_dt.h'})
+        header = render_source([fake_spec(has_init=False)])
         self.assertIn(
             'device power management requires paired suspend()/resume()',
             header)

@@ -42,6 +42,11 @@ config GIMBAL_CONTROL_HZ
     range 500 2000
     default 1000
 
+config GIMBAL_CONTROL_BUDGET_US
+    int "Closed-loop execution budget in microseconds"
+    default 400
+    range 1 2000
+
 config GIMBAL_SENSOR_HZ
     int "Synchronous sensor trigger frequency"
     range 8000 32000

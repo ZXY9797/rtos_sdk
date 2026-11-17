@@ -1,3 +1,4 @@
+#include <system/output_safety.h>
 #include <foc/motor.h>
 
 #include <foc/config.h>
@@ -20,8 +21,17 @@ Motor::Motor(const MotorConfig& cfg,
 {
 }
 
+Motor::~Motor()
+{
+    if (safety_output_ >= 0) {
+        disable();
+        system_safety::unregister_output(safety_output_);
+    }
+}
+
 hal::Status Motor::init()
 {
+    if (safety_output_ >= 0) return hal::Status::Busy;
     if (cfg_.timer_clock_hz == 0U || cfg_.foc.pwm_frequency <= 0.0F
         || cfg_.adc_resolution_bits == 0U || cfg_.adc_resolution_bits > 16U
         || cfg_.adc_reference_voltage <= 0.0F
@@ -93,6 +103,10 @@ hal::Status Motor::init()
     foc_.calculate_gains(cfg_.rs, cfg_.ld, cfg_.lq,
                          cfg_.flux_linkage, cfg_.pole_pairs);
     foc_.calculate_voltage_gain(cfg_.vmax);
+    safety_output_ = system_safety::register_output(this, [](void* context) {
+        static_cast<Motor*>(context)->emergency_stop();
+    });
+    if (safety_output_ < 0) return hal::Status::NoMemory;
     state_ = MotorState::Idle;
     return hal::Status::Ok;
 }
@@ -168,7 +182,8 @@ void Motor::slow_loop()
 void Motor::enable()
 {
     hal::IrqGuard guard;
-    if (state_.load(std::memory_order_relaxed) != MotorState::Idle
+    if (system_safety::latched()
+        || state_.load(std::memory_order_relaxed) != MotorState::Idle
         || errors_.has_error()) {
         return;
     }

@@ -1,5 +1,5 @@
 set(MODULE_NAME boot_common)
-add_library(${MODULE_NAME} STATIC)
+sdk_add_library(${MODULE_NAME} STATIC)
 
 target_sources(${MODULE_NAME}
     PRIVATE

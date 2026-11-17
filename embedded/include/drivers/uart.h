@@ -3,7 +3,6 @@
 #include <device_base.h>
 #include <drivers/dma.h>
 #include <drivers/status.h>
-#include <irq.h>
 #include <osal.h>
 
 #include <atomic>

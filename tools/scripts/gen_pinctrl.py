@@ -37,6 +37,7 @@ def operation_type_name(operation_type):
 def collect_operations(edt):
     operations = []
     seen = set()
+    written_fields = {}
 
     for node in sorted(
             edt.nodes,
@@ -81,6 +82,15 @@ def collect_operations(edt):
                         operation['clear_mask'],
                         operation['set_value'],
                     )
+                    mask = (0xffffffff if operation_type == PINCTRL_OP_WRITE else
+                            operation['clear_mask'] | operation['set_value'])
+                    for previous_mask, previous_value, owner in written_fields.get(operation['address'], []):
+                        overlap = mask & previous_mask
+                        if overlap & (previous_value ^ operation['set_value']):
+                            raise ValueError(f'conflicting pinctrl register fields at '
+                                f'{operation["address"]:#x}: {owner} and {node.path}')
+                    written_fields.setdefault(operation['address'], []).append(
+                        (mask, operation['set_value'], node.path))
                     if key in seen:
                         continue
                     seen.add(key)

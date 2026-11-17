@@ -1,0 +1,184 @@
+/* Application device selection and operating parameters. */
+&board_leds { status = "okay"; };
+&board_keys { status = "okay"; };
+&pinctrl { status = "okay"; };
+
+/ {
+    chosen {
+        zephyr,console = &usart0;
+        zephyr,shell-uart = &usart0;
+        zephyr,flash = &flash0;
+        zephyr,flash-partition = &slot0_partition;
+    };
+    hall_roll: hall-roll {
+        compatible = "rtos_sdk,gimbal-hall-angle";
+        status = "okay";
+        adc-dev = <&adc0>;
+        channel-a = <3>;
+        channel-b = <4>;
+        sample-time = <5>;
+    };
+    hall_pitch: hall-pitch {
+        compatible = "rtos_sdk,gimbal-hall-angle";
+        status = "okay";
+        adc-dev = <&adc0>;
+        channel-a = <5>;
+        channel-b = <6>;
+        sample-time = <5>;
+    };
+    hall_yaw: hall-yaw {
+        compatible = "rtos_sdk,gimbal-hall-angle";
+        status = "okay";
+        adc-dev = <&adc0>;
+        channel-a = <7>;
+        channel-b = <8>;
+        sample-time = <5>;
+    };
+    motor_roll: motor-roll {
+        compatible = "rtos_sdk,gimbal-voltage-motor";
+        status = "okay";
+        pwm-dev = <&timer0>;
+        pwm-ch-u = <0>;
+        pwm-ch-v = <1>;
+        pwm-ch-w = <2>;
+        pwm-period-counts = <4999>;
+        nominal-bus-mv = <12000>;
+        maximum-modulation-milli = <850>;
+    };
+    motor_pitch: motor-pitch {
+        compatible = "rtos_sdk,gimbal-voltage-motor";
+        status = "okay";
+        pwm-dev = <&pitch_timer>;
+        pwm-ch-u = <0>;
+        pwm-ch-v = <1>;
+        pwm-ch-w = <2>;
+        pwm-period-counts = <4999>;
+        nominal-bus-mv = <12000>;
+        maximum-modulation-milli = <850>;
+    };
+    motor_yaw: motor-yaw {
+        compatible = "rtos_sdk,gimbal-voltage-motor";
+        status = "okay";
+        pwm-dev = <&yaw_timer>;
+        pwm-ch-u = <0>;
+        pwm-ch-v = <1>;
+        pwm-ch-w = <2>;
+        pwm-period-counts = <4999>;
+        nominal-bus-mv = <12000>;
+        maximum-modulation-milli = <850>;
+    };
+    aliases {
+        led0 = &green_led;
+        key0 = &user_key;
+        uart0 = &usart0;
+        spi0 = &spi0;
+        pwm0 = &timer0;
+        tim5 = &timer5;
+        tim6 = &timer6;
+        adc0 = &adc0;
+        imu0 = &imu0;
+
+        hall-roll = &hall_roll;
+        hall-pitch = &hall_pitch;
+        hall-yaw = &hall_yaw;
+        motor-roll = &motor_roll;
+        motor-pitch = &motor_pitch;
+        motor-yaw = &motor_yaw;
+        heater-pwm = &heater_timer;
+        sensor-trigger = &timer6;
+    };
+};
+
+&green_led {
+    status = "okay";
+};
+
+&user_key {
+    status = "okay";
+};
+
+&gpioa {
+    status = "okay";
+};
+
+&gpiob {
+    status = "okay";
+};
+
+&dma0 {
+    status = "okay";
+};
+
+&dma1 {
+    status = "okay";
+};
+
+&usart0 {
+    status = "okay";
+    current-speed = <115200>;
+};
+
+&spi0 {
+    status = "okay";
+    spi-max-frequency = <10000000>;
+};
+
+&imu0 {
+    status = "okay";
+    spi-max-frequency = <10000000>;
+    accel-fs = <0>;
+    gyro-fs = <0>;
+    sample-rate = <16000>;
+};
+
+&timer0 {
+    status = "okay";
+    channel = <0>;
+    prescaler = <0>;
+    period = <4999>;
+    three-phase;
+    center-aligned;
+};
+
+&timer5 {
+    status = "okay";
+    channel = <0>;
+    prescaler = <199>;   /* 200MHz / 200 = 1MHz */
+    period = <249>;      /* 1MHz / 250 = 4kHz */
+};
+
+&timer6 {
+    status = "okay";
+    channel = <0>;
+    prescaler = <0>;
+    period = <12499>;
+};
+
+&adc0 {
+    status = "okay";
+};
+
+&pitch_timer {
+    status = "okay";
+    channel = <0>;
+    prescaler = <0>;
+    period = <4999>;
+    three-phase;
+    center-aligned;
+};
+
+&yaw_timer {
+    status = "okay";
+    channel = <0>;
+    prescaler = <0>;
+    period = <4999>;
+    three-phase;
+    center-aligned;
+};
+
+&heater_timer {
+    status = "okay";
+    channel = <0>;
+    prescaler = <199>;
+    period = <999>;
+};

@@ -1,5 +1,5 @@
 set(MODULE_NAME pwm)
-add_library(${MODULE_NAME} STATIC)
+sdk_add_library(${MODULE_NAME} STATIC)
 
 target_sources_ifdef(CONFIG_PWM_STM32 ${MODULE_NAME} PRIVATE pwm_stm32.cc)
 target_sources_ifdef(CONFIG_PWM_GD32 ${MODULE_NAME} PRIVATE pwm_gd32.cc)

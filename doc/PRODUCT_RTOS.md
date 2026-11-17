@@ -142,7 +142,8 @@ sector-swap 能在一次未确认试运行后恢复旧应用，但不等于两�
 ## 已知边界
 
 - `demo_ble` 已提供 GR5525 AON watchdog provider，但默认开发配置不启用，必须用
-  `release.conf` 构建并完成板级卡死/复位窗口验证；`demo` 尚无硬件 watchdog provider；
+  `PROFILE=release` 加载 `config/profiles/release.conf`，并完成板级卡死/复位窗口验证；`demo` 已接入 GD32 FWDGT provider，
+  同样需要验证板级卡死、停机与复位窗口；
 - 两个 demo 都没有经目标板验证的 tickless provider，低功耗配置继续 fail closed；
 - demo 产品也没有量产 Link 密钥 provider，开启全局安全策略的负向构建应失败；
 - 仓库没有 STM32 产品目标；FDCAN 目前只有 backend 编译契约，STM32 直寄存器驱动默认
@@ -151,3 +152,5 @@ sector-swap 能在一次未确认试运行后恢复旧应用，但不等于两�
 - 静态内存策略降低运行期碎片风险，但每个产品仍需基于 map 和栈水位实测定容；
 - 设备 ready 只表示软件初始化状态，不代表外部器件的所有模拟/射频指标合格；
 - “具备产品级框架门禁”不等于某块硬件已经完成产品认证。
+
+新配置合并顺序、接口与记录格式迁移见 [MODERN_RTOS.md](MODERN_RTOS.md)。

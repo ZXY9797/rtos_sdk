@@ -1,5 +1,5 @@
 set(MODULE_NAME i2c)
-add_library(${MODULE_NAME} STATIC)
+sdk_add_library(${MODULE_NAME} STATIC)
 
 target_sources_ifdef(CONFIG_I2C_STM32 ${MODULE_NAME} PRIVATE i2c_stm32.cc)
 

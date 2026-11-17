@@ -19,6 +19,9 @@
 #endif
 
 namespace link {
+#if defined(CONFIG_LINK_SYSTEM_DIAGNOSTICS)
+void system_diagnostics_handler_anchor();
+#endif
 namespace {
 
 constexpr size_t kCommandTypeOffset = 4U;
@@ -72,6 +75,9 @@ void Router::end_operation()
 
 bool Router::init()
 {
+#if defined(CONFIG_LINK_SYSTEM_DIAGNOSTICS)
+    system_diagnostics_handler_anchor();
+#endif
     osal::Deadline deadline(100U);
     osal::LockGuard lifecycle_lock(lifecycle_mutex_, deadline.remaining());
     if (!lifecycle_lock.owns_lock()) {
@@ -159,6 +165,7 @@ void Router::clear_state()
     while (work_available_.take(0U) == 0) {
     }
     for (size_t i = 0U; i < CONFIG_LINK_MAX_LINKS; ++i) {
+        if (links_[i] != nullptr) links_[i]->reset_session();
         links_[i] = nullptr;
         codecs_[i].reset();
         link_received_bytes_[i].store(0U, std::memory_order_relaxed);

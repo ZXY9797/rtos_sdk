@@ -83,7 +83,7 @@ if(DEFINED LINKER_SCRIPT)
     endif()
     get_filename_component(
         LINKER_SCRIPT "${LINKER_SCRIPT}" ABSOLUTE
-        BASE_DIR "${CMAKE_SOURCE_DIR}")
+        BASE_DIR "${TOP_DIR}")
 else()
     set(LINKER_SCRIPT ${DEFAULT_LINKER_SCRIPT})
 endif()
@@ -93,7 +93,7 @@ endif()
 set(LINKER_SCRIPT ${LINKER_SCRIPT} CACHE PATH "Linker script path" FORCE)
 get_filename_component(
     _sdk_default_linker_script "${DEFAULT_LINKER_SCRIPT}" ABSOLUTE
-    BASE_DIR "${CMAKE_SOURCE_DIR}")
+    BASE_DIR "${TOP_DIR}")
 set(SDK_LAST_DEFAULT_LINKER_SCRIPT
     "${_sdk_default_linker_script}" CACHE INTERNAL
     "Last automatically selected SDK linker script" FORCE)

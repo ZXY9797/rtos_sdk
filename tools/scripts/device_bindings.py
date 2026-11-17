@@ -32,6 +32,7 @@ ADAPTER_DRIVER_KEYS = {
     'scope',
     'readiness',
     'device-base',
+    'capabilities',
 }
 
 ADAPTER_KEYS = {
@@ -272,6 +273,12 @@ def parse_adapter(cxx_driver, filepath, compatible):
             f'init-priority out of range in {filepath}: '
             f'{init_priority}')
 
+    capabilities = cxx_driver.get('capabilities', [])
+    known_capabilities = {'read', 'write', 'async-transfer', 'cancel', 'dma', 'power-management'}
+    if (not isinstance(capabilities, list)
+            or any(not isinstance(x, str) or x not in known_capabilities for x in capabilities)
+            or len(capabilities) != len(set(capabilities))):
+        raise ValueError(f'invalid capabilities in {filepath}: {capabilities!r}')
     return {
         'adapter_header': header.strip(),
         'adapter_macro': macro,
@@ -288,6 +295,7 @@ def parse_adapter(cxx_driver, filepath, compatible):
         'readiness': readiness,
         'device_base': device_base,
         'binding_path': filepath,
+        'capabilities': capabilities,
     }
 
 

@@ -17,6 +17,25 @@ defaults:
     shell: bash
 
 jobs:
+  windows-host-contracts:
+    name: Windows host contracts
+    runs-on: windows-2022
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Configure and run MSVC contracts
+        run: |
+          cmake -S tests -B out/host-windows -G "Visual Studio 17 2022" -A x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build out/host-windows --config Debug --parallel 8
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ctest --test-dir out/host-windows -C Debug --output-on-failure --no-tests=error
+
   host-contracts:
     name: Host contracts
     runs-on: ubuntu-24.04
@@ -41,6 +60,8 @@ jobs:
 
       - name: Run Python contract tests
         run: |
+          python tools/scripts/dependency_inventory.py
+          python tools/scripts/source_audit.py --check
           python -m unittest discover -s bootloader/scripts/tests \
             -p "test_*.py" -v
           python -m unittest discover -s tools/scripts/tests \
@@ -125,6 +146,7 @@ jobs:
             local firmware_type="$4"
             local config_file="$5"
             local expected="$6"
+            local profile="${7:-default}"
             local build_dir="out/${name}-negative"
             local log_file="${build_dir}.log"
             local config_args=()
@@ -136,6 +158,7 @@ jobs:
             if cmake -S . -B "${build_dir}" -G Ninja \
                 "-Dp=${product}" "-Dt=${toolchain}" \
                 "-DFIRMWARE_TYPE=${firmware_type}" \
+                "-DPROFILE=${profile}" \
                 "${config_args[@]}" \
                 >"${log_file}" 2>&1; then
               echo "::error title=${name} policy::configuration was accepted"
@@ -150,16 +173,18 @@ jobs:
           }
 
           expect_rejected \
-            production-app demo armgcc app \
-            tests/config/production_app.conf \
-            "CONFIG_APP_WATCHDOG requires product provider"
+            cached-dma demo armgcc app \
+            tests/config/cached_dma.conf \
+            "Cached DMA requires product memory provider"
           expect_rejected \
             secure-link demo armgcc app tests/config/link_secure.conf \
             "CONFIG_LINK_SECURITY requires product provider"
           expect_rejected \
             production-boot demo armgcc loader \
-            tests/config/production_boot.conf \
-            "Production boot requires product security provider"
+            "" "Production boot requires product security provider" release
+          expect_rejected \
+            production-preloader demo armgcc preloader \
+            "" "Production preloader requires product root-of-trust provider" release
           expect_rejected \
             goodix-toolchain demo_ble armgcc app "" \
             "GR5525 requires Arm GNU Toolchain 9.3.1"
@@ -184,7 +209,7 @@ jobs:
           cmake --build out/demo-ble-minimal --parallel
           cmake -S . -B out/demo-ble-production -G Ninja \
             -Dp=demo_ble -Dt=armgcc9 \
-            -DEXTRA_CONF_FILE=app/product/demo_ble/release.conf
+            -DPROFILE=release
           cmake --build out/demo-ble-production --parallel
 
       - name: Build RT-Thread application
@@ -194,9 +219,21 @@ jobs:
             -DEXTRA_CONF_FILE=tests/config/rtthread.conf
           cmake --build out/demo-rtthread --parallel
 
+      - name: Build architecture and OSAL contract matrix
+        run: |
+          python tools/sdk.py test --suite firmware -B out/architecture-matrix
+          python tools/scripts/check_rtos_ports.py \
+            --compiler "${ARMGCC9_TOOLCHAIN_PATH}/bin/arm-none-eabi-gcc" \
+            --build out/port-contracts
+          cmake -S tests/fixtures/external_app -B out/external-app -G Ninja \
+            "-DSDK_ROOT=${PWD}"
+          cmake -S tests/fixtures/external_app -B out/external-app -G Ninja \
+            "-DSDK_ROOT=${PWD}"
+          cmake --build out/external-app --parallel
+
       - name: Build boot-chain firmware matrix
         run: |
-          for product in demo demo_ble; do
+          for product in demo demo_ble gimbal; do
             toolchain=armgcc
             if [[ "${product}" == "demo_ble" ]]; then
               toolchain=armgcc9
@@ -259,11 +296,16 @@ jobs:
             out/demo-rtthread/demo.*
             out/demo-*/demo_*.*
             out/demo_ble-*/demo_ble_*.*
+            out/gimbal-*/gimbal_*.*
             out/demo-app.img
             out/demo-ble-app.img
             out/demo-ble-production/demo_ble.*
             out/demo_3in1.bin
             out/demo_ble_3in1.bin
             out/factory-images.sha256
+            out/architecture-matrix/*/*.manifest.json
+            out/architecture-matrix/*/*.resources.json
+            out/architecture-matrix/*/*.architecture.md
+            out/architecture-matrix/*/*.devices.dot
           if-no-files-found: error
           retention-days: 14

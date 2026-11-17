@@ -17,9 +17,9 @@ public:
 
     int send(const uint8_t *data, size_t len) override {
         size_t sent = 0;
-        (void)uart_.send(data, len, &sent,
+        const auto status = uart_.send(data, len, &sent,
                          CONFIG_LINK_UART_TX_TIMEOUT_MS);
-        return static_cast<int>(sent);
+        return status == hal::Status::Ok && sent == len ? static_cast<int>(len) : -1;
     }
 
     int recv(uint8_t *buf, size_t max_len) override {

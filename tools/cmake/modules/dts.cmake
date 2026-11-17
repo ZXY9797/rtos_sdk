@@ -29,12 +29,13 @@ set(GEN_DRIVER_KCONFIG_SCRIPT   ${DT_SCRIPTS}/gen_driver_kconfig_dts.py)
 # Generated Kconfig symbols go here.
 set(DTS_KCONFIG                 ${KCONFIG_BINARY_DIR}/Kconfig.dts)
 
-set(DTS_SOURCE                  ${PROJECT_CONFIG_DIR}/board.dts)
+set(DTS_SOURCE                  ${SDK_BOARD_DTS})
 
 set(VENDOR_PREFIXES             dts/bindings/vendor-prefixes.txt)
 
 set(dts_files
   ${DTS_SOURCE}
+  ${SDK_IMAGE_OVERLAYS}
   ${BOOT_PARTITIONS_DTS}
   # ${board_extension_dts_files}
   # ${shield_dts_files}
@@ -63,7 +64,7 @@ zephyr_dt_preprocess(
   DEPS_FILE ${DTS_DEPS}
   EXTRA_CPPFLAGS ${DTS_EXTRA_CPPFLAGS}
   INCLUDE_DIRECTORIES ${DTS_ROOT_SYSTEM_INCLUDE_DIRS}
-  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+  WORKING_DIRECTORY ${TOP_DIR}
   )
 
 toolchain_parse_make_rule(${DTS_DEPS}
@@ -142,6 +143,14 @@ file(REMOVE ${FIRMWARE_DTS}.new ${EDT_PICKLE}.new)
 message(STATUS "Generated firmware.dts: ${FIRMWARE_DTS}")
 message(STATUS "Generated pickled edt: ${EDT_PICKLE}")
 
+set(CHECK_DTS_LAYOUT_SCRIPT "${TOOLS_DIR}/scripts/check_dts_layout.py")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CHECK_DTS_LAYOUT_SCRIPT})
+execute_process(
+  COMMAND ${PYTHON_EXECUTABLE} ${CHECK_DTS_LAYOUT_SCRIPT}
+          --edt-pickle ${EDT_PICKLE} --layout ${BOOT_LAYOUT_MANIFEST}
+          --firmware ${FIRMWARE_TYPE}
+  COMMAND_ERROR_IS_FATAL ANY)
+
 #
 # Run GEN_DEFINES_SCRIPT.
 #
@@ -178,6 +187,10 @@ set(DRIVERS_GENERATED_CC ${BINARY_DIR_INCLUDE_GENERATED}/drivers_generated.cc)
 set(PINCTRL_GENERATED_CC ${BINARY_DIR_INCLUDE_GENERATED}/pinctrl_generated.cc)
 set(DEVICES_REPORT_JSON ${BINARY_DIR_INCLUDE_GENERATED}/devices.json)
 set(DTS_BINDINGS_DIR ${TOP_DIR}/embedded/dts/bindings)
+set(CXX_BINDING_ARGS)
+foreach(_bindings IN LISTS DTS_ROOT_BINDINGS)
+  list(APPEND CXX_BINDING_ARGS --bindings-dir "${_bindings}")
+endforeach()
 set(DEVICE_CODEGEN_STAMP
     ${BINARY_DIR_INCLUDE_GENERATED}/device_codegen.stamp)
 set(PINCTRL_CODEGEN_STAMP
@@ -196,7 +209,7 @@ add_custom_command(
     ${DEVICES_REPORT_JSON}
   COMMAND ${PYTHON_EXECUTABLE} ${GEN_DEVICE_TRAITS_SCRIPT}
     --edt-pickle ${EDT_PICKLE}
-    --bindings-dir ${DTS_BINDINGS_DIR}
+    ${CXX_BINDING_ARGS}
     --header-out ${DRIVERS_GENERATED_H}
     --source-out ${DRIVERS_GENERATED_CC}
     --report-out ${DEVICES_REPORT_JSON}
@@ -207,6 +220,7 @@ add_custom_command(
     ${DEVICE_BINDINGS_SCRIPT}
     ${DEVICE_CODEGEN_COMMON}
     ${CXX_DRIVER_BINDINGS}
+    ${DTS_BINDING_FILES}
   WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
   COMMENT "Generating DeviceTrait sources from EDT"
   VERBATIM

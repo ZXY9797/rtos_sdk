@@ -4,11 +4,13 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 from pathlib import Path
 import subprocess
 import sys
 
-from boot_layout import canonical_layout_names
+from boot_layout import canonical_layout_names, load_layout
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -40,6 +42,7 @@ def cmake_configure(
     firmware_type: str,
     toolchain_path: Path | None,
     extra_conf_file: Path | None = None,
+    profile: str = "default",
 ) -> None:
     cmd = [
         "cmake",
@@ -52,8 +55,16 @@ def cmake_configure(
         "-UCMAKE_EXE_LINKER_FLAGS",
         "-UBOOT_LAYOUT",
         "-UCONFIG_DIR",
+        "-UAPPLICATION",
+        "-UBOARD",
+        "-UBOARD_ROOT",
+        "-UCONF_FILE",
+        "-UDTC_OVERLAY_FILE",
+        "-UMODULE_ROOTS",
         f"-Dp={product}",
         f"-DFIRMWARE_TYPE={firmware_type}",
+        f"-DPROFILE={profile}",
+        "-UEXTRA_CONF_FILE",
         ("-DPython3_EXECUTABLE="
          f"{Path(sys.executable).absolute().as_posix()}"),
     ]
@@ -80,10 +91,11 @@ def build_firmware(
     firmware_type: str,
     toolchain_path: Path | None,
     extra_conf_file: Path | None = None,
+    profile: str = "default",
 ) -> Path:
     build_dir = out_root / firmware_type
     cmake_configure(
-        build_dir, product, firmware_type, toolchain_path, extra_conf_file)
+        build_dir, product, firmware_type, toolchain_path, extra_conf_file, profile)
     ninja_build(build_dir)
     return build_dir / f"{firmware_output_name(product, firmware_type)}.bin"
 
@@ -121,9 +133,37 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--production",
         action="store_true",
-        help="enable fail-closed production policy for the loader",
+        help="require production boot policy and the application release profile",
     )
     return parser.parse_args()
+
+
+def verify_production_configs(out_root: Path) -> None:
+    required = {"preloader": "CONFIG_BOOT_PRODUCTION=y", "loader": "CONFIG_BOOT_PRODUCTION=y",
+                "app": "CONFIG_APP_PRODUCTION=y"}
+    for image, policy in required.items():
+        config = (out_root / image / ".config").read_text(encoding="utf-8")
+        if policy not in config.splitlines():
+            raise SystemExit(f"error: {image} final configuration lacks {policy}")
+    app_config = (out_root / "app/.config").read_text(encoding="utf-8")
+    if "CONFIG_APP_WATCHDOG=y" not in app_config.splitlines():
+        raise SystemExit("error: production application lacks watchdog")
+
+
+def verify_image_set(out_root: Path, product: str) -> None:
+    layout = load_layout(product)
+    expected_layout = hashlib.sha256(layout['path'].read_bytes()).hexdigest()
+    board = None
+    for image in ('preloader', 'loader', 'app'):
+        info = json.loads((out_root / image / 'build-info.json').read_text(encoding='utf-8'))
+        if info.get('product') != product or info.get('firmware') != image:
+            raise SystemExit(f'error: {image} build identity differs from the requested product/image')
+        if info.get('inputs', {}).get('layout') != expected_layout:
+            raise SystemExit(f'error: {image} does not use the canonical product layout')
+        selected_board = info.get('board')
+        if not selected_board or (board is not None and selected_board != board):
+            raise SystemExit(f'error: {image} board differs from the rest of the image set')
+        board = selected_board
 
 
 def main() -> None:
@@ -148,26 +188,25 @@ def main() -> None:
     out_root = (args.out or ROOT / "out" / f"{args.project}_3in1").resolve()
     out_root.mkdir(parents=True, exist_ok=True)
 
-    production_conf = None
-    if args.production:
-        production_conf = out_root / "production.conf"
-        production_conf.write_text("CONFIG_BOOT_PRODUCTION=y\n", encoding="utf-8")
-
     preloader_bin = build_firmware(
         out_root,
         args.project,
         "preloader",
         toolchain_path,
-        production_conf,
+        profile="release" if args.production else "default",
     )
     loader_bin = build_firmware(
         out_root,
         args.project,
         "loader",
         toolchain_path,
-        production_conf,
+        profile="release" if args.production else "default",
     )
-    app_bin = build_firmware(out_root, args.project, "app", toolchain_path)
+    app_bin = build_firmware(out_root, args.project, "app", toolchain_path,
+                             profile="release" if args.production else "default")
+    verify_image_set(out_root, args.project)
+    if args.production:
+        verify_production_configs(out_root)
     app_image = out_root / f"{args.project}_app.img"
     pack_cmd = [
         sys.executable,

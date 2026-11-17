@@ -1,0 +1,111 @@
+{
+  "schema": "rtos-sdk.dependencies.v1",
+  "normalization": "UTF-8 path order; CRLF normalized for non-binary files",
+  "dependencies": [
+    {
+      "name": "FreeRTOS-Kernel",
+      "path": "embedded/osal/rtos/freertos",
+      "version": "11.3.0",
+      "upstream": "https://github.com/FreeRTOS/FreeRTOS-Kernel",
+      "upstream_revision": "9b777ae5c5b8e9e456065a00294d1e5f5f9facf5",
+      "revision_status": "verified clean nested vendor checkout; original package restored from verified backups",
+      "content_sha256": "298a35e59272cefe442699b829a5ee653d377d443f8c4d874c9c1af3629cf878"
+    },
+    {
+      "name": "RT-Thread",
+      "path": "embedded/osal/rtos/rt-thread",
+      "version": "4.1.1",
+      "upstream": "https://github.com/RT-Thread/rt-thread",
+      "upstream_revision": null,
+      "revision_status": "not recorded in original vendor import",
+      "content_sha256": "96a9dd3957a44f4bb4f109c57aa27390100d5658866b101252e80d3107c2b94b"
+    },
+    {
+      "name": "CMSIS",
+      "path": "embedded/modules/cmsis/CMSIS",
+      "version": null,
+      "upstream": "https://github.com/ARM-software/CMSIS_6",
+      "upstream_revision": null,
+      "revision_status": "not recorded in original vendor import",
+      "content_sha256": "70b44f9969ef7f4218a48513aed8e529e553ee034e172ea3eabfa1ab128c99a8"
+    },
+    {
+      "name": "python-devicetree",
+      "path": "tools/scripts/dts/python-devicetree",
+      "version": null,
+      "upstream": "https://github.com/zephyrproject-rtos/zephyr",
+      "upstream_revision": null,
+      "revision_status": "not recorded in original vendor import",
+      "content_sha256": "41a195491e586500794df9092c63bfa7659c9d49e79e7eb7c1d62561ee1abd20"
+    },
+    {
+      "name": "Kconfiglib",
+      "path": "tools/scripts/kconfig",
+      "version": null,
+      "upstream": "https://github.com/ulfalizer/Kconfiglib",
+      "upstream_revision": null,
+      "revision_status": "not recorded in original vendor import",
+      "content_sha256": "4582fe7455a1eff1f8a4d1d730251a5c6934f19dfc92b792700cd806333cb040"
+    },
+    {
+      "name": "GD32 backend sources",
+      "path": "embedded/soc/gd/gd32f50x",
+      "version": null,
+      "upstream": "https://www.gigadevice.com/",
+      "upstream_revision": null,
+      "revision_status": "not recorded in original vendor import",
+      "content_sha256": "ddf84cb116aaff12bed4afbf41e2ec95513a9d31e8639b25078d9dfac4a7e243"
+    },
+    {
+      "name": "STM32Cube",
+      "path": "embedded/soc/st/stm32cube",
+      "version": null,
+      "upstream": "https://github.com/STMicroelectronics",
+      "upstream_revision": null,
+      "revision_status": "not recorded in original vendor import",
+      "content_sha256": "cd716dad4e634395e0ecdd360238f90c920230ddf8b906db196f5cd1f034b527"
+    },
+    {
+      "name": "Goodix backend sources",
+      "path": "embedded/soc/goodix/gr5525x",
+      "version": null,
+      "upstream": "https://www.goodix.com/",
+      "upstream_revision": null,
+      "revision_status": "not recorded in original vendor import",
+      "content_sha256": "8ebec82e0628b8d251275102306eb268edcc3840a84bd124f324deaac72eeb10"
+    },
+    {
+      "name": "Goodix BLE libraries",
+      "path": "component/ble/goodix/libraries",
+      "version": null,
+      "upstream": "https://github.com/goodix-ble/GR5525.SDK",
+      "upstream_revision": null,
+      "revision_status": "not recorded in original vendor import",
+      "content_sha256": "9f718cc4afb55113e2affa6a56a3934c95b2bb52358c9d5c20f01a37746a4667"
+    },
+    {
+      "name": "Goodix BLE profiles",
+      "path": "component/ble/goodix/profiles",
+      "version": null,
+      "upstream": "https://github.com/goodix-ble/GR5525.SDK",
+      "upstream_revision": null,
+      "revision_status": "not recorded in original vendor import",
+      "content_sha256": "d5a121dc9b0a1dc42432f42f9eea17c074dffb39f2dfd5872f22cea7bf238ef8"
+    }
+  ],
+  "adaptation_boundaries": [
+    "embedded/osal/freertos",
+    "embedded/osal/rt-thread",
+    "tools/cmake/modules/upstream-helpers.json"
+  ],
+  "toolchain": {
+    "name": "xPack ARM GCC",
+    "version": "9.3.1-1.4",
+    "linux_archive_sha256": "720dd38a6abadc0286f2b3c8dbc7239c7dbfdd64bc052345d149657e5478b914"
+  },
+  "source_policy_sha256": "44e6f497e3362aa3ae7464d3fcffd5878535beca8c2fe65488cb6f2d12b7083b",
+  "python_requirements": {
+    "path": "tools/requirements-ci.txt",
+    "sha256": "d89f975827508c48a968e048ae029ac93aa4c80958d5e67d6415aa9f7f05b7ee"
+  }
+}

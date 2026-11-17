@@ -1,4 +1,4 @@
-add_library(safety_supervisor STATIC)
+sdk_add_library(safety_supervisor STATIC)
 
 target_sources(safety_supervisor PRIVATE src/safety_manager.cc)
 target_include_directories(safety_supervisor

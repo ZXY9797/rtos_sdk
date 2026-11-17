@@ -2,6 +2,7 @@
 
 #include "link.h"
 #include "fragment.h"
+#include "frame_tx_queue.h"
 #include <drivers/can.h>
 #include <cstring>
 
@@ -29,11 +30,18 @@ public:
     }
 
     int send(const uint8_t *data, size_t len) override {
-        return Fragmenter::send<7U>(data, len, frag_payload_,
-            [this](const uint8_t *buf, size_t n) -> bool {
-                return can_.send(can_id_, buf, static_cast<uint8_t>(n), 0)
-                       == hal::Status::Ok;
-            });
+        osal::LockGuard lock(tx_mutex_, 0U);
+        if (!lock.owns_lock()) return -2;
+        if (!is_ready() || data == nullptr || len == 0U
+            || len > Reassembler::MAX_FRAME || len > 128U * frag_payload_) return -1;
+        return tx_.enqueue(data, len, frag_payload_) ? static_cast<int>(len) : -2;
+    }
+
+    void reset_session() override {
+        osal::LockGuard lock(tx_mutex_);
+        if (!lock.owns_lock()) return;
+        tx_.reset();
+        reasm_.reset();
     }
 
     int recv(uint8_t *buf, size_t max_len) override {
@@ -54,9 +62,32 @@ private:
     size_t frag_payload_;
     bool valid_ {false};
     Reassembler reasm_;
+    osal::Mutex tx_mutex_;
+#if defined(CONFIG_LINK_CAN_TX_DEPTH)
+    FrameTxQueue<Reassembler::MAX_FRAME, CONFIG_LINK_CAN_TX_DEPTH> tx_;
+#else
+    FrameTxQueue<Reassembler::MAX_FRAME, 2U> tx_;
+#endif
 
     static void poll_impl(void *arg) {
         auto *self = static_cast<CanLink *>(arg);
+        {
+            osal::LockGuard lock(self->tx_mutex_, 0U);
+            if (lock.owns_lock()) {
+                if (!self->is_ready()) {
+                    if (self->tx_.pending() > 0U) self->tx_.reset();
+                    self->reasm_.reset();
+                    return;
+                }
+                self->tx_.process([self](const uint8_t* data, size_t size) {
+                    const auto status = self->can_.send(
+                        self->can_id_, data, static_cast<uint8_t>(size), 0U);
+                    return status == hal::Status::Ok ? FragmentSendResult::Sent
+                        : status == hal::Status::Busy ? FragmentSendResult::Busy
+                        : FragmentSendResult::Failed;
+                });
+            }
+        }
         uint32_t id;
         bool is_extended = false;
         uint8_t data[64], len;

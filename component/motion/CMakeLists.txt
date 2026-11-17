@@ -1,4 +1,4 @@
-add_library(motion STATIC)
+sdk_add_library(motion STATIC)
 
 target_sources(motion
     PRIVATE

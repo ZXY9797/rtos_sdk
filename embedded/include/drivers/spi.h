@@ -2,6 +2,7 @@
 
 #include <device.h>
 #include <drivers/dma.h>
+#include <drivers/dma_memory.h>
 #include <drivers/status.h>
 #include <osal.h>
 
@@ -35,6 +36,8 @@ class SpiBase : public DeviceBase {
 public:
     using ChipSelectFn = void (*)(void* arg, bool active);
     using AsyncCallback = void (*)(void* arg, Status status);
+
+    ~SpiBase() { (void)end_async(); }
 
     struct ChipSelect {
         ChipSelectFn function {nullptr};
@@ -144,6 +147,7 @@ protected:
     void* m_async_argument {nullptr};
     ChipSelectFn m_async_chip_select {nullptr};
     void* m_async_chip_select_arg {nullptr};
+    DmaBufferLease m_async_memory;
     uint8_t m_async_dummy_tx {0xFFU};
     uint8_t m_async_dummy_rx {0U};
     uint8_t m_sync_dummy_tx {0xFFU};

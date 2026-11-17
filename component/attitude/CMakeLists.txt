@@ -1,4 +1,4 @@
-add_library(attitude_estimator STATIC)
+sdk_add_library(attitude_estimator STATIC)
 
 target_sources(attitude_estimator PRIVATE src/attitude_ekf.cc)
 target_include_directories(attitude_estimator

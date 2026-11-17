@@ -1,3 +1,4 @@
+#include <drivers/dma_memory.h>
 #include <drivers/spi.h>
 #include <drivers/dma.h>
 #include <assert.h>
@@ -230,11 +231,18 @@ Status SpiBase::transfer(const uint8_t *tx, uint8_t *rx, size_t len,
                       m_dma_tx.channel, m_dma_tx.mux_channel);
     DmaChannel rx_dma(static_cast<uint32_t>(m_dma_rx.controller),
                       m_dma_rx.channel, m_dma_rx.mux_channel);
+    DmaBufferLease memory;
+    Status dma_status = memory.prepare(tx != nullptr ? tx : &m_sync_dummy_tx,
+        tx != nullptr ? len : 1U, rx != nullptr ? rx : &m_sync_dummy_rx,
+        rx != nullptr ? len : 1U);
+    if (dma_status != Status::Ok) return dma_status;
     tx_dma.clear_flags();
     rx_dma.clear_flags();
-    Status dma_status = configure_sync_dma(
+    dma_status = configure_sync_dma(
         tx, rx, len, tx_dma, rx_dma);
     if (dma_status != Status::Ok) {
+        (void)tx_dma.stop();
+        (void)rx_dma.stop();
         m_stats.error_count++;
         return dma_status;
     }
@@ -242,13 +250,23 @@ Status SpiBase::transfer(const uint8_t *tx, uint8_t *rx, size_t len,
         chip_select.function, chip_select.argument);
     dma_status = tx_dma.start();
     if (dma_status != Status::Ok) {
+        (void)tx_dma.stop();
         (void)rx_dma.stop();
         m_stats.error_count++;
         return dma_status;
     }
     dma_status = wait_sync_dma(tx_dma, rx_dma, deadline);
+    (void)tx_dma.stop();
+    (void)rx_dma.stop();
+    tx_dma.clear_flags();
+    rx_dma.clear_flags();
+    const Status memory_status = memory.finish();
     if (dma_status != Status::Ok) {
         return dma_status;
+    }
+    if (memory_status != Status::Ok) {
+        ++m_stats.error_count;
+        return Status::HardwareError;
     }
     m_stats.xfer_count++;
     m_stats.xfer_bytes += len;
@@ -279,6 +297,8 @@ Status SpiBase::transfer_async(
     const uint8_t *tx, uint8_t *rx, size_t len,
     ChipSelect chip_select)
 {
+    // Arming and cancellation are one transaction relative to DMA interrupts.
+    hal::IrqGuard guard;
     if (!is_initialized() || !m_async_reserved.load(
             std::memory_order_acquire)
         || chip_select.function == nullptr
@@ -298,6 +318,12 @@ Status SpiBase::transfer_async(
     auto *regs = reinterpret_cast<gd32::SpiRegs *>(m_base);
     const uint8_t *tx_buffer = tx != nullptr ? tx : &m_async_dummy_tx;
     uint8_t *rx_buffer = rx != nullptr ? rx : &m_async_dummy_rx;
+    const Status prepare_status = m_async_memory.prepare(tx_buffer,
+        tx != nullptr ? len : 1U, rx_buffer, rx != nullptr ? len : 1U);
+    if (prepare_status != Status::Ok) {
+        m_async_active.store(false, std::memory_order_release);
+        return prepare_status;
+    }
     const DmaConfig rx_config = {
         .request_id = m_dma_rx.request_id,
         .periph_addr = reinterpret_cast<uint32_t>(&regs->DATA),
@@ -327,13 +353,18 @@ Status SpiBase::transfer_async(
     if (m_async_rx_channel.config(rx_config) != Status::Ok
         || m_async_tx_channel.config(tx_config) != Status::Ok
         || m_async_rx_channel.start() != Status::Ok) {
+        (void)m_async_tx_channel.stop();
+        (void)m_async_rx_channel.stop();
+        (void)m_async_memory.finish();
         m_async_active.store(false, std::memory_order_release);
         return Status::HardwareError;
     }
     chip_select.function(chip_select.argument, true);
     if (m_async_tx_channel.start() != Status::Ok) {
         chip_select.function(chip_select.argument, false);
+        (void)m_async_tx_channel.stop();
         (void)m_async_rx_channel.stop();
+        (void)m_async_memory.finish();
         m_async_active.store(false, std::memory_order_release);
         return Status::HardwareError;
     }
@@ -348,20 +379,22 @@ Status SpiBase::end_async()
     hal::IrqGuard guard;
     (void)m_async_tx_channel.stop();
     (void)m_async_rx_channel.stop();
-    if (m_async_active.exchange(false, std::memory_order_acq_rel)
-        && m_async_chip_select != nullptr) {
+    const bool cancelled = m_async_active.exchange(false, std::memory_order_acq_rel);
+    if (cancelled && m_async_chip_select != nullptr) {
         m_async_chip_select(m_async_chip_select_arg, false);
     }
+    const Status memory_status = m_async_memory.finish();
     m_async_callback = nullptr;
     m_async_argument = nullptr;
     m_async_chip_select = nullptr;
     m_async_chip_select_arg = nullptr;
     m_async_reserved.store(false, std::memory_order_release);
-    return Status::Ok;
+    return memory_status;
 }
 
 void SpiBase::complete_async_from_isr(DmaCompletion completion)
 {
+    hal::IrqGuard guard;
     const uint8_t errors =
         m_dma_error_mask.load(std::memory_order_relaxed);
     if (errors == 0U && completion != DmaCompletion::Receive) {
@@ -375,10 +408,11 @@ void SpiBase::complete_async_from_isr(DmaCompletion completion)
     if (m_async_chip_select != nullptr) {
         m_async_chip_select(m_async_chip_select_arg, false);
     }
+    const Status memory_status = m_async_memory.finish();
     if (m_async_callback != nullptr) {
         m_async_callback(
             m_async_argument,
-            errors == 0U ? Status::Ok : Status::HardwareError);
+            errors == 0U && memory_status == Status::Ok ? Status::Ok : Status::HardwareError);
     }
 }
 

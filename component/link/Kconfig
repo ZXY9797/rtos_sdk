@@ -188,3 +188,14 @@ config LINK_DIAGNOSTICS_REQUIRE_SECURE
 	  Prevents unauthenticated peers from learning topology and fault counters.
 
 endif
+
+config LINK_CAN_TX_DEPTH
+    int "Whole CAN frames queued per transport"
+    default 2
+    range 1 8
+    depends on LINK && CAN
+
+config LINK_SYSTEM_DIAGNOSTICS
+    bool "Expose system diagnostic snapshots over Link"
+    default y
+    depends on LINK && LINK_MAX_FRAME_SIZE >= 114

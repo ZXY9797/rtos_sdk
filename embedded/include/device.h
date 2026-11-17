@@ -167,7 +167,21 @@ struct DeviceInfo {
     int (*resume)(void *inst);
     uint16_t init_priority;
     bool supports_power_management;
+    uint32_t stable_id {0U};
+    uint32_t capabilities {0U};
 };
+
+enum class DeviceCapability : uint32_t {
+    Read = 1U, Write = 2U, AsyncTransfer = 4U, Cancel = 8U,
+    Dma = 16U, PowerManagement = 32U,
+};
+
+template <int Ord>
+struct DeviceMetadata;
+
+template <int Ord, DeviceCapability Capability>
+inline constexpr bool device_supports =
+    (DeviceMetadata<Ord>::capabilities & static_cast<uint32_t>(Capability)) != 0U;
 
 /**
  * @brief 获取设备注册表

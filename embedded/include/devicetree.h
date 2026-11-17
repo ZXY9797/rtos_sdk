@@ -5438,8 +5438,5 @@
 #include <devicetree/pinctrl.h>
 #include <devicetree/can.h>
 #include <devicetree/reset.h>
-#include <devicetree/mbox.h>
-#include <devicetree/port-endpoint.h>
-#include <devicetree/display.h>
 
 #endif /* ZEPHYR_INCLUDE_DEVICETREE_H_ */

@@ -5,6 +5,7 @@ compatible: "gd,gd32-usart"
 include: [uart-controller.yaml, base.yaml, pinctrl-device.yaml]
 
 cxx-driver:
+  capabilities: [read, write, dma]
   adapter:
     header: device_adapters/uart_dt.h
     macro: HAL_GD32_UART_DT_ADAPT

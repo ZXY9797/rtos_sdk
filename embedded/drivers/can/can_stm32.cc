@@ -262,7 +262,7 @@ Status Can::stop()
 Status Can::send(uint32_t id, const uint8_t* data, uint8_t len,
                  uint32_t id_ext)
 {
-    osal::LockGuard lock(m_operation_mutex);
+    osal::LockGuard lock(m_operation_mutex, 0U);
     if (!lock.owns_lock()) {
         return Status::Busy;
     }

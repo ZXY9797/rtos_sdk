@@ -69,13 +69,8 @@ foreach(kconfig_target
     )
 endforeach()
 
-# Bring in extra configuration files dropped in by the user or anyone else;
-# make sure they are set at the end so we can override any other setting
-file(GLOB config_files CONFIGURE_DEPENDS ${PROJECT_CONFIG_DIR}/*.conf)
-list(SORT config_files)
-if(DEFINED EXTRA_CONF_FILE)
-  list(APPEND config_files ${EXTRA_CONF_FILE})
-endif()
+# Selected once for the current image, including its product-local profile.
+set(config_files ${SDK_IMAGE_CONFIG_FILES})
 
 # Track the complete first-party Kconfig file set, not only the files parsed
 # during the previous configure. This makes adding/removing a Kconfig file
@@ -88,42 +83,17 @@ file(GLOB_RECURSE kconfig_source_candidates CONFIGURE_DEPENDS
   ${PROJECT_DIR}/Kconfig*
 )
 list(APPEND kconfig_source_candidates ${KCONFIG_ROOT})
+get_property(_module_directories GLOBAL PROPERTY SDK_MODULE_DIRECTORIES)
+foreach(_module IN LISTS _module_directories)
+  file(GLOB_RECURSE _module_kconfig CONFIGURE_DEPENDS "${_module}/Kconfig*")
+  list(APPEND kconfig_source_candidates ${_module_kconfig})
+endforeach()
 list(REMOVE_DUPLICATES kconfig_source_candidates)
 list(SORT kconfig_source_candidates)
 set(
   merge_config_files
   ${config_files}
 )
-
-# Create a list of absolute paths to the .config sources from
-# merge_config_files, which is a mix of absolute and relative paths.
-set(merge_config_files_with_absolute_paths "")
-foreach(f ${merge_config_files})
-  if(IS_ABSOLUTE "${f}")
-    set(path "${f}")
-  else()
-    set(top_path "${TOP_DIR}/${f}")
-    set(product_path "${APPLICATION_CONFIG_DIR}/${f}")
-    if(EXISTS "${top_path}")
-      # Prefer repository-relative fragments for reproducible CI commands.
-      set(path "${top_path}")
-    elseif(EXISTS "${product_path}")
-      # Preserve compatibility with product-config-relative fragments.
-      set(path "${product_path}")
-    else()
-      set(path "${top_path}")
-    endif()
-  endif()
-
-  list(APPEND merge_config_files_with_absolute_paths "${path}")
-endforeach()
-set(merge_config_files ${merge_config_files_with_absolute_paths})
-
-foreach(f ${merge_config_files})
-  if(NOT EXISTS "${f}" OR IS_DIRECTORY "${f}")
-    message(FATAL_ERROR "File not found: ${f}")
-  endif()
-endforeach()
 
 # Calculate a checksum of merge_config_files to determine if we need
 # to re-generate .config

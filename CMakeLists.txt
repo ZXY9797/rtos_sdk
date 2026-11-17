@@ -1,7 +1,11 @@
 cmake_minimum_required(VERSION 3.20)
+set(SDK_ROOT "${CMAKE_CURRENT_LIST_DIR}")
 
 if(NOT DEFINED p)
     message(FATAL_ERROR "You must define product. Example: -Dp=demo")
+endif()
+if(NOT p MATCHES "^[A-Za-z][A-Za-z0-9_-]*$")
+    message(FATAL_ERROR "Product name must be an identifier: ${p}")
 endif()
 
 if(DEFINED t)
@@ -39,15 +43,21 @@ message(STATUS "Firmware type: ${FIRMWARE_TYPE}")
 message(STATUS "Firmware output: ${FIRMWARE_OUTPUT_NAME}")
 
 include(${CMAKE_CURRENT_LIST_DIR}/tools/cmake/env.cmake)
+include(sdk_component)
+sdk_load_modules()
 include(${CMAKE_CURRENT_LIST_DIR}/tools/cmake/modules/boot_layout.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/tools/cmake/modules/dts.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/tools/cmake/modules/kconfig.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/tools/cmake/toolchain/compiler.cmake)
 
+# Pure runtime contracts are also consumed by the platform implementation.
+add_subdirectory(component/runtime)
 add_subdirectory(embedded)
 add_subdirectory(component)
 add_subdirectory(bootloader/common)
-add_subdirectory(${PROJECT_DIR})
+sdk_build_modules()
+add_subdirectory(${PROJECT_DIR} ${PROJECT_BINARY_DIR}/product)
+target_link_libraries(app PRIVATE embedded)
 
 if(TARGET device_codegen)
     add_dependencies(app device_codegen)
@@ -77,34 +87,7 @@ target_link_libraries(${PROJECT_NAME}
     app
 )
 
-# Apply the toolchain/config interface to each concrete build target. This
-# keeps generated headers and compiler policy target-scoped instead of leaking
-# directory-global include paths and flags into unrelated subdirectories.
-function(sdk_collect_build_targets directory output)
-    get_property(_targets DIRECTORY "${directory}" PROPERTY BUILDSYSTEM_TARGETS)
-    get_property(_subdirectories DIRECTORY "${directory}" PROPERTY SUBDIRECTORIES)
-    foreach(_subdirectory IN LISTS _subdirectories)
-        sdk_collect_build_targets("${_subdirectory}" _child_targets)
-        list(APPEND _targets ${_child_targets})
-    endforeach()
-    set(${output} "${_targets}" PARENT_SCOPE)
-endfunction()
-
-sdk_collect_build_targets("${CMAKE_SOURCE_DIR}" _sdk_targets)
-foreach(_target IN LISTS _sdk_targets)
-    if(_target STREQUAL sdk_build_config)
-        continue()
-    endif()
-    get_target_property(_imported ${_target} IMPORTED)
-    get_target_property(_type ${_target} TYPE)
-    if(_imported)
-        continue()
-    elseif(_type STREQUAL "INTERFACE_LIBRARY")
-        target_link_libraries(${_target} INTERFACE sdk_build_config)
-    elseif(_type MATCHES "^(EXECUTABLE|STATIC_LIBRARY|SHARED_LIBRARY|MODULE_LIBRARY|OBJECT_LIBRARY)$")
-        target_link_libraries(${_target} PRIVATE sdk_build_config)
-    endif()
-endforeach()
+sdk_attach_target(${PROJECT_NAME})
 
 set_source_files_properties(${NULL_C} OBJECT_DEPENDS ${LINKER_SCRIPT})
 
@@ -143,3 +126,5 @@ if(FIRMWARE_TYPE STREQUAL "loader")
       COMMENT "Checking loader binary against its physical partition"
     )
 endif()
+
+include(sdk_artifacts)

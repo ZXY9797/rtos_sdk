@@ -10,6 +10,10 @@
 #include <stdbool.h>
 #include <toolchain.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #ifdef CONFIG_ASSERT
 #ifndef __ASSERT_ON
 #ifdef CONFIG_ASSERT_LEVEL
@@ -134,6 +138,10 @@ void assert_post_action(const char *file, unsigned int line);
 #define __ASSERT_EVAL(expr1, expr2, test, fmt, ...) expr1
 #define __ASSERT_NO_MSG(test) { }
 #define __ASSERT_POST_ACTION() { }
+#endif
+
+#ifdef __cplusplus
+}
 #endif
 
 #endif /* ZEPHYR_INCLUDE_SYS___ASSERT_H_ */

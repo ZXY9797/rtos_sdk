@@ -1,4 +1,4 @@
-add_library(feedback_control STATIC)
+sdk_add_library(feedback_control STATIC)
 
 target_sources(feedback_control PRIVATE src/controller.cc)
 target_include_directories(feedback_control

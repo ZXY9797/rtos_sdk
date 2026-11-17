@@ -1,5 +1,7 @@
 # 构建系统与配置闭环
 
+板卡、App 和 Boot 的文件位置及加载规则见 [板卡与镜像配置](BOARD_CONFIGURATION.md)。
+
 ## 输入和生成顺序
 
 根入口由 `-Dp=<product>` 和 `-DFIRMWARE_TYPE=<type>` 选择产品与固件类型。支持
@@ -12,7 +14,7 @@ product layout.json
   -> boot_flash_map.cc
   -> boot partition DTS overlay
 
-board.dts + bindings
+board.dts + image overlay + explicit overlays + generated partitions + bindings
   -> EDT
   -> devicetree_generated.h
   -> generated device/pinctrl sources
@@ -142,7 +144,7 @@ security/watchdog provider 时配置按预期失败。RT-Thread 参考配置位�
 ```powershell
 $env:ARMGCC9_TOOLCHAIN_PATH='C:/arm-none-eabi-gcc-9.3.1-1.4'
 cmake -S . -B out/demo_ble_production -GNinja -Dp=demo_ble -Df=app `
-  '-DEXTRA_CONF_FILE=app/product/demo_ble/release.conf'
+  '-DPROFILE=release'
 cmake --build out/demo_ble_production --parallel
 ```
 
@@ -159,3 +161,5 @@ initcall。
 生产安全 provider 缺失时配置失败是预期行为，不得用弱默认实现绕过。构建、主机掉电
 模型和打包通过也不能代替真实目标板上的 Flash、时钟、IRQ、watchdog、断电、栈水位和
 handoff 验收。
+
+现代构建入口、外部应用/模块、profile 顺序与资源报告见 [MODERN_RTOS.md](MODERN_RTOS.md)。

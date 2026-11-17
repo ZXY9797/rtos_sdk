@@ -1,5 +1,5 @@
 set(MODULE_NAME ble_gr5525)
-add_library(${MODULE_NAME} STATIC)
+sdk_add_library(${MODULE_NAME} STATIC)
 
 # BLE SDK core
 target_sources(${MODULE_NAME}

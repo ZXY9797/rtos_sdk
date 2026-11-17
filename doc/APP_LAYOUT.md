@@ -61,9 +61,11 @@ app/product/demo_ble/
   common/
     app_watchdog.cc             demo_ble 的 GR5525 AON 硬件看门狗 provider
   config/
-    board.dts
+    app.overlay                 本镜像设备选择，公共硬件见 boards/gr5525_demo
     prj.conf
-  release.conf                  demo_ble 量产构建附加配置
+    profiles/
+      debug.conf
+      release.conf              PROFILE=release 显式选择
   CMakeLists.txt
   Kconfig
   linker.ld

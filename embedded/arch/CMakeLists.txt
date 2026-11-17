@@ -1,6 +1,6 @@
 set(MODULE_NAME arch)
 
-add_library(${MODULE_NAME} OBJECT)
+sdk_add_library(${MODULE_NAME} OBJECT)
 
 target_include_directories(${MODULE_NAME}
     PUBLIC

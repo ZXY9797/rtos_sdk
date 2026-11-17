@@ -1,0 +1,31 @@
+{
+  "upstream": "https://github.com/zephyrproject-rtos/zephyr",
+  "original_revision": "not recorded by original import",
+  "license": "Apache-2.0",
+  "original_sha256": "99e9c639ad359d223f5e7e9d4034a5fe53d397aca44eff2977cc46c06032f961",
+  "original_lines": 6160,
+  "retained_lines": 431,
+  "retained_helpers": [
+    "add_custom_target",
+    "add_subdirectory_ifdef",
+    "dt_alias",
+    "dt_arch_type",
+    "dt_get_soc_name",
+    "dt_nodelabel",
+    "dt_path_internal",
+    "dt_path_internal_exists",
+    "dt_prop",
+    "dt_target_internal",
+    "import_kconfig",
+    "set_ifndef",
+    "set_target_properties",
+    "target_include_directories_ifdef",
+    "target_link_libraries_ifdef",
+    "target_sources_ifdef",
+    "toolchain_parse_make_rule",
+    "zephyr_check_arguments_required_all",
+    "zephyr_dt_import",
+    "zephyr_dt_preprocess",
+    "zephyr_file_copy"
+  ]
+}

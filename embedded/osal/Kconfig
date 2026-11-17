@@ -48,6 +48,12 @@ config OSAL_HAS_EVENT_GROUPS
     default n if RTOS_BAREMETAL
     default y
 
+config OSAL_EVENT_MAX_WAITERS
+    int "Maximum simultaneous waiters per event group"
+    default 8
+    range 1 32
+    depends on OSAL_HAS_EVENT_GROUPS
+
 config OSAL_HAS_SOFT_TIMERS
     bool
     default n if RTOS_BAREMETAL

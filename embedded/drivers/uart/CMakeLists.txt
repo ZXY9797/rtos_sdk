@@ -1,5 +1,5 @@
 set(MODULE_NAME uart)
-add_library(${MODULE_NAME} STATIC)
+sdk_add_library(${MODULE_NAME} STATIC)
 
 target_sources_ifdef(CONFIG_UART_STM32 ${MODULE_NAME} PRIVATE uart_stm32.cc)
 target_sources_ifdef(CONFIG_UART_GD32 ${MODULE_NAME} PRIVATE uart_gd32.cc)

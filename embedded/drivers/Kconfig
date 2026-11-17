@@ -11,7 +11,6 @@ config STM32_DIRECT_REGISTER_DRIVERS
 	  should leave this disabled until those contracts are supplied.
 
 # zephyr-keep-sorted-start
-source "embedded/drivers/cache/Kconfig"
 source "embedded/drivers/can/Kconfig"
 source "embedded/drivers/clock_control/Kconfig"
 source "embedded/drivers/dma/Kconfig"

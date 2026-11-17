@@ -1,5 +1,5 @@
 set(MODULE_NAME link)
-add_library(${MODULE_NAME} STATIC)
+sdk_add_library(${MODULE_NAME} STATIC)
 
 target_sources(${MODULE_NAME}
     PRIVATE
@@ -9,6 +9,10 @@ target_sources(${MODULE_NAME}
         src/diagnostics.cc
         src/router.cc
 )
+target_sources_ifdef(CONFIG_LINK_SYSTEM_DIAGNOSTICS ${MODULE_NAME}
+    PRIVATE src/system_diagnostics.cc)
+target_link_libraries_ifdef(CONFIG_LINK_SYSTEM_DIAGNOSTICS ${MODULE_NAME}
+    PRIVATE runtime)
 
 target_include_directories(${MODULE_NAME}
     PUBLIC

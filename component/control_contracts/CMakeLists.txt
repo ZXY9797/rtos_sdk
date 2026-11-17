@@ -1,4 +1,4 @@
-add_library(control_contracts INTERFACE)
+sdk_add_library(control_contracts INTERFACE)
 
 target_include_directories(control_contracts
     INTERFACE

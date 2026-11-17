@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 set(MODULE_NAME app)
-add_library(${MODULE_NAME} ${NULL_C})
+sdk_add_library(${MODULE_NAME} ${NULL_C})
 
 set(UPGRADE_INCLUDE_DIR ${CMAKE_CURRENT_LIST_DIR}/include)
 
@@ -16,7 +16,7 @@ if(NOT DEFINED LOADER_PAYLOAD_FILE)
         "Upgrade firmware requires -DLOADER_PAYLOAD_FILE=<built loader.bin>")
 endif()
 get_filename_component(LOADER_PAYLOAD_FILE "${LOADER_PAYLOAD_FILE}"
-    ABSOLUTE BASE_DIR "${CMAKE_SOURCE_DIR}")
+    ABSOLUTE BASE_DIR "${TOP_DIR}")
 if(NOT EXISTS "${LOADER_PAYLOAD_FILE}")
     message(FATAL_ERROR "Loader payload not found: ${LOADER_PAYLOAD_FILE}")
 endif()

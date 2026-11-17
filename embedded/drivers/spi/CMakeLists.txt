@@ -1,5 +1,5 @@
 set(MODULE_NAME spi)
-add_library(${MODULE_NAME} STATIC)
+sdk_add_library(${MODULE_NAME} STATIC)
 
 target_sources_ifdef(CONFIG_SPI_STM32 ${MODULE_NAME} PRIVATE spi_stm32.cc)
 target_sources_ifdef(CONFIG_SPI_GD32 ${MODULE_NAME} PRIVATE spi_gd32.cc)

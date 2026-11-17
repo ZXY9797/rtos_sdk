@@ -1,0 +1,36 @@
+&pinctrl { status = "okay"; };
+
+/ {
+    model = "Gimbal Loader";
+    chosen {
+        zephyr,console = &usart0;
+        zephyr,flash = &flash0;
+    };
+    aliases {
+        uart0 = &usart0;
+    };
+};
+
+&usart0 {
+    status = "okay";
+    current-speed = <115200>;
+};
+
+/* Preserve the existing Loader pinmux; this migration does not alter wiring. */
+&usart0_tx_pa9 {
+    pinmux = <GD32_PINMUX_AF(GD32_PORT_A, 9, 7,
+                              GD32_PULL_NONE,
+                              GD32_DRIVE_PUSH_PULL, 3)>;
+};
+
+&usart0_rx_pa10 {
+    pinmux = <GD32_PINMUX_AF(GD32_PORT_A, 10, 7,
+                              GD32_PULL_UP,
+                              GD32_DRIVE_PUSH_PULL, 3)>;
+};
+
+&dma1 {
+    status = "okay";
+    interrupts = <56 6>, <57 6>, <58 6>, <59 6>, <60 6>;
+    dma-channels = <5>;
+};

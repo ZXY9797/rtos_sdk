@@ -9,6 +9,7 @@
 namespace {
 
 bool dispatch_notifications = true;
+unsigned safety_trips = 0U;
 
 #define TEST_ASSERT(condition)               \
     do {                                     \
@@ -287,11 +288,58 @@ void test_overrun_and_source_error_diagnostics()
     dispatch_notifications = true;
 }
 
+void test_stalled_consumer_trips_outputs_without_thread_dispatch()
+{
+    CoreFixture fixture;
+    auto config = fixture.config();
+    config.execution.overflow = runtime::Overflow::Fault;
+    TEST_ASSERT(fixture.core.configure(config));
+    TEST_ASSERT(fixture.core.start() == 0);
+    dispatch_notifications = false;
+    const unsigned before = safety_trips;
+    for (size_t frame = 0U; frame < 4U; ++frame) {
+        fixture.complete_frame(SensorBatchCore::SourceResult::Success);
+    }
+    TEST_ASSERT(fixture.capture.calls == 0U);
+    TEST_ASSERT(safety_trips == before + 1U);
+    TEST_ASSERT(fixture.core.stop() == 0);
+    dispatch_notifications = true;
+}
+
+void test_unsupported_execution_options_are_rejected()
+{
+    CoreFixture fixture;
+    runtime::TimingMetrics metrics;
+    auto config = fixture.config();
+    config.execution = {"test", runtime::Trigger::External, 500000U, 500000U, 100000U};
+    config.clock_us = [] { return 0U; };
+
+    // Configuration must be checked even when timing collection is disabled.
+    for (bool collect_timing : {false, true}) {
+        config.timing = collect_timing ? &metrics : nullptr;
+        for (uint8_t value : {1U, 255U}) {
+            config.execution.overflow = static_cast<runtime::Overflow>(value);
+            TEST_ASSERT(!fixture.core.configure(config));
+        }
+        config.execution.overflow = runtime::Overflow::RejectNewest;
+        config.execution.trigger = static_cast<runtime::Trigger>(255U);
+        TEST_ASSERT(!fixture.core.configure(config));
+        config.execution.trigger = runtime::Trigger::External;
+        TEST_ASSERT(fixture.core.configure(config));
+        config.execution.overflow = runtime::Overflow::Fault;
+        TEST_ASSERT(fixture.core.configure(config));
+    }
+}
+
 } // namespace
 
 int main()
 {
     test_multi_source_batch_and_pointer_delivery();
     test_overrun_and_source_error_diagnostics();
+    test_stalled_consumer_trips_outputs_without_thread_dispatch();
+    test_unsupported_execution_options_are_rejected();
     return 0;
 }
+
+namespace system_safety { void trip(uint32_t) { ++safety_trips; } }

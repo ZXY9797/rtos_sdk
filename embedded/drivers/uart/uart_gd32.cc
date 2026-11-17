@@ -1,3 +1,4 @@
+#include <irq.h>
 #include <drivers/uart.h>
 #include <drivers/dma.h>
 #include <osal.h>
