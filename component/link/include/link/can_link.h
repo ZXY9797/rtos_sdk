@@ -15,11 +15,15 @@ namespace link {
 
 class CanLink : public Link {
 public:
+    // Called by the router poll task for unmatched CAN IDs; data is borrowed
+    // only for this call. The callback must not block or read the CAN FIFO.
+    using RawFrameHandler = void (*)(void*, uint32_t, const uint8_t*, size_t, bool);
     // frag_payload: 每片最大载荷（不含 1B frag header）
-    CanLink(uint8_t can_port, uint32_t can_id, size_t frag_payload = 7)
+    CanLink(uint8_t can_port, uint32_t can_id, size_t frag_payload = 7,
+            RawFrameHandler raw_handler = nullptr, void* raw_context = nullptr)
         : can_(hal::Can::instance(can_port < kMaxCanPorts ? can_port : 0U)),
           can_id_(can_id),
-          frag_payload_(frag_payload) {
+          frag_payload_(frag_payload), raw_handler_(raw_handler), raw_context_(raw_context) {
         if (can_port < kMaxCanPorts && !s_port_claimed_[can_port]
             && frag_payload_ > 0U && frag_payload_ <= 7U
             && register_link(this)) {
@@ -60,6 +64,8 @@ private:
     hal::Can &can_;
     uint32_t can_id_;
     size_t frag_payload_;
+    RawFrameHandler raw_handler_;
+    void* raw_context_;
     bool valid_ {false};
     Reassembler reasm_;
     osal::Mutex tx_mutex_;
@@ -98,6 +104,8 @@ private:
                 break;
             }
             if (is_extended || id != self->can_id_) {
+                if (self->raw_handler_)
+                    self->raw_handler_(self->raw_context_, id, data, len, is_extended);
                 continue;
             }
             if (Fragmenter::recv(data, len, self->reasm_)) {

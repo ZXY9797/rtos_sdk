@@ -1,6 +1,6 @@
 #pragma once
 
-#include <algo/spatial_types.h>
+#include <algo/math/spatial_types.h>
 
 #include <array>
 #include <cstddef>

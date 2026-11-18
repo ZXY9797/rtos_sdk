@@ -37,30 +37,30 @@ def make_payload(layout_name: str) -> bytes:
 
 class PackImageTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.payload = make_payload("demo")
+        self.payload = make_payload("demo_foc")
         self.image = pack_image.build_image(
             self.payload,
-            "demo",
+            "demo_foc",
             security_version=9,
             flags=pack_image.IMAGE_F_PENDING,
             signature=bytes(range(64)),
         )
 
     def test_build_and_validate(self) -> None:
-        pack_image.validate_image(self.image, "demo")
+        pack_image.validate_image(self.image, "demo_foc")
         self.assertEqual(len(self.image), len(self.payload) + 128)
 
     def test_payload_tamper_is_rejected(self) -> None:
         tampered = bytearray(self.image)
         tampered[-1] ^= 1
         with self.assertRaisesRegex(ValueError, "SHA-256"):
-            pack_image.validate_image(bytes(tampered), "demo")
+            pack_image.validate_image(bytes(tampered), "demo_foc")
 
     def test_header_tamper_is_rejected(self) -> None:
         tampered = bytearray(self.image)
         tampered[20] ^= 1
         with self.assertRaisesRegex(ValueError, "CRC-32"):
-            pack_image.validate_image(bytes(tampered), "demo")
+            pack_image.validate_image(bytes(tampered), "demo_foc")
 
     def test_pending_to_confirmed_is_canonical(self) -> None:
         self.assertEqual(
@@ -69,7 +69,7 @@ class PackImageTest(unittest.TestCase):
         )
         confirmed = bytearray(self.image)
         struct.pack_into("<H", confirmed, 10, pack_image.IMAGE_F_CONFIRMED)
-        pack_image.validate_image(bytes(confirmed), "demo")
+        pack_image.validate_image(bytes(confirmed), "demo_foc")
 
     def test_authentication_digest_canonicalizes_mutable_fields(self) -> None:
         original = self.image[:pack_image.IMAGE_HEADER_SIZE]
@@ -93,12 +93,12 @@ class PackImageTest(unittest.TestCase):
         invalid = bytearray(self.image)
         struct.pack_into("<H", invalid, 10, 0)
         with self.assertRaisesRegex(ValueError, "state flags"):
-            pack_image.validate_image(bytes(invalid), "demo")
+            pack_image.validate_image(bytes(invalid), "demo_foc")
 
     def test_wrong_product_is_rejected(self) -> None:
         wrong_product = bytearray(self.payload)
         info_offset = (
-            pack_image.LAYOUTS["demo"]["product_info_offset"]
+            pack_image.LAYOUTS["demo_foc"]["product_info_offset"]
             - pack_image.IMAGE_HEADER_SIZE
         )
         struct.pack_into("<I", wrong_product, info_offset + 4, 0x0002)
@@ -107,7 +107,7 @@ class PackImageTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "ProductInfo ID"):
             pack_image.build_image(
                 bytes(wrong_product),
-                "demo",
+                "demo_foc",
                 security_version=1,
                 flags=pack_image.IMAGE_F_CONFIRMED,
                 signature=bytes(64),
@@ -119,20 +119,20 @@ class PackImageTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "supported SRAM"):
             pack_image.build_image(
                 bytes(bad_vectors),
-                "demo",
+                "demo_foc",
                 security_version=1,
                 flags=pack_image.IMAGE_F_CONFIRMED,
                 signature=bytes(64),
             )
 
     def test_image_must_fit_both_execution_and_upgrade_slots(self) -> None:
-        limit = pack_image.LAYOUTS["demo"]["image_size"]
+        limit = pack_image.LAYOUTS["demo_foc"]["image_size"]
         oversized = bytearray(self.payload)
         oversized.extend(bytes(limit - len(oversized)))
         with self.assertRaisesRegex(ValueError, "installable limit"):
             pack_image.build_image(
                 bytes(oversized),
-                "demo",
+                "demo_foc",
                 security_version=1,
                 flags=pack_image.IMAGE_F_PENDING,
                 signature=bytes(64),

@@ -1,0 +1,70 @@
+&pinctrl { status = "okay"; };
+&board_leds { status = "okay"; };
+&green_led { status = "okay"; };
+&gpioa { status = "okay"; };
+&gpiob { status = "okay"; };
+&gpioc { status = "okay"; };
+&gpioe { status = "okay"; };
+&dma0 { status = "okay"; };
+&dma1 { status = "okay"; };
+&usart0 { status = "okay"; current-speed = <2000000>; rx-buffer-size = <1024>; };
+&timer0 {
+    status = "okay";
+    period = <5000>;
+    three-phase;
+    complementary;
+    center-aligned;
+    dead-time = <0>;
+    pinctrl-0 = <&pwm_u &pwm_v &pwm_w &pwm_u_n &pwm_v_n &pwm_w_n>;
+    pinctrl-names = "default";
+};
+&timer7 { status = "okay"; prescaler = <199>; period = <249>; };
+&adc0 {
+    status = "okay";
+    compatible = "gd,gd32-adc-scan", "gd,gd32-adc";
+    dmas = <&dma0 0 GD32_DMA_REQUEST_ADC0_ROUTINE>;
+    dma-names = "rx";
+    pinctrl-0 = <&iw_analog &iv_analog &iu_analog &vbus_analog &rotor1_analog &rotor2_analog>;
+    pinctrl-names = "default";
+};
+&adc1 {
+    status = "okay";
+    compatible = "gd,gd32-adc-scan", "gd,gd32-adc";
+    oversampling-ratio = <16>;
+    oversampling-shift = <0>;
+    dmas = <&dma0 1 GD32_DMA_REQUEST_ADC1_ROUTINE>;
+    dma-names = "rx";
+    pinctrl-0 = <&joint1_analog &joint2_analog>;
+    pinctrl-names = "default";
+};
+&adc2 {
+    status = "okay";
+    pinctrl-0 = <&board_ntc_analog &motor_ntc1_analog &motor_ntc2_analog>;
+    pinctrl-names = "default";
+};
+&can0 {
+    status = "okay";
+    bitrate = <500000>;
+    clock-frequency = <100000000>;
+    nominal-prescaler = <10>;
+    nominal-time-seg1 = <15>;
+    nominal-time-seg2 = <4>;
+    nominal-sjw = <1>;
+};
+/ {
+    chosen { zephyr,console = &usart0; zephyr,shell-uart = &usart0;
+             zephyr,flash = &flash0; zephyr,flash-partition = &slot0_partition; };
+    aliases { uart0 = &usart0; led0 = &green_led; pwm0 = &timer0; joint-timer = &timer7;
+              adc-current = &adc0; adc-joint = &adc1; adc-temperature = &adc2; can0 = &can0; };
+    foc_control: foc-control {
+        compatible = "app,foc-control";
+        current-channels = <2 1 0 4 8 9>;
+        joint-channels = <17 7>;
+        temperature-channels = <15 13 14>;
+        timer-clock-hz = <200000000>;
+        pwm-frequency-hz = <20000>;
+        adc-before-peak-ns = <1000>;
+        current-trigger-input = <14>;
+        joint-trigger-input = <15>;
+    };
+};

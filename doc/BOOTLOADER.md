@@ -41,7 +41,7 @@ loader 源码使用 object library，确保只包含 initcall 或静态构造的
 可配置 `CONFIG_BOOT_DFU_CUSTOM=y`，此时产品必须提供：
 
 ```text
-bootloader/product/<product>/common/boot_transport.cc
+app/product/<product>/boot/common/boot_transport.cc
 ```
 
 该文件需要注册 transport，并实现 `boot::transport_shutdown()`。量产配置强制选择该
@@ -86,8 +86,8 @@ slot0 `PENDING` 镜像。
 产品必须提供：
 
 ```text
-bootloader/product/<product>/common/boot_security.cc
-bootloader/product/<product>/common/boot_watchdog.cc
+app/product/<product>/boot/common/boot_security.cc
+app/product/<product>/boot/common/boot_watchdog.cc
 ```
 
 安全 provider 必须实现受保护公钥验签、OTP 或等价的只增版本存储，以及 preloader 对
@@ -114,14 +114,14 @@ loader 自有函数若静态栈帧超过 768 B，编译会失败。最终栈大�
 目标板 stack watermark 验证。
 
 本次布局从 storage 尾部划出 `scratch`，两个产品的 storage 起始地址保持不变，但可用
-容量均减少一个 erase block。demo 的物理 slot0 大于 upgrade，应用链接与工厂打包上限
+容量均减少一个 erase block。demo_foc 的物理 slot0 大于 upgrade，应用链接与工厂打包上限
 因此统一取 `min(slot0, upgrade)`。旧镜像若超过该上限会安全进入 DFU，不能在线交换；
 升级方案必须检查旧 NVS 是否占用被划出的尾 sector，并选择受控全量刷写或数据迁移。
 
 ## 构建和验收
 
 ```powershell
-python bootloader\scripts\build_3in1.py demo `
+python bootloader\scripts\build_3in1.py demo_foc `
   --out out\demo_3in1
 python bootloader\scripts\build_3in1.py demo_ble `
   --out out\demo_ble_3in1

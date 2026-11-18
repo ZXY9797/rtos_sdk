@@ -44,8 +44,8 @@ cmake --build out/gimbal/upgrade
 | upgrade | 26,140 B | 155,648 B（16.79%） | 1,840 B（1.40%） |
 
 loader 二进制为 17,664 B，剩余 6,912 B。upgrade 嵌入并校验同轮 loader
-payload。同一轮 `demo` ARM 回归构建及 ELF 策略检查通过；复用同一 CMake
-输出目录执行 `gimbal -> demo -> gimbal` 时，链接脚本也随产品正确切换。
+payload。同一轮 `demo_foc` ARM 回归构建及 ELF 策略检查通过；复用同一 CMake
+输出目录执行 `gimbal -> demo_foc -> gimbal` 时，链接脚本也随产品正确切换。
 该结果使用 GNU Arm Embedded 13.2.1；GD32 产品没有 Goodix BLE 固件的
 GCC 9.3.1 工具链限制，但正式发布仍需锁定并记录工具链容器摘要。
 

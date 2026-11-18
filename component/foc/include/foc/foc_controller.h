@@ -2,7 +2,7 @@
 
 #include "types.h"
 #include "svpwm.h"
-#include <algo/pid_controller.h>
+#include <algo/controller/pid_controller.h>
 #include <atomic>
 #include <cstdint>
 

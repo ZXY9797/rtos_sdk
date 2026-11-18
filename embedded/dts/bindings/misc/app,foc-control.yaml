@@ -1,0 +1,28 @@
+description: Product FOC acquisition and PWM timing
+compatible: "app,foc-control"
+include: base.yaml
+properties:
+  current-channels:
+    type: array
+    required: true
+  joint-channels:
+    type: array
+    required: true
+  temperature-channels:
+    type: array
+    required: true
+  timer-clock-hz:
+    type: int
+    required: true
+  pwm-frequency-hz:
+    type: int
+    required: true
+  adc-before-peak-ns:
+    type: int
+    required: true
+  current-trigger-input:
+    type: int
+    required: true
+  joint-trigger-input:
+    type: int
+    required: true

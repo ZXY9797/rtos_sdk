@@ -1,0 +1,8 @@
+menu "FOC Motor Application"
+config APP_NAME
+    string "Application name"
+    default "demo_foc"
+config MOTOR_AUTO_CALIBRATION
+    bool "Run input, electrical and output calibration when data are missing"
+    default n
+endmenu

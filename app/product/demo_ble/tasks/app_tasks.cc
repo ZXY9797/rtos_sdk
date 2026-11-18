@@ -271,7 +271,7 @@ void run_heartbeat() {
         }
 #endif
         led.toggle();
-        LOGI("demo", "heartbeat");
+        LOGI("demo_foc", "heartbeat");
 #if defined(CONFIG_APP_RUNTIME_DIAGNOSTICS)
         const uint32_t now = osal::Kernel::uptime_ms();
         if (static_cast<int32_t>(now - next_diagnostics_ms) >= 0) {

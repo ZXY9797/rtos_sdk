@@ -2,20 +2,23 @@
 
 `app/product/<product>` 只放产品级编排代码：启动流程、设备门面、通信桥接、任务编排、控制策略和产品配置。可复用算法、协议栈、驱动和厂商 SDK 适配应继续放在 `component/` 或 `embedded/`。
 
+同一产品的 Boot 镜像配置和链接脚本放在 `boot/<image>/`，专用适配按需放在 `boot/common/`；
+硬件 DTS 与全镜像共享的 `layout.json` 放在项目 `config/`。
+
 ## 通用规则
 
 - `main.cc` 固定放在产品目录根部，保持入口可见。
 - 产品代码统一使用 `app` 命名空间；板级设备门面使用 `app::board`。
-- 不使用 `demo_app`、`demo::board`、`foc_app`、`ble_app_*` 这类产品名或模块名前缀作为命名空间。
+- 不使用 `demo_app`、`demo_foc::board`、`foc_app`、`ble_app_*` 这类产品名或模块名前缀作为命名空间。
 - 业务代码通过 `board/board_devices.*` 暴露的产品语义设备名访问硬件，不在控制、服务或任务代码里直接散落 `device_get(...)`。
 - CMake 只登记当前产品实际源文件目录，不保留空的历史目录。
 
-## demo
+## demo_foc
 
-`demo` 是 GD32 FOC 电机控制产品，当前结构如下：
+`demo_foc` 是 GD32 FOC 电机控制产品，当前结构如下：
 
 ```text
-app/product/demo/
+app/product/demo_foc/
   main.cc                       启动入口
   board/
     board_devices.h             产品级设备门面声明
@@ -63,6 +66,7 @@ app/product/demo_ble/
   config/
     board.dts                   本项目硬件，App/Boot 共用
     board_defconfig             本项目 SoC/时钟默认值
+    layout.json                 全镜像共用分区布局
     app.overlay                 本镜像设备选择
     prj.conf
     profiles/
@@ -78,7 +82,7 @@ app/product/demo_ble/
 应用固件默认使用 `FIRMWARE_TYPE=app`，也可以用短参数 `-Df=app`：
 
 ```powershell
-cmake -S . -B out\demo_app -GNinja -Dp=demo -Df=app
+cmake -S . -B out\demo_app -GNinja -Dp=demo_foc -Df=app
 cmake --build out\demo_app --target app
 
 cmake -S . -B out\demo_ble_app -GNinja -Dp=demo_ble -Df=app

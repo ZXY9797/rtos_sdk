@@ -162,7 +162,7 @@ SDK 提供厂商无关的 BLE API（`ble::` 命名空间），当前实现基于
 
 当前 boot 链路分为 `preloader`、`loader`、`upgrade` 和 `app`。`preloader` 是最小信任根，生产配置认证固定 loader；`loader` 负责 DFU、签名/防降级校验以及单执行槽的掉电安全 sector-swap 安装；`upgrade` 仅保留开发配置下的 loader 自升级执行；`app` 只通过公开 boot API 发布产品元数据和确认镜像。boot 控制日志和单 sector scratch 使用独立分区，不与 NVS storage 复用。首次启动未确认时，loader 会把保存在 `upgrade` 的旧应用交换回 `slot0`；这提供单次 trial 自动回滚，但不是两个可独立启动执行槽的 A/B 方案。
 
-`boot_common` 提供 app、loader、preloader、upgrade 共享的镜像元数据、产品元数据、Flash 分区接口、镜像确认、SHA-256 和 DFU CRC。产品相关配置放在 `app/product/<product>` 和 `bootloader/product/<product>`，公共 bootloader 目录只保留跨产品源码。
+`boot_common` 提供 app、loader、preloader、upgrade 共享的镜像元数据、产品元数据、Flash 分区接口、镜像确认、SHA-256 和 DFU CRC。产品相关配置集中在 `app/product/<product>`：`config/layout.json` 定义共享分区，`boot/` 保存各 Boot 镜像的配置、链接脚本和产品适配；公共 bootloader 目录只保留跨产品实现、接口和脚本。
 
 支持通过 `-DFIRMWARE_TYPE=app|preloader|loader|upgrade` 单独构建固件，也支持使用 `bootloader/scripts/build_3in1.py` 生成 `<product>_3in1.bin`。
 
@@ -204,11 +204,11 @@ namespace osal {     // OS 抽象层：线程、同步原语
 
 ```
 rtos_sdk/
-├── app/                          # 应用项目
+├── app/                          # 产品项目
 │   └── product/                  # 产品固件
-│       ├── demo/                 # GD32 FOC 电机控制 Demo
+│       ├── demo_foc/                 # GD32 FOC 电机控制 Demo
 │       ├── demo_ble/             # GR5525 BLE Demo（HID 键盘 + UART 透传）
-│       └── gimbal/               # GD32 三轴云台；各项目 config/ 同时维护硬件与软件配置
+│       └── gimbal/               # GD32 三轴云台；各项目 config/ 维护硬件与布局，boot/ 维护启动镜像配置
 │
 ├── bootloader/                   # 启动与升级固件
 │   ├── include/boot/             # 公开 boot API
@@ -216,11 +216,10 @@ rtos_sdk/
 │   ├── loader/                   # 启动决策、DFU、app 校验与 sector-swap
 │   ├── preloader/                # 第一阶段信任根与 loader 认证
 │   ├── upgrade/                  # loader 自升级执行固件
-│   ├── product/                  # 产品 boot 配置、linker 和分区实现
 │   └── scripts/                  # 三合一固件构建与合并脚本
 │
 ├── component/                    # 应用级组件
-│   ├── algo/                     # 数学、DSP 与单轴轨迹算法原语
+│   ├── algo/                     # 数学、轨迹、FOC、标定、关节交互与机器人计算
 │   ├── runtime/                  # 纯 C++ 执行描述、时序测量、输出锁存与编码工具
 │   ├── control_contracts/        # 定长控制领域数据契约
 │   ├── motion/                   # 非正交运动学、动力学和三轴轨迹规划
@@ -255,6 +254,8 @@ rtos_sdk/
 │   ├── DRIVER_MODEL.md           # 设备驱动模型与依赖约束
 │   ├── DRIVER_DESIGN.md          # 驱动设计与扩展指南
 │   ├── FOC.md                    # FOC 电机控制组件
+│   ├── MOTOR_ALGORITHMS.md       # 电机算法、单位与标定接入
+│   ├── MOTOR_CONTROL_DESIGN.md   # 阻抗/导纳/力控实现、坐标契约与验证
 │   ├── BLE.md                    # BLE 蓝牙组件
 │   ├── LINK.md                   # Link 通信协议栈
 │   ├── OSAL.md                   # OSAL 抽象层
@@ -272,24 +273,24 @@ rtos_sdk/
 
 ```bash
 # 配置（未指定 -Dt 时默认 armgcc9）
-cmake -B out -GNinja -Dp=demo
+cmake -B out -GNinja -Dp=demo_foc
 
 # 编译
 ninja -C out
 
 # 产物
-ls out/demo.elf  out/demo.bin  out/demo.hex
+ls out/demo_foc.elf  out/demo_foc.bin  out/demo_foc.hex
 ```
 
 Bootloader 和三合一固件：
 
 ```bash
 # 单独构建 loader
-cmake -S . -B out/demo_3in1/loader -GNinja -Dp=demo -DFIRMWARE_TYPE=loader
-ninja -C out/demo_3in1/loader
+cmake -S . -B out/demo_foc_3in1/loader -GNinja -Dp=demo_foc -DFIRMWARE_TYPE=loader
+ninja -C out/demo_foc_3in1/loader
 
 # 构建 preloader + loader + app 并合并三合一固件
-python bootloader/scripts/build_3in1.py demo --out out/demo_3in1
+python bootloader/scripts/build_3in1.py demo_foc --out out/demo_foc_3in1
 ```
 
 详见 [doc/QUICKSTART.md](doc/QUICKSTART.md)

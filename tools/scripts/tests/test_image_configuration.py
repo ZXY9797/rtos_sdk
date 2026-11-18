@@ -28,7 +28,7 @@ class ImageConfigurationTest(unittest.TestCase):
     def configure(self, image='app', custom=True, definitions=(), accept=True, sdk=ROOT):
         config = f'set(CONFIG_DIR "{self.config.as_posix()}")\n' if custom else ''
         text = ('cmake_minimum_required(VERSION 3.20)\nproject(selection LANGUAGES NONE)\n'
-                f'set(SDK_ROOT "{sdk.as_posix()}")\nset(PROJECT_NAME demo)\n'
+                f'set(SDK_ROOT "{sdk.as_posix()}")\nset(PROJECT_NAME demo_foc)\n'
                 f'set(FIRMWARE_TYPE {image})\n' + config +
                 f'include("{ROOT.as_posix()}/tools/cmake/env.cmake")\n'
                 'file(WRITE "${PROJECT_BINARY_DIR}/selected.txt" '
@@ -44,10 +44,10 @@ class ImageConfigurationTest(unittest.TestCase):
         return result.stdout + result.stderr
 
     def test_default_app_and_boot_roots_are_separate(self):
-        for image, expected in [('app', 'app/product/demo/config'),
-                                ('preloader', 'bootloader/product/demo/preloader/config'),
-                                ('loader', 'bootloader/product/demo/loader/config'),
-                                ('upgrade', 'bootloader/product/demo/upgrade/config')]:
+        for image, expected in [('app', 'app/product/demo_foc/config'),
+                                ('preloader', 'app/product/demo_foc/boot/preloader/config'),
+                                ('loader', 'app/product/demo_foc/boot/loader/config'),
+                                ('upgrade', 'app/product/demo_foc/boot/upgrade/config')]:
             with self.subTest(image=image):
                 selected = self.configure(image, custom=False)
                 self.assertEqual(selected[0], (ROOT / expected).as_posix())
@@ -58,27 +58,27 @@ class ImageConfigurationTest(unittest.TestCase):
         self.write(profile, 'CONFIG_BOOT_PRODUCTION=y\n')
         selected = self.configure('loader', definitions=['-DPROFILE=contract'])
         self.assertEqual(selected[1].split(';'), [
-            (ROOT / 'app/product/demo/config/board_defconfig').as_posix(),
+            (ROOT / 'app/product/demo_foc/config/board_defconfig').as_posix(),
             (self.config / 'prj.conf').as_posix(), profile.as_posix()])
 
     def test_config_directory_override_keeps_product_hardware(self):
         selected = self.configure()
         self.assertEqual(selected[1].split(';')[0],
-                         (ROOT / 'app/product/demo/config/board_defconfig').as_posix())
-        self.assertEqual(selected[3], (ROOT / 'app/product/demo/config').as_posix())
+                         (ROOT / 'app/product/demo_foc/config/board_defconfig').as_posix())
+        self.assertEqual(selected[3], (ROOT / 'app/product/demo_foc/config').as_posix())
 
     def test_project_config_hardware_is_shared_by_app_and_boot(self):
         sdk = self.root / 'isolated sdk'
-        for name in ['app/product/demo/CMakeLists.txt',
+        for name in ['app/product/demo_foc/CMakeLists.txt',
                      'bootloader/preloader/CMakeLists.txt',
                      'bootloader/loader/CMakeLists.txt',
                      'bootloader/upgrade/CMakeLists.txt']:
             self.write(sdk / name, '# Image implementation\n')
         for image in ['preloader', 'loader', 'upgrade']:
-            (sdk / f'bootloader/product/demo/{image}').mkdir(parents=True)
+            (sdk / f'app/product/demo_foc/boot/{image}').mkdir(parents=True)
         self.write(sdk / 'tools/cmake/modules/image_config.cmake',
                    (ROOT / 'tools/cmake/modules/image_config.cmake').read_text(encoding='utf-8'))
-        hardware = sdk / 'app/product/demo/config'
+        hardware = sdk / 'app/product/demo_foc/config'
         self.write(hardware / 'board.dts', '/ {};\n')
         self.write(hardware / 'board_defconfig', '# Hardware defaults\n')
         for image in ['app', 'preloader', 'loader', 'upgrade']:

@@ -1,0 +1,39 @@
+description: GD32 ADC with timer-triggered circular DMA acquisition
+compatible: "gd,gd32-adc-scan"
+include: gd32-adc-common.yaml
+
+cxx-driver:
+  adapter:
+    header: device_adapters/adc_dt.h
+    macro: HAL_GD32_ADC_SCAN_DT_ADAPT
+  type-name: Adc
+  init: true
+  interrupts:
+    - name: dma-rx
+      method: isr_dma_rx
+      uses-osal: false
+      enable-on-init: true
+      source:
+        phandle-array: dmas
+        entry: rx
+        interrupt-index-cell: channel
+  requires:
+    - phandle-array: dmas
+      lifecycle: external
+  readiness: is-initialized
+  init-level: pre-kernel-2
+  init-priority: 30
+
+properties:
+  oversampling-ratio:
+    type: int
+    default: 1
+    enum: [1, 2, 4, 8, 16, 32, 64, 128, 256]
+  oversampling-shift:
+    type: int
+    default: 0
+    enum: [0, 1, 2, 3, 4, 5, 6, 7, 8]
+  dmas:
+    required: true
+  dma-names:
+    required: true

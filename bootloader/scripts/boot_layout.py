@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 
-PRODUCT_ROOT = Path(__file__).resolve().parents[1] / "product"
+PRODUCT_ROOT = Path(__file__).resolve().parents[2] / "app" / "product"
 PARTITION_ORDER = (
     "preloader", "loader", "slot0", "upgrade", "storage", "scratch",
     "boot_ctrl",
@@ -31,7 +31,7 @@ def _integer(value: Any, field: str) -> int:
 
 
 def _load_canonical(product: str, path: Path | None = None) -> dict[str, Any]:
-    path = path or PRODUCT_ROOT / product / "layout.json"
+    path = path or PRODUCT_ROOT / product / "config" / "layout.json"
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -118,7 +118,7 @@ def _load_canonical(product: str, path: Path | None = None) -> dict[str, Any]:
 
 def canonical_layout_names() -> tuple[str, ...]:
     return tuple(sorted(
-        path.parent.name for path in PRODUCT_ROOT.glob("*/layout.json")
+        path.parent.parent.name for path in PRODUCT_ROOT.glob("*/config/layout.json")
     ))
 
 
@@ -135,7 +135,9 @@ def all_layouts() -> dict[str, dict[str, Any]]:
 
 def load_layout(name: str) -> dict[str, Any]:
     if Path(name).is_file():
-        return _load_canonical(Path(name).parent.name, Path(name).resolve())
+        path = Path(name).resolve()
+        product_dir = path.parent.parent if path.parent.name == "config" else path.parent
+        return _load_canonical(product_dir.name, path)
     try:
         return all_layouts()[name]
     except KeyError as exc:

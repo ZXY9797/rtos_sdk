@@ -25,11 +25,12 @@ SDK 面向 MCU 实时控制，采用声明式硬件配置、静态资源和类�
 
 ## 构建和扩展
 
-原有 `cmake -S . -B out/demo -G Ninja -Dp=demo` 保持可用。
+原有 `cmake -S . -B out/demo_foc -G Ninja -Dp=demo_foc` 保持可用。
 App/Boot 共用 `app/product/<product>/config/board.dts`，外设默认关闭。
 硬件和引脚配置随项目维护，不再单独选择 BOARD 或注册 BOARD_ROOT。
 App 使用 `app/product/<product>/config/app.overlay`；各 Boot 镜像使用
-`bootloader/product/<product>/<image>/config/<image>.overlay`。
+`app/product/<product>/boot/<image>/config/<image>.overlay`。
+全镜像分区布局统一位于项目 `config/layout.json`，链接脚本随各自镜像目录维护。
 Boot overlay 仅保存镜像差异，不复制本项目的硬件 DTS。
 目录职责、覆盖顺序和迁移示例见 [项目硬件与镜像配置](BOARD_CONFIGURATION.md)。
 
@@ -53,7 +54,7 @@ Boot profile 来自产品对应镜像的 config，不从通用 Boot 实现目录
 
 ```cmake
 cmake_minimum_required(VERSION 3.20)
-set(p demo)
+set(p demo_foc)
 set(APPLICATION "${CMAKE_CURRENT_LIST_DIR}/firmware")
 find_package(RtosSdk REQUIRED CONFIG PATHS "${SDK_ROOT}/share/rtos-sdk-package")
 project(my_product LANGUAGES NONE)
@@ -153,9 +154,9 @@ python tools/scripts/decode_system_diagnostics.py diagnostics-payload.bin
 revision 明确保留 unknown，不根据版本号伪造 commit。
 
 ```powershell
-python tools/sdk.py configure -p demo -B out/demo --profile release
-python tools/sdk.py build -B out/demo
-python tools/sdk.py inspect -B out/demo --kind resources
+python tools/sdk.py configure -p demo_foc -B out/demo_foc --profile release
+python tools/sdk.py build -B out/demo_foc
+python tools/sdk.py inspect -B out/demo_foc --kind resources
 python tools/sdk.py test --suite host
 python tools/sdk.py test --suite firmware --toolchain-path C:/arm-none-eabi-gcc-9.3.1-1.4
 ```
@@ -175,7 +176,7 @@ gimbal 保留自己的 Boot 布局、产品标识和 loader 配置；三个产�
 ## 本次落地验证（2026-11-17）
 
 - Windows + GCC 主机契约：23 项 CTest、59 项工具 Python 测试、29 项 Boot Python 测试。
-- 固件矩阵：demo、demo_ble、gimbal，FreeRTOS/RT-Thread、release 和 OSAL 测试应用，
+- 固件矩阵：demo_foc、demo_ble、gimbal，FreeRTOS/RT-Thread、release 和 OSAL 测试应用，
   共 10 项应用配置（含 debug 和各产品 release）；另验证三个产品各自的 preloader、loader、upgrade 和开发三合一镜像。
 - 独立应用及外部模块：完整链接、重复配置；错误的 project/find_package 顺序被拒绝。
 - 负向配置：缺失缓存 DMA provider、Link 安全 provider、生产 Boot provider 和 profile

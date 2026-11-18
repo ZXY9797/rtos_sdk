@@ -9,7 +9,7 @@
 | upgrade | 开发/工厂场景的 loader 自升级执行固件 |
 | app | 产品业务；健康启动后确认 pending 镜像 |
 
-Flash 分区由 `bootloader/product/<product>/layout.json` 唯一定义。启动控制记录位于
+Flash 分区由 `app/product/<product>/config/layout.json` 唯一定义。启动控制记录位于
 独立 `boot_ctrl` 分区，采用双 sector 追加日志、CRC、递增 sequence 和最后写 magic
 的提交顺序。回收目标 sector 前，另一个 sector 仍保留最近一次有效记录。
 

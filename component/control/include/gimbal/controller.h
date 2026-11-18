@@ -1,7 +1,7 @@
 #pragma once
 
-#include <algo/biquad_filter.h>
-#include <algo/lead_lag_compensator.h>
+#include <algo/filter/biquad_filter.h>
+#include <algo/filter/lead_lag_compensator.h>
 #include <gimbal/dynamics.h>
 #include <gimbal/types.h>
 

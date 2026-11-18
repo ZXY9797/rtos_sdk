@@ -1,5 +1,10 @@
 # FOC 电机控制组件
 
+本文描述 `component/foc` 的设备适配与配置契约。`demo_foc` 的实际电流控制使用
+`component/algo` 中的 `CurrentLoop`，不实例化本文的 `foc::Motor`。
+当前产品调用链见 [电机算法](MOTOR_ALGORITHMS.md)，能力范围及阻抗/导纳设计见
+[电机控制能力](MOTOR_CONTROL_DESIGN.md)。下述 Kconfig/DTS 契约不能直接套用于该产品。
+
 ## 定位
 
 `component/foc` 是产品无关的电机控制组件。电压模式只依赖 PWM；电流模式

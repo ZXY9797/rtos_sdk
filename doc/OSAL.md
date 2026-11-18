@@ -72,7 +72,7 @@ owner 违反生命周期契约且 native task 仍存活，系统会进入统一 
 返回值。`PeriodicThread::start()` 支持调用方持有线程对象和栈，外部触发模式的信号量
 control block 也内联在对象中；RTOS backend 的普通 `Mutex`/`Semaphore` native
 control block 也内联在 C++ 对象中，baremetal 使用固定静态池。Link、日志、watchdog
-以及 demo 的 CLI/控制环/SensorCore/LED 线程均走调用方对象与栈的静态路径。运行期
+以及 demo_foc 的 CLI/控制环/SensorCore/LED 线程均走调用方对象与栈的静态路径。运行期
 禁止无界堆分配。
 
 OSAL 统一规定：`0` 是最低线程优先级，`kPriorityMax` 是最高线程优先级。FreeRTOS
@@ -135,10 +135,10 @@ RT-Thread 的同优先级线程固定使用 1 tick 时间片，并开启内核�
 至少执行以下组合：
 
 ```powershell
-cmake -S . -B out\demo_freertos -GNinja -Dp=demo
+cmake -S . -B out\demo_freertos -GNinja -Dp=demo_foc
 cmake --build out\demo_freertos --parallel
 
-cmake -S . -B out\demo_rtthread -GNinja -Dp=demo `
+cmake -S . -B out\demo_rtthread -GNinja -Dp=demo_foc `
   -DEXTRA_CONF_FILE=tests/config/rtthread.conf
 cmake --build out\demo_rtthread --parallel
 ```

@@ -9,7 +9,7 @@ from check_dts_layout import validate_layout, load_layout
 
 class DtsLayoutTest(unittest.TestCase):
     def setUp(self):
-        self.layout = load_layout('demo')
+        self.layout = load_layout('demo_foc')
         path = f'/flash@{self.layout["flash_base"]:x}'
         self.flash = Node(path=path, status='okay', regs=[Node(addr=self.layout['flash_base'], size=self.layout['flash_size'])],
                           props={name: Node(val=self.layout[name.replace('-', '_')])

@@ -29,7 +29,7 @@ DTS 生成的寄存器、IRQ、DMA、pinctrl 和父设备引用。Kconfig 决定
 | 启动 | OSAL 初始化后执行 C++ 构造，再按 level 执行 initcall；ELF 自动检查 section |
 | 后端 | FreeRTOS、RT-Thread、baremetal 显式选择；未知后端/内核直接配置失败 |
 | IRQ | NVIC 位数单一配置源，CMSIS 编译断言，DTS 生成器检查上下界 |
-| 线程 | 协作停止、有限等待、owner join/delete；框架与 demo 关键线程使用静态栈/TCB；超时 fatal |
+| 线程 | 协作停止、有限等待、owner join/delete；框架与 demo_foc 关键线程使用静态栈/TCB；超时 fatal |
 | IPC | mutex/semaphore/静态队列/流缓冲内联控制块，容量与溢出校验 |
 | 设备 | 显式生命周期和错误状态；生成 registry；逆序 suspend/顺序 resume |
 | 通信 | 幂等 ACK replay、完整报文精确比对、可插拔 AEAD 和原子诊断统计 |
@@ -38,7 +38,7 @@ DTS 生成的寄存器、IRQ、DMA、pinctrl 和父设备引用。Kconfig 决定
 | 构建 | DTS/Kconfig/CMake/layout 闭环，应用 ELF 策略门禁，host 单元测试 |
 | Loader | baremetal、sector-swap/trial 回滚、容量及生产 provider 门禁 |
 
-当前产品级构建矩阵覆盖 GD32 `demo` 和 Goodix `demo_ble`。STM32 FDCAN backend 已闭环
+当前产品级构建矩阵覆盖 GD32 `demo_foc` 和 Goodix `demo_ble`。STM32 FDCAN backend 已闭环
 到 HAL 源码、显式时序和共享时钟生命周期，但仓库尚无 STM32 产品板可执行完整链接与
 实板验收。STM32 UART/SPI/PWM/I2C/Flash 直寄存器 backend 必须显式开启
 `CONFIG_STM32_DIRECT_REGISTER_DRIVERS`；它们只用于 bring-up，在产品补齐 clock/reset
@@ -70,7 +70,7 @@ bool app_watchdog_stop(void);
 一个业务 client。每个关键业务线程注册 client 并按自身 deadline 上报，monitor 不能
 替业务线程伪造心跳。
 
-仓库内两个 demo 已接入业务 client：`demo` 监控主循环和慢速控制环，`demo_ble` 监控
+仓库内两个 demo_foc 已接入业务 client：`demo_foc` 监控主循环和慢速控制环，`demo_ble` 监控
 主循环和 BLE command owner。`demo_ble` 使用 GR5525 AON watchdog；alarm 配置或 feed
 失败后保持 fail-closed，不再继续喂狗。client 在 `APPLICATION` priority 90 注册，watchdog monitor
 在 priority 99 启动，因此量产策略会在任何业务线程运行前完成 client 完整性检查。
@@ -127,8 +127,8 @@ sector-swap 能在一次未确认试运行后恢复旧应用，但不等于两�
 
 每次发布至少完成：
 
-1. `demo`、`demo_ble` 的 FreeRTOS 应用构建，并覆盖 `demo_ble` 最小服务和 production 配置；
-2. `demo` 的 RT-Thread 交叉后端构建；
+1. `demo_foc`、`demo_ble` 的 FreeRTOS 应用构建，并覆盖 `demo_ble` 最小服务和 production 配置；
+2. `demo_foc` 的 RT-Thread 交叉后端构建；
 3. preloader、loader、upgrade 和 3-in-1 构建；
 4. boot Python 测试、设备树生成器测试和 host CTest；
 5. 最终 ELF 无未解析符号，构造数组/initcall/`.noinit` 策略检查通过；
@@ -142,10 +142,10 @@ sector-swap 能在一次未确认试运行后恢复旧应用，但不等于两�
 ## 已知边界
 
 - `demo_ble` 已提供 GR5525 AON watchdog provider，但默认开发配置不启用，必须用
-  `PROFILE=release` 加载 `config/profiles/release.conf`，并完成板级卡死/复位窗口验证；`demo` 已接入 GD32 FWDGT provider，
+  `PROFILE=release` 加载 `config/profiles/release.conf`，并完成板级卡死/复位窗口验证；`demo_foc` 已接入 GD32 FWDGT provider，
   同样需要验证板级卡死、停机与复位窗口；
-- 两个 demo 都没有经目标板验证的 tickless provider，低功耗配置继续 fail closed；
-- demo 产品也没有量产 Link 密钥 provider，开启全局安全策略的负向构建应失败；
+- 两个 demo_foc 都没有经目标板验证的 tickless provider，低功耗配置继续 fail closed；
+- demo_foc 产品也没有量产 Link 密钥 provider，开启全局安全策略的负向构建应失败；
 - 仓库没有 STM32 产品目标；FDCAN 目前只有 backend 编译契约，STM32 直寄存器驱动默认
   fail closed，不能作为量产支持声明；
 - 主机测试不能覆盖真实 ISR 抢占和弱内存顺序；

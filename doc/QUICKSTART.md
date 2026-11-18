@@ -10,23 +10,23 @@ ninja             # 构建后端
 
 # ARM 交叉编译器（按项目选择）
 # 默认/GR5525: xPack GCC 9.3.1（工程对该版本使用 -std=c++2a）
-# demo (GD32): 也可显式 -Dt=armgcc 使用现代 arm-gnu-toolchain
+# demo_foc (GD32): 也可显式 -Dt=armgcc 使用现代 arm-gnu-toolchain
 ```
 
 ## 构建 Demo（GD32 FOC 电机控制）
 
 ```bash
 # 配置（未指定 -Dt 时默认 armgcc9）
-cmake -B out -GNinja -Dp=demo
+cmake -B out -GNinja -Dp=demo_foc
 
 # 编译
 ninja -C out
 
 # 产物
-ls out/demo.elf  out/demo.bin  out/demo.hex
+ls out/demo_foc.elf  out/demo_foc.bin  out/demo_foc.hex
 ```
 
-Demo 源码在 `app/product/demo/main.cc`，产品目录结构见 [APP_LAYOUT.md](APP_LAYOUT.md)。该工程面向 GD32F503，展示 FOC 电机控制（PWM + ADC + CLI 调试）。
+Demo 源码在 `app/product/demo_foc/main.cc`，产品目录结构见 [APP_LAYOUT.md](APP_LAYOUT.md)。该工程面向 GD32F503，展示 FOC 电机控制（PWM + ADC + CLI 调试）。
 
 ## 构建 Demo BLE（GR5525 HID 键盘 + UART 透传）
 
@@ -55,7 +55,7 @@ Demo BLE 源码在 `app/product/demo_ble/`，产品目录结构见 [APP_LAYOUT.m
 
 | 参数 | 说明 | 示例 |
 |:---|:---|:---|
-| `-Dp=<project>` | 项目名（对应 app/ 下的目录） | `-Dp=demo` |
+| `-Dp=<project>` | 项目名（对应 app/ 下的目录） | `-Dp=demo_foc` |
 | `-Dt=<toolchain>` | 工具链（armgcc、armgcc9） | `-Dt=armgcc9` |
 | `-G<generator>` | 构建系统 | `-GNinja` |
 | `-DFIRMWARE_TYPE=<type>` | 固件类型：app/preloader/loader/upgrade | `-DFIRMWARE_TYPE=loader` |
@@ -71,16 +71,16 @@ Demo BLE 源码在 `app/product/demo_ble/`，产品目录结构见 [APP_LAYOUT.m
 ninja -C out -v
 
 # 只编译指定目标
-ninja -C out demo.elf
+ninja -C out demo_foc.elf
 
 # 查看设备树预处理结果
 ninja -C out show_dts
 
 # 构建并打包 preloader + loader + app
-python bootloader/scripts/build_3in1.py demo --out out/demo_3in1
+python bootloader/scripts/build_3in1.py demo_foc --out out/demo_3in1
 
 # 检查最终 ELF 不含未解析符号
-arm-none-eabi-nm -uC out/demo.elf
+arm-none-eabi-nm -uC out/demo_foc.elf
 ```
 
 不要复用不同产品或不同 `FIRMWARE_TYPE` 的同一构建目录；每个产品/固件类型使用
@@ -96,23 +96,23 @@ arm-none-eabi-nm -uC out/demo.elf
 ```bash
 # J-Link
 JLinkExe -device GD32F503 -if SWD -speed 4000
-> loadfile out/demo.bin 0x08000000
+> loadfile out/demo_foc.bin 0x08000000
 > r
 > g
 
 # OpenOCD
 openocd -f interface/stlink.cfg -f target/stm32f5x.cfg \
-  -c "program out/demo.bin 0x08000000 verify reset exit"
+  -c "program out/demo_foc.bin 0x08000000 verify reset exit"
 
 # pyocd
-pyocd flash -t gd32f503 out/demo.bin
+pyocd flash -t gd32f503 out/demo_foc.bin
 ```
 
 ## 调试
 
 ```bash
 # GDB 远程调试
-arm-none-eabi-gdb out/demo.elf
+arm-none-eabi-gdb out/demo_foc.elf
 (gdb) target remote :3333
 (gdb) load
 (gdb) break main

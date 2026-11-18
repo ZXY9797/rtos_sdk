@@ -19,25 +19,25 @@ class BuildThreeInOneTest(unittest.TestCase):
     def test_factory_images_must_share_board_and_canonical_layout(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            layout = build_3in1.load_layout('demo')
+            layout = build_3in1.load_layout('demo_foc')
             checksum = hashlib.sha256(layout['path'].read_bytes()).hexdigest()
             for image in ('preloader', 'loader', 'app'):
                 (root / image).mkdir()
                 (root / image / 'build-info.json').write_text(json.dumps({
-                    'product': 'demo', 'firmware': image, 'board': 'gd32_demo',
+                    'product': 'demo_foc', 'firmware': image, 'board': 'gd32_demo',
                     'inputs': {'layout': checksum}}), encoding='utf-8')
-            build_3in1.verify_image_set(root, 'demo')
+            build_3in1.verify_image_set(root, 'demo_foc')
             path = root / 'app/build-info.json'
             info = json.loads(path.read_text(encoding='utf-8'))
             info['board'] = 'other-board'
             path.write_text(json.dumps(info), encoding='utf-8')
             with self.assertRaisesRegex(SystemExit, 'board differs'):
-                build_3in1.verify_image_set(root, 'demo')
+                build_3in1.verify_image_set(root, 'demo_foc')
             info['board'] = 'gd32_demo'
             info['inputs']['layout'] = 'different-layout'
             path.write_text(json.dumps(info), encoding='utf-8')
             with self.assertRaisesRegex(SystemExit, 'canonical product layout'):
-                build_3in1.verify_image_set(root, 'demo')
+                build_3in1.verify_image_set(root, 'demo_foc')
 
     def test_production_verifies_each_final_image_configuration(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -64,7 +64,7 @@ class BuildThreeInOneTest(unittest.TestCase):
     def test_cmake_uses_the_invoking_python(self) -> None:
         with mock.patch.object(build_3in1, "run") as run_mock:
             build_3in1.cmake_configure(
-                Path("out/test"), "demo", "app", None)
+                Path("out/test"), "demo_foc", "app", None)
 
         command = run_mock.call_args.args[0]
         for stale_override in ('APPLICATION', 'BOARD', 'BOARD_ROOT', 'CONF_FILE', 'DTC_OVERLAY_FILE', 'MODULE_ROOTS'):

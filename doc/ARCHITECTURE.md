@@ -49,7 +49,7 @@ bootloader 私有源文件。
 | CMake | 构建图和依赖闭包 | 源码、include、库依赖、生成器输入、链接脚本、产物规则 | 设备地址、IRQ、业务阈值和隐式驱动选择 |
 
 同一个事实只能有一个维护入口。派生文件必须由该入口生成；例如 boot Flash
-布局来自 `bootloader/product/<product>/layout.json`，C++ 映射和打包参数均由
+布局来自 `app/product/<product>/config/layout.json`，C++ 映射和打包参数均由
 生成器得到，不再手写多份分区表。
 
 驱动后端使用双重闭合：Kconfig 选项必须依赖对应的

@@ -108,7 +108,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--layout",
-        default="demo",
+        default="demo_foc",
         choices=sorted(LAYOUTS.keys()),
         help="flash layout to use",
     )

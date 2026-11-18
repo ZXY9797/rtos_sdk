@@ -8,7 +8,7 @@
 `app`、`preloader`、`loader`、`upgrade`。
 
 ```text
-product layout.json
+app/product/<product>/config/layout.json
   -> validated CMake layout values
   -> boot_layout.h
   -> boot_flash_map.cc
@@ -83,7 +83,7 @@ loader 构建还强制：
 
 ```powershell
 cmake -S . -B out\demo_loader -GNinja `
-  -Dp=demo -DFIRMWARE_TYPE=loader
+  -Dp=demo_foc -DFIRMWARE_TYPE=loader
 cmake --build out\demo_loader --parallel
 
 cmake -S . -B out\demo_ble_loader -GNinja `
@@ -94,7 +94,7 @@ cmake --build out\demo_ble_loader --parallel
 完整三合一：
 
 ```powershell
-python bootloader\scripts\build_3in1.py demo `
+python bootloader\scripts\build_3in1.py demo_foc `
   --out out\demo_3in1
 python bootloader\scripts\build_3in1.py demo_ble `
   --out out\demo_ble_3in1
@@ -105,7 +105,7 @@ python bootloader\scripts\build_3in1.py demo_ble `
 provider：
 
 ```powershell
-python bootloader\scripts\build_3in1.py demo `
+python bootloader\scripts\build_3in1.py demo_foc `
   --out out\demo_production `
   --production `
   --security-version 12 `
@@ -131,7 +131,7 @@ ctest --test-dir out\host_tests --output-on-failure
 initcall、持久化 fault section、fatal 入口和未解析符号。这个检查是构建目标的一部分，
 不能通过跳过单独的 CI job 绕开。
 
-CI 同时构建两个产品的 FreeRTOS app、`demo_ble` 最小服务/production 配置、demo
+CI 同时构建两个产品的 FreeRTOS app、`demo_ble` 最小服务/production 配置、demo_foc
 RT-Thread app，以及两个产品的
 preloader/loader/upgrade 矩阵；upgrade 构建显式嵌入同一轮刚生成的 loader BIN，禁止
 用占位 payload 或跨产品产物。CI 还会验证缺少 app watchdog、Link security 和 boot

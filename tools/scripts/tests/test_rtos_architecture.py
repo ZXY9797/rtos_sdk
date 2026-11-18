@@ -105,8 +105,8 @@ class RtosArchitectureContractTest(unittest.TestCase):
         algo_cmake = self.read("component/algo/CMakeLists.txt")
         motion_cmake = self.read("component/motion/CMakeLists.txt")
         controller = self.read("component/control/src/controller.cc")
-        self.assertIn("src/spatial_math.cc", algo_cmake)
-        self.assertIn("src/motion_profile.cc", algo_cmake)
+        self.assertIn("src/math/spatial_math.cc", algo_cmake)
+        self.assertIn("src/trajectory/motion_profile.cc", algo_cmake)
         self.assertNotIn("src/math.cc", motion_cmake)
         self.assertIn("algo control_contracts", motion_cmake)
         self.assertIn("algo::BiquadFilter", self.read(
@@ -118,10 +118,10 @@ class RtosArchitectureContractTest(unittest.TestCase):
             cmake = self.read(f"component/{component}/CMakeLists.txt")
             self.assertNotIn("PUBLIC motion", cmake)
         for path in (
-            "component/algo/include/algo/motion_profile.h",
-            "component/algo/include/algo/spatial_math.h",
-            "component/algo/src/motion_profile.cc",
-            "component/algo/src/spatial_math.cc",
+            "component/algo/include/algo/trajectory/motion_profile.h",
+            "component/algo/include/algo/math/spatial_math.h",
+            "component/algo/src/trajectory/motion_profile.cc",
+            "component/algo/src/math/spatial_math.cc",
         ):
             source = self.read(path)
             self.assertNotIn("gimbal", source)

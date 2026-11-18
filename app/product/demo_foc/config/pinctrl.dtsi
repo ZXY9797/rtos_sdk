@@ -1,0 +1,28 @@
+/ {
+    pinctrl: pinctrl {
+        status = "disabled";
+        compatible = "gd,gd32-pinctrl";
+        pwm_u: pwm_u { pinmux = <GD32_PINMUX_AF(GD32_PORT_A, 8, 1, GD32_PULL_NONE, GD32_DRIVE_PUSH_PULL, 3)>; };
+        pwm_u_n: pwm_u_n { pinmux = <GD32_PINMUX_AF(GD32_PORT_B, 13, 2, GD32_PULL_NONE, GD32_DRIVE_PUSH_PULL, 3)>; };
+        pwm_v: pwm_v { pinmux = <GD32_PINMUX_AF(GD32_PORT_A, 9, 1, GD32_PULL_NONE, GD32_DRIVE_PUSH_PULL, 3)>; };
+        pwm_v_n: pwm_v_n { pinmux = <GD32_PINMUX_AF(GD32_PORT_B, 14, 2, GD32_PULL_NONE, GD32_DRIVE_PUSH_PULL, 3)>; };
+        pwm_w: pwm_w { pinmux = <GD32_PINMUX_AF(GD32_PORT_A, 10, 1, GD32_PULL_NONE, GD32_DRIVE_PUSH_PULL, 3)>; };
+        pwm_w_n: pwm_w_n { pinmux = <GD32_PINMUX_AF(GD32_PORT_B, 15, 1, GD32_PULL_NONE, GD32_DRIVE_PUSH_PULL, 3)>; };
+        console_tx: console_tx { pinmux = <GD32_PINMUX_AF(GD32_PORT_B, 6, 0, GD32_PULL_NONE, GD32_DRIVE_PUSH_PULL, 3)>; };
+        console_rx: console_rx { pinmux = <GD32_PINMUX_AF(GD32_PORT_B, 7, 0, GD32_PULL_UP, GD32_DRIVE_PUSH_PULL, 3)>; };
+        can_rx: can_rx { pinmux = <GD32_PINMUX_AF(GD32_PORT_A, 11, 1, GD32_PULL_UP, GD32_DRIVE_PUSH_PULL, 3)>; };
+        can_tx: can_tx { pinmux = <GD32_PINMUX_AF(GD32_PORT_A, 12, 1, GD32_PULL_NONE, GD32_DRIVE_PUSH_PULL, 3)>; };
+        iu_analog: iu_analog { pinmux = <GD32_PINMUX_ANALOG(GD32_PORT_A, 0)>; };
+        iv_analog: iv_analog { pinmux = <GD32_PINMUX_ANALOG(GD32_PORT_A, 1)>; };
+        iw_analog: iw_analog { pinmux = <GD32_PINMUX_ANALOG(GD32_PORT_A, 2)>; };
+        vbus_analog: vbus_analog { pinmux = <GD32_PINMUX_ANALOG(GD32_PORT_A, 4)>; };
+        rotor1_analog: rotor1_analog { pinmux = <GD32_PINMUX_ANALOG(GD32_PORT_B, 0)>; };
+        rotor2_analog: rotor2_analog { pinmux = <GD32_PINMUX_ANALOG(GD32_PORT_B, 1)>; };
+        joint1_analog: joint1_analog { pinmux = <GD32_PINMUX_ANALOG(GD32_PORT_B, 11)>; };
+        joint2_analog: joint2_analog { pinmux = <GD32_PINMUX_ANALOG(GD32_PORT_A, 7)>; };
+        board_ntc_analog: board_ntc_analog { pinmux = <GD32_PINMUX_ANALOG(GD32_PORT_B, 10)>; };
+        motor_ntc1_analog: motor_ntc1_analog { pinmux = <GD32_PINMUX_ANALOG(GD32_PORT_C, 3)>; };
+        motor_ntc2_analog: motor_ntc2_analog { pinmux = <GD32_PINMUX_ANALOG(GD32_PORT_E, 15)>; };
+        status_led_pin: status_led_pin { pinmux = <GD32_PINMUX_OUTPUT_LOW(GD32_PORT_E, 0, GD32_PULL_NONE, GD32_DRIVE_PUSH_PULL, 2)>; };
+    };
+};

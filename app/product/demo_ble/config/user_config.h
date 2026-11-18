@@ -3,6 +3,6 @@
 
 /* Application-level configuration for Goodix BLE profiles.
  * This file is required by some BLE profiles (e.g., AGS).
- * Provide minimal defaults for the demo. */
+ * Provide minimal defaults for the demo_foc. */
 
 #endif /* __USER_CONFIG_H__ */

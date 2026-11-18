@@ -23,7 +23,7 @@ class MergeFirmwareTest(unittest.TestCase):
         loader.write_bytes(b"loader")
         application.write_bytes(app)
         return argparse.Namespace(
-            layout="demo",
+            layout="demo_foc",
             preloader=str(preloader),
             loader=str(loader),
             app=str(application),
@@ -37,7 +37,7 @@ class MergeFirmwareTest(unittest.TestCase):
             with mock.patch.object(merge_firmware, "validate_image"):
                 merge_firmware.merge(args)
 
-            layout = merge_firmware.LAYOUTS["demo"]
+            layout = merge_firmware.LAYOUTS["demo_foc"]
             app = layout["partitions"]["app"]
             image = Path(args.output).read_bytes()
             self.assertLess(app["max_image_size"], app["size"])
@@ -49,7 +49,7 @@ class MergeFirmwareTest(unittest.TestCase):
     def test_app_larger_than_upgrade_slot_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            app = merge_firmware.LAYOUTS["demo"]["partitions"]["app"]
+            app = merge_firmware.LAYOUTS["demo_foc"]["partitions"]["app"]
             args = self._arguments(root, bytes(app["max_image_size"] + 1))
             with mock.patch.object(merge_firmware, "validate_image"):
                 with self.assertRaisesRegex(SystemExit, "installable size"):

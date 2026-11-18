@@ -136,7 +136,7 @@ PWM 通道、周期等板级拓扑只来自 DTS，不再复制进可变工厂参
 安全层仍会对 capability 与反馈有效性做第二道校验。只有补齐对应 DTS、同步
 采样、驱动读取和故障注入验证后，才允许移除构建门禁并发布 Valid 反馈。
 
-参考板继承 GD32F503 demo 的时钟、串口、SPI 和 IMU 定义，并增加三组双 Hall
+参考板继承 GD32F503 demo_foc 的时钟、串口、SPI 和 IMU 定义，并增加三组双 Hall
 ADC 通道、三组 3PWM 定时器和一个加热 PWM。参考文件没有猜测电机 PWM 引脚、
 功率级 enable/brake/fault 引脚；实际产品必须依据原理图补充 pinctrl 和硬件
 关断链，然后执行 `VALIDATION.md` 中的带电门禁。

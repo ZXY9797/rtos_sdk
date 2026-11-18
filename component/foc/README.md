@@ -1,5 +1,9 @@
 # 电机控制 FOC 组件边界
 
+本组件的设备路径与 `demo_foc` 的纯计算 `algo::motor::CurrentLoop` 路径独立。
+当前产品没有实例化这里的 `foc::Motor`；本组件中的观察器或其他功能不代表产品已接入。
+详见 [电机控制能力](../../doc/MOTOR_CONTROL_DESIGN.md)。
+
 `component/foc` 是电机控制领域组件，负责统一的 SVPWM、dq 电压调制、相电流
 闭环 FOC、电机模型、测量和角度估计。电压模式与电流模式共享同一调制内核，
 不会维护两套限幅和零序注入算法。

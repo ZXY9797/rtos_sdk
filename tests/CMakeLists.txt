@@ -13,6 +13,57 @@ add_compile_options(
     $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wpedantic>
     $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Werror>)
 add_subdirectory(../samples/control_pipeline control-pipeline)
+add_subdirectory(../samples/interaction_control interaction-control)
+add_executable(interaction_test interaction_test.cc)
+target_link_libraries(interaction_test PRIVATE sdk::algo)
+target_compile_options(interaction_test PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG> $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-UNDEBUG>)
+add_test(NAME interaction COMMAND interaction_test)
+
+foreach(contract algorithm calibration control diagnostics)
+    add_executable(motor_${contract}_test motor_${contract}_test.cc)
+    target_link_libraries(motor_${contract}_test PRIVATE sdk::algo)
+    target_compile_options(motor_${contract}_test PRIVATE
+        $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>
+        $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-UNDEBUG>)
+    add_test(NAME motor_${contract} COMMAND motor_${contract}_test)
+endforeach()
+
+add_executable(demo_foc_control_test
+    demo_foc_control_test.cc
+    ../app/product/demo_foc/control/motor_control.cc
+    ../app/product/demo_foc/control/motor_management.cc
+    ../app/product/demo_foc/control/interaction_control.cc
+    ../app/product/demo_foc/comm/motor_protocol.cc
+    ../app/product/demo_foc/comm/interaction_protocol.cc)
+target_include_directories(demo_foc_control_test PRIVATE
+    ../app/product/demo_foc ../component/link/include)
+target_link_libraries(demo_foc_control_test PRIVATE sdk::algo)
+target_compile_options(demo_foc_control_test PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>
+    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-UNDEBUG>)
+add_test(NAME demo_foc_control COMMAND demo_foc_control_test)
+
+add_executable(link_can_observer_test link_can_observer_test.cc)
+target_include_directories(link_can_observer_test PRIVATE
+    stubs ../component/link/include ../embedded/include ../embedded/include/osal ../embedded/osal/baremetal)
+target_compile_definitions(link_can_observer_test PRIVATE CONFIG_NUM_IRQ_PRIO_BITS=4)
+add_test(NAME link_can_observer COMMAND link_can_observer_test)
+
+add_executable(adc_scan_test adc_scan_test.cc
+    ../embedded/drivers/adc/adc_gd32.cc
+    ../embedded/drivers/adc/adc_scan_gd32.cc
+    ../embedded/drivers/dma/dma_gd32.cc)
+target_include_directories(adc_scan_test PRIVATE stubs/adc ../embedded/include
+    ../embedded/soc/gd/gd32f50x/include)
+target_compile_options(adc_scan_test PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>
+    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-UNDEBUG>)
+if(MSVC)
+    target_compile_options(adc_scan_test PRIVATE /FI${CMAKE_CURRENT_SOURCE_DIR}/stubs/adc/gd32f50x.h)
+else()
+    target_compile_options(adc_scan_test PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/stubs/adc/gd32f50x.h)
+endif()
+add_test(NAME adc_scan COMMAND adc_scan_test)
 
 find_package(Threads REQUIRED)
 add_executable(event_group_runtime_test event_group_runtime_test.cc ../embedded/osal/event_group.cc)
@@ -231,10 +282,10 @@ add_test(NAME device_pm COMMAND device_pm_test)
 add_executable(gimbal_functional_test
     gimbal_functional_test.cc
     ../app/product/gimbal/services/parameters.cc
-    ../component/algo/src/biquad_filter.cc
-    ../component/algo/src/lead_lag_compensator.cc
-    ../component/algo/src/motion_profile.cc
-    ../component/algo/src/spatial_math.cc
+    ../component/algo/src/filter/biquad_filter.cc
+    ../component/algo/src/filter/lead_lag_compensator.cc
+    ../component/algo/src/trajectory/motion_profile.cc
+    ../component/algo/src/math/spatial_math.cc
     ../component/attitude/src/attitude_ekf.cc
     ../component/control/src/controller.cc
     ../component/foc/src/svpwm.cc

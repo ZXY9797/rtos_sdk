@@ -1,6 +1,6 @@
 #include <gimbal/motion_planner.h>
 
-#include <algo/motion_profile.h>
+#include <algo/trajectory/motion_profile.h>
 #include <gimbal/math.h>
 
 #include <cmath>

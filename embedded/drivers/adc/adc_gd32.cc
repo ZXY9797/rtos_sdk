@@ -35,10 +35,9 @@ static_assert(offsetof(AdcRegs, RSQ2) == 0x34U);
 static_assert(offsetof(AdcRegs, LDATA) == 0x3CU);
 static_assert(offsetof(AdcRegs, OVSAMPCTL) == 0x80U);
 
-[[nodiscard]] bool valid_channel(AdcChannel channel)
+[[nodiscard]] bool valid_channel(AdcChannel channel, uintptr_t base)
 {
-    return static_cast<uint8_t>(channel)
-        <= static_cast<uint8_t>(AdcChannel::Ch15);
+    return static_cast<uint8_t>(channel) <= (base == ADC2_BASE ? 16U : 17U);
 }
 
 [[nodiscard]] bool valid_sample_time(AdcSampleTime sample_time)
@@ -59,13 +58,15 @@ static_assert(offsetof(AdcRegs, OVSAMPCTL) == 0x80U);
     return true;
 }
 
-void configure_adc_clock()
+void configure_adc_clock(uintptr_t base)
 {
     gd32::rcu_cfg0() =
         (gd32::rcu_cfg0() & ~kAdcPrescalerMask)
         | kAdcPrescalerDivideByFour;
     gd32::rcu_cfg1() &= ~kAdcAhbPrescalerSelect;
-    gd32::rcu_apb2en() |= gd32::clk::ADC0EN;
+    const uint32_t enable = base == ADC0_BASE ? (1U << 9U) :
+        base == ADC1_BASE ? (1U << 10U) : (1U << 15U);
+    gd32::rcu_apb2en() |= enable;
 }
 
 void write_sample_time(AdcRegs &regs, AdcChannel adc_channel,
@@ -111,11 +112,17 @@ void AdcBase::isr_handler(osal::IsrContext &context)
 Status AdcBase::init(const AdcConfig &config)
 {
     uint32_t resolution = 0U;
-    if (m_initialized || m_base != ADC0_BASE
-        || !resolution_bits(config.resolution, resolution)) {
+    const bool adc_valid = m_base == ADC0_BASE || m_base == ADC1_BASE || m_base == ADC2_BASE;
+    const uint16_t ratio = config.oversample_ratio;
+    if (m_initialized || !adc_valid || !resolution_bits(config.resolution, resolution) ||
+        ratio == 0U || ratio > 256U || (ratio & (ratio - 1U)) != 0U ||
+        config.oversample_shift > 8U) {
         return Status::InvalidArgument;
     }
-    configure_adc_clock();
+    const uint64_t full_scale = (((uint64_t(1U) << config.resolution) - 1U) * ratio) >>
+                                (ratio > 1U ? config.oversample_shift : 0U);
+    if (full_scale > UINT16_MAX) return Status::InvalidArgument;
+    configure_adc_clock(m_base);
     auto &regs = *reinterpret_cast<AdcRegs *>(m_base);
     regs.CTL0 = 0U;
     regs.CTL1 = 0U;
@@ -124,6 +131,13 @@ Status AdcBase::init(const AdcConfig &config)
     regs.OVSAMPCTL =
         (regs.OVSAMPCTL & ~kResolutionMask)
         | (resolution << kResolutionShift);
+    if (ratio > 1U) {
+        uint32_t ratio_code = 0U;
+        for (uint16_t remaining = ratio; remaining > 2U; remaining >>= 1U) ++ratio_code;
+        regs.OVSAMPCTL = (regs.OVSAMPCTL & ~0x1FFU) | 1U | (ratio_code << 2U) |
+                            (uint32_t(config.oversample_shift) << 5U);
+    } else regs.OVSAMPCTL &= ~1U;
+    m_scan_dma = config.scan_dma;
     regs.CTL1 |= kAdcEnable;
     m_injected_count = 0U;
     m_initialized = true;
@@ -135,6 +149,7 @@ Status AdcBase::deinit()
     if (!m_initialized) {
         return Status::Ok;
     }
+    (void)stop_scan();
     auto &regs = *reinterpret_cast<AdcRegs *>(m_base);
     regs.CTL0 &= ~kInsertedInterruptEnable;
     regs.CTL1 &= ~kAdcEnable;
@@ -147,10 +162,11 @@ Status AdcBase::deinit()
 
 Status AdcBase::read(AdcChannel channel, uint16_t &value)
 {
-    if (!m_initialized || !valid_channel(channel)) {
+    if (!m_initialized || m_scan_buffer != nullptr || !valid_channel(channel, m_base)) {
         return Status::InvalidArgument;
     }
     auto &regs = *reinterpret_cast<AdcRegs *>(m_base);
+    regs.CTL1 |= kAdcEnable;
     regs.RSQ0 &= ~(0xFU << kSequenceLengthShift);
     regs.RSQ2 = static_cast<uint32_t>(channel) & kChannelMask;
     regs.STAT = ~kRoutineComplete;
@@ -162,14 +178,14 @@ Status AdcBase::read(AdcChannel channel, uint16_t &value)
     if ((regs.STAT & kRoutineComplete) == 0U) {
         return Status::Timeout;
     }
-    value = static_cast<uint16_t>(regs.RDATA & kAdcDataMask);
+    value = static_cast<uint16_t>(regs.RDATA);
     return Status::Ok;
 }
 
 Status AdcBase::set_sample_time(AdcChannel channel,
                                 AdcSampleTime sample_time)
 {
-    if (!m_initialized || !valid_channel(channel)
+    if (!m_initialized || !valid_channel(channel, m_base)
         || !valid_sample_time(sample_time)) {
         return Status::InvalidArgument;
     }
@@ -180,12 +196,12 @@ Status AdcBase::set_sample_time(AdcChannel channel,
 
 Status AdcBase::config_injected(const AdcInjectedConfig &config)
 {
-    if (!m_initialized || config.channel_count == 0U
+    if (!m_initialized || m_scan_buffer != nullptr || config.channel_count == 0U
         || config.channel_count > 4U || config.trigger_source != 0U) {
         return Status::InvalidArgument;
     }
     for (uint32_t rank = 0U; rank < config.channel_count; ++rank) {
-        if (!valid_channel(config.channels[rank].channel)
+        if (!valid_channel(config.channels[rank].channel, m_base)
             || !valid_sample_time(config.channels[rank].sample_time)) {
             return Status::InvalidArgument;
         }
@@ -233,7 +249,7 @@ Status AdcBase::config_watchdog(AdcChannel channel,
                                 uint16_t high_threshold,
                                 uint16_t low_threshold)
 {
-    if (!m_initialized || !valid_channel(channel)
+    if (!m_initialized || !valid_channel(channel, m_base)
         || high_threshold > kAdcDataMask
         || low_threshold > high_threshold) {
         return Status::InvalidArgument;

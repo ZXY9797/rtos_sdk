@@ -1,0 +1,20 @@
+description: GD32 ADC controller properties
+include: [adc-controller.yaml, base.yaml, pinctrl-device.yaml]
+
+properties:
+  reg:
+    type: array
+    required: true
+
+  interrupts:
+    type: array
+    required: true
+
+  resolution:
+    type: int
+    default: 12
+    enum: [6, 8, 10, 12]
+
+  label:
+    type: string
+    required: true

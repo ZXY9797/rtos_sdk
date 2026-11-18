@@ -519,7 +519,7 @@ UART/CAN/BLE 后端都向 Router 暴露同一种完整字节帧，CAN 分片属�
 实时性。这些边界只有在产品拓扑和硬件承载确实需要时再做独立、可关闭的组件。
 
 `CONFIG_LINK` 默认关闭；使用 Link 的产品必须显式开启并根据物理端口数、并发窗口和
-map 文件配置容量。关闭时 link 库不参与编译，零开销。`demo` 和 `demo_ble` 只使用
+map 文件配置容量。关闭时 link 库不参与编译，零开销。`demo_foc` 和 `demo_ble` 只使用
 一个端口，因此把 links、routes、pending、queue 和 worker stack 收紧为产品值；replay
 保留 16 项以覆盖 10 秒去重窗口内的管理命令峰值，避免框架上限无条件变成固件 RAM 成本。
 

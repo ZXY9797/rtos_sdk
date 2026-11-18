@@ -66,6 +66,8 @@ jobs:
             -p "test_*.py" -v
           python -m unittest discover -s tools/scripts/tests \
             -p "test_*.py" -v
+          python -m unittest discover -s tools/demo_foc \
+            -p "test_*.py" -v
 
       - name: Configure C++ contract tests
         run: cmake -S tests -B out/host-tests -G Ninja
@@ -173,17 +175,17 @@ jobs:
           }
 
           expect_rejected \
-            cached-dma demo armgcc app \
+            cached-dma demo_foc armgcc app \
             tests/config/cached_dma.conf \
             "Cached DMA requires product memory provider"
           expect_rejected \
-            secure-link demo armgcc app tests/config/link_secure.conf \
+            secure-link demo_foc armgcc app tests/config/link_secure.conf \
             "CONFIG_LINK_SECURITY requires product provider"
           expect_rejected \
-            production-boot demo armgcc loader \
+            production-boot demo_foc armgcc loader \
             "" "Production boot requires product security provider" release
           expect_rejected \
-            production-preloader demo armgcc preloader \
+            production-preloader demo_foc armgcc preloader \
             "" "Production preloader requires product root-of-trust provider" release
           expect_rejected \
             goodix-toolchain demo_ble armgcc app "" \
@@ -191,33 +193,33 @@ jobs:
 
       - name: Build FreeRTOS application
         run: |
-          cmake -S . -B out/demo-freertos -G Ninja \
-            -Dp=demo -Dt=armgcc
-          cmake --build out/demo-freertos --parallel
+          cmake -S . -B out/demo_foc-freertos -G Ninja \
+            -Dp=demo_foc -Dt=armgcc
+          cmake --build out/demo_foc-freertos --parallel
 
       - name: Build FreeRTOS BLE application
         run: |
-          cmake -S . -B out/demo-ble -G Ninja \
+          cmake -S . -B out/demo_foc-ble -G Ninja \
             -Dp=demo_ble -Dt=armgcc9
-          cmake --build out/demo-ble --parallel
+          cmake --build out/demo_foc-ble --parallel
 
       - name: Build BLE configuration contracts
         run: |
-          cmake -S . -B out/demo-ble-minimal -G Ninja \
+          cmake -S . -B out/demo_foc-ble-minimal -G Ninja \
             -Dp=demo_ble -Dt=armgcc9 \
             -DEXTRA_CONF_FILE=tests/config/demo_ble_minimal.conf
-          cmake --build out/demo-ble-minimal --parallel
-          cmake -S . -B out/demo-ble-production -G Ninja \
+          cmake --build out/demo_foc-ble-minimal --parallel
+          cmake -S . -B out/demo_foc-ble-production -G Ninja \
             -Dp=demo_ble -Dt=armgcc9 \
             -DPROFILE=release
-          cmake --build out/demo-ble-production --parallel
+          cmake --build out/demo_foc-ble-production --parallel
 
       - name: Build RT-Thread application
         run: |
-          cmake -S . -B out/demo-rtthread -G Ninja \
-            -Dp=demo -Dt=armgcc \
+          cmake -S . -B out/demo_foc-rtthread -G Ninja \
+            -Dp=demo_foc -Dt=armgcc \
             -DEXTRA_CONF_FILE=tests/config/rtthread.conf
-          cmake --build out/demo-rtthread --parallel
+          cmake --build out/demo_foc-rtthread --parallel
 
       - name: Build architecture and OSAL contract matrix
         run: |
@@ -233,7 +235,7 @@ jobs:
 
       - name: Build boot-chain firmware matrix
         run: |
-          for product in demo demo_ble gimbal; do
+          for product in demo_foc demo_ble gimbal; do
             toolchain=armgcc
             if [[ "${product}" == "demo_ble" ]]; then
               toolchain=armgcc9
@@ -258,20 +260,20 @@ jobs:
 
       - name: Build factory images
         run: |
-          python bootloader/scripts/pack_image.py --layout demo \
-            --input out/demo-freertos/demo.bin \
-            --output out/demo-app.img
-          python bootloader/scripts/merge_firmware.py --layout demo \
-            --preloader out/demo-preloader/demo_preloader.bin \
-            --loader out/demo-loader/demo_loader.bin \
-            --app out/demo-app.img --output out/demo_3in1.bin
+          python bootloader/scripts/pack_image.py --layout demo_foc \
+            --input out/demo_foc-freertos/demo_foc.bin \
+            --output out/demo_foc-app.img
+          python bootloader/scripts/merge_firmware.py --layout demo_foc \
+            --preloader out/demo_foc-preloader/demo_preloader.bin \
+            --loader out/demo_foc-loader/demo_loader.bin \
+            --app out/demo_foc-app.img --output out/demo_3in1.bin
           python bootloader/scripts/pack_image.py --layout demo_ble \
-            --input out/demo-ble/demo_ble.bin \
-            --output out/demo-ble-app.img
+            --input out/demo_foc-ble/demo_ble.bin \
+            --output out/demo_foc-ble-app.img
           python bootloader/scripts/merge_firmware.py --layout demo_ble \
             --preloader out/demo_ble-preloader/demo_ble_preloader.bin \
             --loader out/demo_ble-loader/demo_ble_loader.bin \
-            --app out/demo-ble-app.img --output out/demo_ble_3in1.bin
+            --app out/demo_foc-ble-app.img --output out/demo_ble_3in1.bin
 
       - name: Record firmware checksums
         run: |
@@ -292,14 +294,14 @@ jobs:
         with:
           name: development-firmware-${{ github.sha }}
           path: |
-            out/demo-freertos/demo.*
-            out/demo-rtthread/demo.*
-            out/demo-*/demo_*.*
+            out/demo_foc-freertos/demo_foc.*
+            out/demo_foc-rtthread/demo_foc.*
+            out/demo_foc-*/demo_*.*
             out/demo_ble-*/demo_ble_*.*
             out/gimbal-*/gimbal_*.*
-            out/demo-app.img
-            out/demo-ble-app.img
-            out/demo-ble-production/demo_ble.*
+            out/demo_foc-app.img
+            out/demo_foc-ble-app.img
+            out/demo_foc-ble-production/demo_ble.*
             out/demo_3in1.bin
             out/demo_ble_3in1.bin
             out/factory-images.sha256

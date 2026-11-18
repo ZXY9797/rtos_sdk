@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 set(SDK_ROOT "${CMAKE_CURRENT_LIST_DIR}")
 
 if(NOT DEFINED p)
-    message(FATAL_ERROR "You must define product. Example: -Dp=demo")
+    message(FATAL_ERROR "You must define product. Example: -Dp=demo_foc")
 endif()
 if(NOT p MATCHES "^[A-Za-z][A-Za-z0-9_-]*$")
     message(FATAL_ERROR "Product name must be an identifier: ${p}")

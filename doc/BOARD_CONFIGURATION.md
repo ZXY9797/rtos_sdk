@@ -10,37 +10,36 @@ App 与 Boot 引用本项目同一份硬件定义，Boot 不继承 App 的设备
 app/product/gimbal/
 ├── Kconfig                         # 应用配置项定义
 ├── linker.ld
-└── config/
-    ├── board.dts                   # 本项目物理硬件；外设默认 disabled
-    ├── pinctrl.dtsi                # 本项目引脚状态描述
-    ├── board_defconfig             # App/Boot 共用的最小 SoC/时钟默认值
-    ├── prj.conf                    # App 软件配置
-    ├── app.overlay                 # 设备启用、采样/PWM 参数、领域设备组合
-    └── profiles/{debug,release}.conf
-
-bootloader/product/gimbal/
-├── layout.json                     # 全镜像、链接与打包共用的布局
-├── common/                         # 按需提供产品 Flash/安全适配
-├── preloader/
-│   ├── linker.ld
-│   └── config/
-│       ├── prj.conf
-│       ├── preloader.overlay
-│       └── profiles/{debug,release}.conf
-├── loader/
-│   ├── linker.ld
-│   └── config/
-│       ├── prj.conf
-│       ├── loader.overlay
-│       └── profiles/{debug,release}.conf
-└── upgrade/
-    ├── linker.ld
-    └── config/
-        ├── prj.conf
-        └── upgrade.overlay
+├── config/
+│   ├── board.dts                   # 本项目物理硬件；外设默认 disabled
+│   ├── pinctrl.dtsi                # 本项目引脚状态描述
+│   ├── board_defconfig             # App/Boot 共用的最小 SoC/时钟默认值
+│   ├── layout.json                 # 全镜像、链接与打包共用的布局
+│   ├── prj.conf                    # App 软件配置
+│   ├── app.overlay                 # 设备启用、采样/PWM 参数、领域设备组合
+│   └── profiles/{debug,release}.conf
+└── boot/
+    ├── common/                     # 按需提供产品 Flash/安全适配
+    ├── preloader/
+    │   ├── linker.ld
+    │   └── config/
+    │       ├── prj.conf
+    │       ├── preloader.overlay
+    │       └── profiles/{debug,release}.conf
+    ├── loader/
+    │   ├── linker.ld
+    │   └── config/
+    │       ├── prj.conf
+    │       ├── loader.overlay
+    │       └── profiles/{debug,release}.conf
+    └── upgrade/
+        ├── linker.ld
+        └── config/
+            ├── prj.conf
+            └── upgrade.overlay
 ```
 
-`bootloader/{preloader,loader,upgrade}` 保留通用实现。产品 `common` 只在有实际 provider
+`bootloader/{preloader,loader,upgrade}` 保留通用实现。产品 `boot/common` 只在有实际 provider
 时创建，配置文件不代替硬件适配。当前 upgrade 没有 release profile，生产 Loader
 现场升级仍由原有安全门禁拒绝。
 
@@ -53,6 +52,8 @@ bootloader/product/gimbal/
 用 `-Dp=<product>` 选择项目，App 与全部 Boot 镜像默认读取
 `app/product/<product>/config/board.dts` 和同目录的 board_defconfig。
 App 与各 Boot 镜像继续分别选择自己的软件配置、overlay 和 profile。
+App 使用项目 `config/`，Boot 使用项目 `boot/<image>/config/`；链接脚本在各镜像目录。
+分区布局统一读取项目 `config/layout.json`，CMake、镜像打包与三合一合并共用该文件。
 独立应用原有的 `product.cmake` 扩展入口保持兼容，可按需设置应用特有的构建选项。
 
 ```text
@@ -106,12 +107,13 @@ board 字段使用项目名称，不再对应独立板卡选择。最终硬件�
 
 - App 根目录 `release.conf` 移到 `config/profiles/release.conf`，调用方改用 `PROFILE=release`。
 - 原 `boards/<board>/` 的硬件文件迁回所属项目的 config/，App/Boot 直接共用。
-- demo 与 gimbal 分别维护自己的完整硬件和引脚描述，不引用另一项目或独立公共板卡目录。
+- demo_foc 与 gimbal 分别维护自己的完整硬件和引脚描述，不引用另一项目或独立公共板卡目录。
 - 删除仅映射默认板卡的 `products/<product>/product.cmake`，构建只需选择产品。
 - 原 BOARD/BOARD_ROOT 缓存用 `cmake -UBOARD -UBOARD_ROOT` 清除；Python configure 入口自动清理。
 - 保留原有 App/Loader pinmux、DMA 描述和各镜像时钟差异；这不代表已完成硬件正确性确认。
-- OSAL 示例仅启用串口及其 DMA，移除了原来随 demo 板描述继承的电机、IMU、CAN 等设备。
-- 三个产品的 `layout.json`、链接脚本和产品标识保持原样。
+- OSAL 示例仅启用串口及其 DMA，移除了原来随 demo_foc 板描述继承的电机、IMU、CAN 等设备。
+- 各产品 Boot 文件迁入项目 `boot/`，共享 `layout.json` 迁入项目 `config/`，内容保持原样。
+- 原 `bootloader/product/` 不再保留；产品专用 Flash、安全、DFU 和 watchdog provider 按需放入 `boot/common/`。
 - debug profile 启用架构断言；断言 hook 统一按 C ABI 导出，App 和 Boot 共用故障停机路径。
 
 该迁移验证源码、生成配置及构建产物，不代替目标板运行、引脚电气和 Boot 断电验收。

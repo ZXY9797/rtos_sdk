@@ -15,8 +15,8 @@ IMU 链路由 `SensorBatchCore` 管理：TIMER6 以 16 kHz 启动 SPI DMA，RX-D
 控制输出还包含待机积分清零、三相 PWM 一致提交、重新 arm 前中性占空比装载和
 Active 周期失约锁存，避免停止后重启冲击及单周期混相命令。
 
-同一产品目录还配套 `bootloader/product/gimbal` 的 preloader、loader、upgrade
-配置和分区布局，可独立生成四类镜像；upgrade 构建必须嵌入同轮生成并校验过的
+本目录的 `boot/` 保存 preloader、loader、upgrade 的配置和链接脚本，
+`config/layout.json` 提供全镜像共用分区布局，可独立生成四类镜像；upgrade 构建必须嵌入同轮生成并校验过的
 loader payload。
 
 文档入口：

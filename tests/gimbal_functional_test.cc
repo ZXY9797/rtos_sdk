@@ -1,7 +1,7 @@
-#include <algo/biquad_filter.h>
-#include <algo/lead_lag_compensator.h>
-#include <algo/motion_profile.h>
-#include <algo/spatial_types.h>
+#include <algo/filter/biquad_filter.h>
+#include <algo/filter/lead_lag_compensator.h>
+#include <algo/trajectory/motion_profile.h>
+#include <algo/math/spatial_types.h>
 #include <gimbal/attitude_ekf.h>
 #include <gimbal/controller.h>
 #include <gimbal/hall_calibration.h>

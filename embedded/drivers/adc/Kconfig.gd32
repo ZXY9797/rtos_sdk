@@ -1,7 +1,8 @@
 config ADC_GD32
     bool "GD32 ADC driver"
     select ADC
+    select DMA_GD32
     default y if SOC_SERIES_GD32F50X
-    depends on SOC_SERIES_GD32F50X && DT_HAS_GD_GD32_ADC_ENABLED
+    depends on SOC_SERIES_GD32F50X && (DT_HAS_GD_GD32_ADC_ENABLED || DT_HAS_GD_GD32_ADC_SCAN_ENABLED)
     help
       Enable GD32 SAR-ADC driver for GD32F50x series.

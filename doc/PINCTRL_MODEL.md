@@ -74,4 +74,4 @@ GPIO 默认状态也可以由 pinctrl 完成，例如 LED 输出低、按键输�
 
 ## 当前接入范围
 
-demo app 当前接入 USART0、LED PA5、KEY PA0。loader 和 upgrade 当前接入 USART0 PA9/PA10。SPI、PWM、ADC 等引脚需要以实际板级走线为准；当前 DTS 中 LED PA5 与常见 SPI0 SCK PA5 存在潜在冲突，所以没有强行给 SPI0 增加默认 pinctrl。
+demo_foc app 当前接入 USART0、LED PA5、KEY PA0。loader 和 upgrade 当前接入 USART0 PA9/PA10。SPI、PWM、ADC 等引脚需要以实际板级走线为准；当前 DTS 中 LED PA5 与常见 SPI0 SCK PA5 存在潜在冲突，所以没有强行给 SPI0 增加默认 pinctrl。
