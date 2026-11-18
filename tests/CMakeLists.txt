@@ -15,13 +15,13 @@ add_compile_options(
 add_subdirectory(../samples/control_pipeline control-pipeline)
 add_subdirectory(../samples/interaction_control interaction-control)
 add_executable(interaction_test interaction_test.cc)
-target_link_libraries(interaction_test PRIVATE sdk::algo)
+target_link_libraries(interaction_test PRIVATE sdk::motor)
 target_compile_options(interaction_test PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG> $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-UNDEBUG>)
 add_test(NAME interaction COMMAND interaction_test)
 
 foreach(contract algorithm calibration control diagnostics)
     add_executable(motor_${contract}_test motor_${contract}_test.cc)
-    target_link_libraries(motor_${contract}_test PRIVATE sdk::algo)
+    target_link_libraries(motor_${contract}_test PRIVATE sdk::motor)
     target_compile_options(motor_${contract}_test PRIVATE
         $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>
         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-UNDEBUG>)
@@ -37,7 +37,7 @@ add_executable(demo_foc_control_test
     ../app/product/demo_foc/comm/interaction_protocol.cc)
 target_include_directories(demo_foc_control_test PRIVATE
     ../app/product/demo_foc ../component/link/include)
-target_link_libraries(demo_foc_control_test PRIVATE sdk::algo)
+target_link_libraries(demo_foc_control_test PRIVATE sdk::motor)
 target_compile_options(demo_foc_control_test PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>
     $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-UNDEBUG>)
@@ -282,35 +282,18 @@ add_test(NAME device_pm COMMAND device_pm_test)
 add_executable(gimbal_functional_test
     gimbal_functional_test.cc
     ../app/product/gimbal/services/parameters.cc
-    ../component/algo/src/filter/biquad_filter.cc
-    ../component/algo/src/filter/lead_lag_compensator.cc
-    ../component/algo/src/trajectory/motion_profile.cc
-    ../component/algo/src/math/spatial_math.cc
-    ../component/attitude/src/attitude_ekf.cc
-    ../component/control/src/controller.cc
-    ../component/foc/src/svpwm.cc
-    ../component/foc/src/voltage_foc.cc
-    ../component/motion/src/dynamics.cc
-    ../component/motion/src/kinematics.cc
-    ../component/motion/src/motion_planner.cc
-    ../component/position_sensor/src/hall_calibration.cc
-    ../component/position_sensor/src/hall_sensor.cc
-    ../component/safety/src/safety_manager.cc
-    ../component/thermal/src/thermal_controller.cc)
+    ../app/product/gimbal/control/attitude_ekf.cc
+    ../app/product/gimbal/control/controller.cc
+    ../app/product/gimbal/control/dynamics.cc
+    ../app/product/gimbal/control/kinematics.cc
+    ../app/product/gimbal/control/motion_planner.cc
+    ../app/product/gimbal/services/safety_manager.cc)
 target_compile_features(gimbal_functional_test PRIVATE cxx_std_17)
+target_link_libraries(gimbal_functional_test PRIVATE sdk::motor)
 target_include_directories(gimbal_functional_test PRIVATE
     stubs
     ../app/product/gimbal/include
-    ../component/algo/include
-    ../component/attitude/include
-    ../component/control/include
-    ../component/control_contracts/include
-    ../component/foc/include
     ../component/ipc/include
-    ../component/motion/include
-    ../component/position_sensor/include
-    ../component/safety/include
-    ../component/thermal/include
     ../embedded/include
     ../embedded/include/osal
     ../embedded/osal/baremetal)

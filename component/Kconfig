@@ -1,4 +1,4 @@
-menu "Component Libraries"
+menu "SDK Components"
 
 orsource "*/Kconfig"
 

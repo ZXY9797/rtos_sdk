@@ -1,6 +1,8 @@
 # 电机算法与产品接入
 
-`component/algo` 提供 C++17 纯计算模块，统一电机入口为 `<algo/motor.h>`，链接 `sdk::algo`。
+电机算法位于 `component/motor`，入口为 `<algo/motor.h>`，链接 `sdk::motor`。
+`sdk::motor` 公开依赖 `sdk::algo` 的通用原语。表中数学、滤波、控制器、轨迹、
+信号和 NTC 来自 `sdk::algo`，FOC、标定和电机计算来自 `sdk::motor`。
 实例拥有状态，不进行动态分配、硬件访问、线程创建、日志、通信或 Flash I/O。
 
 | 分类 | 头文件目录 | 内容 |
@@ -10,8 +12,9 @@
 | 控制器 | `algo/controller/` | PID、Hz 截止积分 PID、一阶/二阶 LESO |
 | 轨迹 | `algo/trajectory/` | 运动约束、斜率限制、Hermite 和 S 曲线 |
 | 信号 | `algo/signal/` | 扫频生成器 |
-| 传感器 | `algo/sensor/` | NTC 查表 |
-| FOC | `algo/foc/` | Clarke/Park、SVPWM 和电流环 |
+| 通用传感器换算 | `algo/sensor/ntc_sensor.h` | NTC 查表 |
+| 电机位置 | `algo/sensor/hall_*.h` | 连续双 Hall 角度和标定 |
+| FOC | `algo/foc/`、`foc/` | Clarke/Park、SVPWM、电流环和电压调制 |
 | 标定 | `algo/calibration/` | TMR、电角度、LUT、记录编解码和背隙辨识 |
 | 电机 | `algo/motor/` | 反馈、目标、关节控制、诊断、保护和参数 |
 

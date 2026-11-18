@@ -94,7 +94,7 @@ def check_elf(path: Path, nm: str, objdump: str) -> list[str]:
     if match is None or int(match.group(1), 16) == 0:
         errors.append("noinit fault persistence section is missing or empty")
     elif not any(
-            symbol.endswith("s_faultRecordE")
+            re.search(r"s_faultRecordE(?:\.lto_priv\.[0-9]+)?$", symbol)
             and int(match.group(2), 16) <= address
             < int(match.group(2), 16) + int(match.group(1), 16)
             for symbol, address in symbols.items()):

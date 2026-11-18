@@ -17,24 +17,28 @@ CMake 负责组织构建，生成的 DeviceTrait 特化在编译期完成硬件�
 
 ## 分层规则
 
-依赖方向必须保持向下：
+SDK 按职责分层，应用可直接使用所需层的公开接口。
 
 ```text
-app/product
-component
-embedded/drivers
-embedded/soc
-厂商 HAL / RTOS 移植层
+app/product → component、embedded
+component/motor/drive → component/motor、embedded
+component/motor → component/algo
+component/algo → 标准 C++
 ```
 
-应用层只负责产品编排。应用层可以使用组件 API、驱动 API、OSAL API、生成
+`app/product/` 负责产品编排。应用层可以使用组件 API、驱动 API、OSAL API、生成
 的设备别名以及公开 boot API；不能包含 SoC HAL 头文件，也不能直接编译
 bootloader 私有源文件。
 
 `app/product/<product>` 的入口文件固定为根目录下的 `main.cc`。产品内部按职责拆分为 `board/`、`services/`、`comm/`、`control/`、`tasks/` 等目录，统一使用 `app` 命名空间和 `app::board` 板级设备门面。详细约定见 [APP_LAYOUT.md](APP_LAYOUT.md)。
 
-组件层负责可复用的领域逻辑或服务逻辑。组件可以按职责依赖更底层的驱动抽象
-和 OSAL，但不能依赖具体产品应用，也不能依赖 bootloader 的私有实现。
+通用算法由 `component/algo` 提供，电机领域算法位于 `component/motor`。
+`component/motor/drive` 通过驱动抽象和 OSAL 接入硬件。产品接线、任务编排和运行策略由 `app/product/` 负责。
+独立应用可以用 `MODULE_ROOTS` 注册自己仓库里的共享模块。
+
+`component/` 提供运行时、IPC、Link、NVS 和 BLE 等平台能力。它可以使用
+`embedded/` 的驱动和 OSAL。纯 C++ 的 `component/runtime` 也供
+`embedded/system` 使用，提供时序与输出锁存等基础契约。
 
 驱动层负责硬件抽象契约。公开驱动头文件不应暴露厂商 HAL 类型。SoC 适配和
 厂商 SDK 调用应放在 `embedded/soc` 或驱动实现文件中。
@@ -57,7 +61,7 @@ bootloader 私有源文件。
 不存在对应设备时，手写 `CONFIG_...=y` 会在配置阶段失败，而不是生成一个链接
 后才暴露问题的空目标。
 
-Kconfig 根入口只解析 `embedded`、`component` 和当前产品 Kconfig 各一次。配置
+Kconfig 根入口解析 `embedded`、`component`、已注册模块和当前产品的配置入口。配置
 缓存校验覆盖全部 Kconfig/配置文件的路径和内容；输入改变后自动重新生成，输入
 未改变时复用 `.config`。完整构建约定见 [BUILD_SYSTEM.md](BUILD_SYSTEM.md)。
 
@@ -81,21 +85,15 @@ Boot 代码分为公共代码和固件私有代码。
 
 完整启动和升级关系见 [BOOT_FLOW.md](BOOT_FLOW.md)。
 
-## 组件依赖等级
+## 应用库与平台组件
 
-`component/algo` 是纯算法层，承载定长空间数学、DSP 和单轴运动轮廓等
-无产品语义的计算原语。它不能依赖 OSAL、DTS、driver、bootloader 或产品代码。
+`sdk::algo` 提供数学、滤波、通用控制器、轨迹、姿态 EKF 和温控。
+`sdk::motor` 在此基础上提供电机、关节、连续双 Hall 标定和 FOC 计算。
+FOC 的设备接入位于 `component/motor/drive`，通过 `CONFIG_FOC` 启用 `foc` 目标。
 
-`component/control_contracts` 是头文件契约层，定义固定布局的领域数据并复用
-`algo` 的数值类型。功能组件不再为取得 `gimbal/types.h` 而伪依赖 `motion`。
-
-`component/foc` 是电机控制领域组件。它可以依赖 `algo` 和驱动抽象，但产品
-CLI、产品启动流程、boot 状态和板级策略应放在 `app/product`。
-
-三轴控制能力按职责拆为 `control_contracts`、`motion`、`attitude`、`control`、
-`position_sensor`、`thermal`、`safety` 和 `ipc`。组件之间只通过定长值类型
-和显式接口通信；产品参数 schema、共享主题集合、任务频率与设备映射留在
-`app/product/gimbal`。禁止用单一 `gimbal_core` 静态库重新聚合这些依赖。
+云台的三轴运动学、动力学、规划、反馈控制、整机安全监督和主题类型由 `app/product/gimbal`
+管理。产品将 IMU 消息转换为 EKF 的传感器输入，再将估计结果写回云台主题。
+产品也负责参数 schema、任务频率、设备映射和安全授权。
 
 `component/link` 和 `component/nvs` 是服务组件。它们可以依赖 OSAL 和驱动
 抽象，但公开 API 必须保持产品无关。

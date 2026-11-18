@@ -1,14 +1,8 @@
-# Component libraries
-add_subdirectory(algo)
-add_subdirectory(control_contracts)
+# Build the pure calculation archives when a firmware target links them.
+add_subdirectory(algo EXCLUDE_FROM_ALL)
+add_subdirectory(motor EXCLUDE_FROM_ALL)
 add_subdirectory(ipc)
-add_subdirectory_ifdef(CONFIG_ATTITUDE_EKF attitude)
 add_subdirectory_ifdef(CONFIG_BLE_GR5525 ble/goodix)
-add_subdirectory_ifdef(CONFIG_FEEDBACK_CONTROL control)
-add_subdirectory_ifdef(CONFIG_FOC foc)
+add_subdirectory_ifdef(CONFIG_FOC motor/drive)
 add_subdirectory_ifdef(CONFIG_LINK link)
-add_subdirectory_ifdef(CONFIG_MOTION motion)
 add_subdirectory_ifdef(CONFIG_NVS nvs)
-add_subdirectory_ifdef(CONFIG_POSITION_SENSOR position_sensor)
-add_subdirectory_ifdef(CONFIG_SAFETY_SUPERVISOR safety)
-add_subdirectory_ifdef(CONFIG_THERMAL_CONTROL thermal)

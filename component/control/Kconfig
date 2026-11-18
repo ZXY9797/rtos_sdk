@@ -1,3 +1,0 @@
-menuconfig FEEDBACK_CONTROL
-    bool "Frequency-shaped feedback control"
-    depends on MOTION

@@ -1,3 +1,0 @@
-menuconfig POSITION_SENSOR
-    bool "Continuous Hall angle sensor"
-    depends on MOTION

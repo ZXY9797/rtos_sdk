@@ -1,0 +1,9 @@
+menu "Reusable algorithms"
+
+config ATTITUDE_EKF
+    bool "Error-state attitude EKF"
+
+config THERMAL_CONTROL
+    bool "Closed-loop thermal control"
+
+endmenu

@@ -65,8 +65,10 @@ find_package 必须先于第一个 project，以便在主机平台初始化前�
 独立应用可在 config/board.dts 中描述自己的硬件，未提供时使用所选产品的硬件。
 DTC_OVERLAY_FILE 在默认镜像 overlay 后显式追加 overlay 列表；
 BOOT_LAYOUT 可选择已有布局名或外部 layout.json。
-MODULE_ROOTS 是模块目录列表，每个目录提供 sdk-module.cmake，可设置
-`SDK_MODULE_KCONFIG Kconfig`。模块的 CMakeLists.txt 使用：
+MODULE_ROOTS 是外部模块目录列表，每个目录提供 sdk-module.cmake，可设置
+`SDK_MODULE_KCONFIG Kconfig`。应用按需链接 `sdk::algo` 或 `sdk::motor`，分别获取通用算法和电机计算。
+
+模块的 `CMakeLists.txt` 可以使用如下写法。
 
 ```cmake
 sdk_add_component(my_component
@@ -77,9 +79,11 @@ sdk_add_component(my_component
 ```
 
 对应别名为 sdk::my_component。编译策略只附加到通过 sdk_* 创建或接入的 target。
-host 工程没有 sdk_build_config，可直接复用纯组件。algo、ipc、runtime 已提供实例。
-Hall 硬件 facade 位于 device_adapters，position_sensor 算法不再公开依赖 drivers。
-三轴领域契约保留领域含义。裁剪的 Zephyr 内部 CMake 辅助函数不作为稳定扩展 API。
+host 工程没有 sdk_build_config，可直接复用 `component/algo`、`component/motor`、`component/ipc`
+与 `component/runtime`。接入例子见 [control_pipeline](../samples/control_pipeline/CMakeLists.txt) 和
+[interaction_control](../samples/interaction_control/CMakeLists.txt)。
+Hall 硬件门面位于 device_adapters，`sdk::motor` 接收采样值并计算角度和标定结果。
+云台三轴领域契约位于产品目录。裁剪的 Zephyr 内部 CMake 辅助函数不作为稳定扩展 API。
 
 runtime 的源码与公开头文件统一位于 `component/runtime`，由 `sdk::runtime` 提供。
 平台实现显式依赖该纯 C++ 组件，runtime 不反向依赖平台头文件。稳定部分包括

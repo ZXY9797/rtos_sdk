@@ -37,24 +37,27 @@ target_sources(${MODULE_NAME}
     PRIVATE
         main.cc
         board/board_devices.cc
+        control/attitude_ekf.cc
         services/gimbal_app.cc
         services/parameters.cc
         services/parameter_store.cc
         ${DRIVERS_GENERATED_CC}
         ${PINCTRL_GENERATED_CC})
 
+target_sources_ifdef(CONFIG_FEEDBACK_CONTROL ${MODULE_NAME} PRIVATE control/controller.cc)
+target_sources_ifdef(CONFIG_MOTION ${MODULE_NAME} PRIVATE
+    control/dynamics.cc
+    control/kinematics.cc
+    control/motion_planner.cc)
+target_sources_ifdef(CONFIG_SAFETY_SUPERVISOR ${MODULE_NAME} PRIVATE services/safety_manager.cc)
+
 target_link_libraries(${MODULE_NAME}
     PRIVATE
         boot_common
-        attitude_estimator
-        control_contracts
         drivers
-        feedback_control
         foc
         ipc
-        motion
         osal
         nvs
-        position_sensor
-        safety_supervisor
-        thermal_control)
+        sdk::algo
+        sdk::motor)

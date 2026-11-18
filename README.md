@@ -204,11 +204,16 @@ namespace osal {     // OS 抽象层：线程、同步原语
 
 ```
 rtos_sdk/
-├── app/                          # 产品项目
-│   └── product/                  # 产品固件
-│       ├── demo_foc/                 # GD32 FOC 电机控制 Demo
-│       ├── demo_ble/             # GR5525 BLE Demo（HID 键盘 + UART 透传）
-│       └── gimbal/               # GD32 三轴云台；各项目 config/ 维护硬件与布局，boot/ 维护启动镜像配置
+├── app/                          # 应用层
+│   ├── product/                  # 产品固件和各自配置
+│   │   ├── demo_foc/             # GD32 FOC 电机控制 Demo
+│   │   ├── demo_ble/             # GR5525 BLE Demo（HID 键盘 + UART 透传）
+│   │   └── gimbal/               # GD32 三轴云台
+│   └── modules/                  # 应用共享模块
+│       ├── motor/                # 电机控制、FOC、标定和位置反馈
+│       ├── atti/                 # IMU 姿态估计
+│       ├── supervision/          # 安全监督和热管理
+│       └── common/               # 数值工具和数据契约
 │
 ├── bootloader/                   # 启动与升级固件
 │   ├── include/boot/             # 公开 boot API
@@ -218,17 +223,11 @@ rtos_sdk/
 │   ├── upgrade/                  # loader 自升级执行固件
 │   └── scripts/                  # 三合一固件构建与合并脚本
 │
-├── component/                    # 应用级组件
-│   ├── algo/                     # 数学、轨迹、FOC、标定、关节交互与机器人计算
-│   ├── runtime/                  # 纯 C++ 执行描述、时序测量、输出锁存与编码工具
-│   ├── control_contracts/        # 定长控制领域数据契约
-│   ├── motion/                   # 非正交运动学、动力学和三轴轨迹规划
-│   ├── attitude/                 # 姿态 EKF
-│   ├── control/                  # 频率整形反馈控制
-│   ├── position_sensor/          # 连续 Hall 与位置标定
-│   ├── thermal/                  # 恒温控制
-│   ├── safety/                   # 安全监督与故障锁存
-│   ├── foc/                      # 电压/电流 FOC 与统一 SVPWM
+├── component/                    # SDK 复用组件
+│   ├── algo/                     # 通用数值、控制、姿态与温控算法
+│   ├── motor/                    # 电机、关节、Hall 与 FOC 计算
+│   │   └── drive/                # 电压和电流 FOC 的设备适配
+│   ├── runtime/                  # 执行描述、时序测量、输出锁存与编码工具
 │   ├── ipc/                      # 固定容量共享内存原语
 │   ├── nvs/                      # 非易失键值存储
 │   ├── link/                     # Link 通信协议栈

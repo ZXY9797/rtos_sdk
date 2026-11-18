@@ -1,3 +1,0 @@
-menuconfig THERMAL_CONTROL
-    bool "Closed-loop thermal control"
-    depends on MOTION

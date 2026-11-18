@@ -479,40 +479,32 @@ Service: HallCalibration | KinematicCalibration | FrequencyIdentify
 
 ## 12. 组件目录边界
 
-产品无关能力已经按功能组件落地：
+组件和产品的代码分布如下。
 
 ```text
 component/
-  algo/                # 空间数学、DSP 与单轴限加加速度轨迹原语
-  control_contracts/   # 定长领域类型和兼容别名，不含执行逻辑
-  motion/              # 非正交运动学、动力学和三轴轨迹规划
-  attitude/            # IMU 误差状态 EKF
-  control/             # 频率整形与 2DOF 前馈反馈控制
-  position_sensor/     # 连续双 Hall、机械零位和电角零位标定
-  thermal/             # IMU 恒温控制与升温诊断
-  safety/              # 故障检测、锁存和电机授权状态机
-  foc/                 # 电压/电流 FOC、统一 SVPWM 和 PWM 电机适配
+  algo/                # 数值原语、姿态 EKF、温控
+  motor/               # 双 Hall、标定与 FOC 计算
+    drive/             # 电机设备适配
   ipc/                 # 固定容量快照主题与 SPSC 环形队列
 
 app/product/gimbal/
   board/               # 产品语义设备门面
   config/              # Kconfig 与参考设备树
-  include/gimbal/      # 产品参数 schema 与共享主题集合
-  services/            # 参数存储、参数校验、传感器批次和任务编排
+  control/             # 三轴运动学、动力学、规划、反馈控制和 EKF 消息适配
+  include/gimbal/      # 领域类型、产品参数 schema 与共享主题集合
+  services/            # 参数存储、整机安全监督、传感器批次和任务编排
   doc/                 # 本产品设计、标定和验证文档
 ```
 
-设备适配仍放在 `embedded/`，产品接线、任务栈、参数 schema 和主题拓扑放在
-`app/product/<product>/`。通用空间类型位于 `algo`，跨功能固定布局消息位于
-`control_contracts`；算法组件只接收值对象或 HAL 抽象，不包含板级 ADC
-通道号、GPIO、RTOS 任务或产品持久化策略。公共头文件暂时保留 `gimbal::`
-领域命名空间以维持类型和 ABI 契约，但 `attitude`、`thermal`、`safety` 等组件
-不再仅为取得公共类型而链接 `motion`。
+通用驱动放在 `embedded/`。`sdk::algo` 和 `sdk::motor` 接收传感器值、标定和时序数据。云台产品保留
+`gimbal::` 消息与工厂参数布局，并在 `control/attitude_ekf.cc` 中完成坐标命名、采样有效性
+和主题时间戳到 EKF 接口的转换。
 
-当前实现已经完成上述边界迁移：连续双 Hall 使用独立的
+连续双 Hall 使用独立的
 `rtos_sdk,gimbal-hall-angle` binding；基础电机使用不强制 ADC 的
 `rtos_sdk,gimbal-voltage-motor` binding；电压模式和相电流模式共同复用
-`component/foc` 的 SVPWM 内核，并由 `FOC_VOLTAGE_CONTROL`/
+`component/motor` 的 `foc::Svpwm` 内核，设备适配由 `FOC_VOLTAGE_CONTROL`/
 `FOC_CURRENT_CONTROL` 分源编译。gimbal 基础固件只链接前者，不会误带入 ADC
 电流环、观测器和 SoC 专用电机实现。设备树只承载硬件连接，工厂差异
 由带 CRC 和代际号的双记录参数承载。

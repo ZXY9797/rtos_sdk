@@ -8,9 +8,18 @@ menuconfig GIMBAL
     select SAFETY_SUPERVISOR
     select THERMAL_CONTROL
     help
-      Enable the gimbal product composition. Reusable algorithms remain in
-      function-oriented components; this symbol only owns product policy,
-      scheduling and hardware capability selection.
+      Enable the gimbal product composition and its SDK algorithm dependencies.
+
+config MOTION
+    bool "Three-axis gimbal motion model"
+
+config FEEDBACK_CONTROL
+    bool "Frequency-shaped gimbal feedback control"
+    depends on MOTION
+
+config SAFETY_SUPERVISOR
+    bool "Gimbal safety supervisor"
+    depends on MOTION
 
 if GIMBAL
 

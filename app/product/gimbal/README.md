@@ -1,10 +1,9 @@
 # 三轴非正交手持云台
 
-本目录是 GD32F503 参考产品。通用原语和数据契约分别位于 `component/algo`
-与 `component/control_contracts`；可复用功能按职责分布在 `component/motion`、
-`component/attitude`、`component/control`、`component/position_sensor`、
-`component/thermal`、`component/safety`、`component/foc` 和 `component/ipc`；
-不存在聚合式 `component/gimbal`。当前实现包含双 Hall 连续角度、电角度/机械角度标定、
+本目录是 GD32F503 云台产品。三轴运动规划、控制、整机安全监督和领域类型由本产品管理。
+姿态 EKF 和温控来自 `component/algo`，Hall 位置和零位标定来自 `component/motor`，
+电机设备适配来自 `component/motor/drive`，共享内存机制来自 `component/ipc`。
+当前实现包含双 Hall 连续角度、电角度/机械角度标定、
 相机 IMU EKF、无手柄 IMU 的非正交运动学反解、动力学前馈、带频率整形的
 反馈控制、SO(3) 平滑梯形规划、IMU 恒温、共享内存主题、A/B 参数存储、
 安全状态机和独立硬件看门狗。

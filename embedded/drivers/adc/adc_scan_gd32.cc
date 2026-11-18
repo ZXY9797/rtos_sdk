@@ -29,7 +29,8 @@ Status AdcBase::start_scan(const AdcScanConfig& config, uint16_t* buffer,
     adc.CTL1 |= kRoutineTriggerMask;
     adc.CTL0 |= 1U << 8U;
     adc.RSQ0 = uint32_t(config.channel_count-1U) << 20U;
-    adc.RSQ1 = adc.RSQ2 = 0U;
+    adc.RSQ2 = 0U;
+    adc.RSQ1 = 0U;
     for (uint8_t rank = 0U; rank < config.channel_count; ++rank) {
         volatile uint32_t& sequence = rank < 6U ? adc.RSQ2 : rank < 12U ? adc.RSQ1 : adc.RSQ0;
         sequence |= uint32_t(config.channels[rank].channel) << ((rank % 6U) * 5U);

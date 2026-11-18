@@ -72,72 +72,62 @@ class RtosArchitectureContractTest(unittest.TestCase):
         self.assertIn("gpio0: gpio@40010000", board)
         self.assertIn("reg = <0x40010000 0x400>", board)
 
-    def test_gimbal_domain_is_split_into_functional_components(self):
-        self.assertFalse((REPO_ROOT / "component/gimbal").exists())
+    def test_products_use_sdk_components_without_internal_module_registration(self):
         component_cmake = self.read("component/CMakeLists.txt")
-        for symbol, directory in (
-            ("CONFIG_ATTITUDE_EKF", "attitude"),
-            ("CONFIG_FEEDBACK_CONTROL", "control"),
-            ("CONFIG_MOTION", "motion"),
-            ("CONFIG_POSITION_SENSOR", "position_sensor"),
-            ("CONFIG_SAFETY_SUPERVISOR", "safety"),
-            ("CONFIG_THERMAL_CONTROL", "thermal"),
-        ):
-            self.assertIn(
-                f"add_subdirectory_ifdef({symbol} {directory})",
-                component_cmake,
-            )
+        self.assertFalse((REPO_ROOT / "app/modules/CMakeLists.txt").exists())
+        self.assertIn("add_subdirectory(algo EXCLUDE_FROM_ALL)", component_cmake)
+        self.assertIn("add_subdirectory(motor EXCLUDE_FROM_ALL)", component_cmake)
+        self.assertIn("add_subdirectory_ifdef(CONFIG_FOC motor/drive)", component_cmake)
         self.assertIn("add_subdirectory(ipc)", component_cmake)
-        self.assertIn("add_subdirectory(control_contracts)",
-                      component_cmake)
+        for product in ("demo_foc", "gimbal"):
+            self.assertIn("sdk::motor", self.read(f"app/product/{product}/CMakeLists.txt"))
+        for sample in ("control_pipeline", "interaction_control"):
+            self.assertNotIn("app/modules", self.read(f"samples/{sample}/CMakeLists.txt"))
 
     def test_gimbal_product_owns_policy_and_topic_topology(self):
         product_cmake = self.read("app/product/gimbal/CMakeLists.txt")
         product_kconfig = self.read("app/product/gimbal/Kconfig")
         domain_types = self.read(
-            "component/control_contracts/include/gimbal/types.h")
+            "app/product/gimbal/include/gimbal/types.h")
         self.assertIn("services/parameters.cc", product_cmake)
         self.assertIn("${CMAKE_CURRENT_SOURCE_DIR}/include", product_cmake)
         self.assertIn("select FOC_VOLTAGE_CONTROL", product_kconfig)
         self.assertNotIn("ProductMode", domain_types)
 
-    def test_generic_algorithms_do_not_belong_to_motion(self):
+    def test_reusable_algorithms_do_not_depend_on_gimbal_or_platform(self):
         algo_cmake = self.read("component/algo/CMakeLists.txt")
-        motion_cmake = self.read("component/motion/CMakeLists.txt")
-        controller = self.read("component/control/src/controller.cc")
+        controller = self.read("app/product/gimbal/control/controller.cc")
         self.assertIn("src/math/spatial_math.cc", algo_cmake)
         self.assertIn("src/trajectory/motion_profile.cc", algo_cmake)
-        self.assertNotIn("src/math.cc", motion_cmake)
-        self.assertIn("algo control_contracts", motion_cmake)
         self.assertIn("algo::BiquadFilter", self.read(
-            "component/control/include/gimbal/controller.h"))
+            "app/product/gimbal/include/gimbal/controller.h"))
         self.assertNotIn("FilterCoefficients", controller)
-        self.assertFalse((REPO_ROOT /
-                          "component/motion/include/gimbal/types.h").exists())
-        for component in ("attitude", "position_sensor", "safety", "thermal"):
-            cmake = self.read(f"component/{component}/CMakeLists.txt")
-            self.assertNotIn("PUBLIC motion", cmake)
-        for path in (
-            "component/algo/include/algo/trajectory/motion_profile.h",
-            "component/algo/include/algo/math/spatial_math.h",
-            "component/algo/src/trajectory/motion_profile.cc",
-            "component/algo/src/math/spatial_math.cc",
+        platform_headers = r'(?:gimbal/|osal[./]|drivers/|device[./])'
+        motor_headers = r'(?:foc/|algo/(?:(?:motor|calibration|interaction|robotics|foc)[./]|sensor/hall_))'
+        for component, forbidden in (
+            ("algo", (platform_headers, motor_headers)),
+            ("motor", (platform_headers, r'foc/(?:config|motor|motor_device|voltage_motor)\.h')),
         ):
-            source = self.read(path)
-            self.assertNotIn("gimbal", source)
-            self.assertNotIn("osal", source)
+            root = REPO_ROOT / "component" / component
+            for directory in (root / "include", root / "src"):
+                for source in (*directory.rglob("*.h"), *directory.rglob("*.cc")):
+                    with self.subTest(source=source.relative_to(REPO_ROOT)):
+                        contents = source.read_text(encoding="utf-8")
+                        for pattern in forbidden:
+                            self.assertNotRegex(contents, rf'#\s*include\s*[<"]{pattern}')
 
-    def test_voltage_and_current_foc_share_svpwm_but_split_sources(self):
-        foc_cmake = self.read("component/foc/CMakeLists.txt")
-        self.assertIn("target_sources(${MODULE_NAME} PRIVATE src/svpwm.cc)",
-                      foc_cmake)
-        self.assertIn("CONFIG_FOC_CURRENT_CONTROL", foc_cmake)
-        self.assertIn("CONFIG_FOC_VOLTAGE_CONTROL", foc_cmake)
-        voltage_start = foc_cmake.index("CONFIG_FOC_VOLTAGE_CONTROL")
-        voltage_end = foc_cmake.index(")", voltage_start)
-        voltage_sources = foc_cmake[voltage_start:voltage_end]
-        self.assertIn("src/voltage_foc.cc", voltage_sources)
-        self.assertIn("src/voltage_motor.cc", voltage_sources)
+    def test_foc_math_and_device_sources_have_separate_owners(self):
+        motor_cmake = self.read("component/motor/CMakeLists.txt")
+        drive_cmake = self.read("component/motor/drive/CMakeLists.txt")
+        self.assertIn("REQUIRES sdk::algo", motor_cmake)
+        self.assertIn("sdk::motor", drive_cmake)
+        for source in ("svpwm.cc", "svpwm_sector.cc", "voltage_foc.cc"):
+            self.assertIn(f"src/foc/{source}", motor_cmake)
+            self.assertNotIn(source, drive_cmake)
+        for mode, adapter in (("CURRENT", "motor.cc"), ("VOLTAGE", "voltage_motor.cc")):
+            selector = f"target_sources_ifdef(CONFIG_FOC_{mode}_CONTROL"
+            start = drive_cmake.index(selector)
+            self.assertIn(f"src/{adapter}", drive_cmake[start:drive_cmake.index(")", start)])
 
 
 if __name__ == "__main__":

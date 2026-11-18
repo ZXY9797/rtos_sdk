@@ -14,7 +14,7 @@ target_sources(app PRIVATE
     comm/motor_link.cc
     ${DRIVERS_GENERATED_CC}
     ${PINCTRL_GENERATED_CC})
-target_link_libraries(app PRIVATE boot_common drivers osal sdk::algo nvs link)
+target_link_libraries(app PRIVATE boot_common drivers osal sdk::motor nvs link)
 function(check_demo_foc_callbacks)
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         COMMAND ${PYTHON_EXECUTABLE} ${TOP_DIR}/tools/demo_foc/check_elf.py
@@ -25,8 +25,7 @@ cmake_language(DEFER DIRECTORY "${TOP_DIR}" CALL check_demo_foc_callbacks)
 # Product-local LTO removes unused profile construction and folds the fixed
 # single-axis coordinator without changing the image/storage partition layout.
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    set_property(TARGET app algo PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
-    foreach(control_target app algo link nvs boot_common system system_fault osal
+    foreach(control_target app algo motor link nvs boot_common system system_fault osal
             drivers gpio can flash pwm adc pinctrl interrupt_controller clock_control log uart dma)
         if(NOT TARGET ${control_target})
             continue()

@@ -1,3 +1,0 @@
-menuconfig SAFETY_SUPERVISOR
-    bool "Control safety supervisor"
-    depends on MOTION

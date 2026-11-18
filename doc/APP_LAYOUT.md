@@ -1,6 +1,8 @@
 # App 产品目录约定
 
-`app/product/<product>` 只放产品级编排代码：启动流程、设备门面、通信桥接、任务编排、控制策略和产品配置。可复用算法、协议栈、驱动和厂商 SDK 适配应继续放在 `component/` 或 `embedded/`。
+`app/product/<product>` 只放产品级编排，包含启动、设备接线、通信桥接、任务、控制策略和配置。
+共享算法、设备适配和平台服务放在 `component/`。领域编排和产品策略放在 `app/product/`，
+驱动和 OSAL 放在 `embedded/`。
 
 同一产品的 Boot 镜像配置和链接脚本放在 `boot/<image>/`，专用适配按需放在 `boot/common/`；
 硬件 DTS 与全镜像共享的 `layout.json` 放在项目 `config/`。
@@ -24,16 +26,18 @@ app/product/demo_foc/
     board_devices.h             产品级设备门面声明
     board_devices.cc            DTS 设备别名到产品语义名称的绑定
   services/
-    app_services.h              boot 确认、日志、设备检查、CLI 轮询等应用服务
+    app_services.h              boot 确认、日志和设备检查
     app_services.cc
   control/
-    control_app.h               控制系统入口：start_control/feed_control_char
+    control_app.h               控制启动和停止入口
     control_app.cc
-    motor_context.h             电机运行上下文
-    controller/                 控制器、保护、位置传感器、校准等实现
+    motor_control.cc            电流、关节控制与执行限制的产品编排
+    interaction_control.cc      关节与任务空间控制接入
+    calibration_store.cc        标定与配置的持久化
   comm/
-    can_handler.h               产品 CAN 命令和遥测
-    can_handler.cc
+    motor_link.cc               UART/CAN Link 接入
+    motor_protocol.cc           电机命令和遥测编码
+    interaction_protocol.cc     交互控制配置编码
   config/
     board.dts
     prj.conf
