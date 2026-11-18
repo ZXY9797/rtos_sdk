@@ -23,7 +23,7 @@ include(extensions)
 #
 # Optional variables:
 # - APPLICATION_SOURCE_DIR: path to app (added to DTS_ROOT)
-# - BOARD_DIR: directory containing the board definition (added to DTS_ROOT)
+# - PROJECT_HARDWARE_DIR: product hardware configuration (added to DTS_ROOT)
 # - DTS_ROOT: initial contents may be populated here
 # - ZEPHYR_BASE: path to zephyr repository (added to DTS_ROOT)
 # - SHIELD_DIRS: paths to shield definitions (added to DTS_ROOT)
@@ -32,15 +32,15 @@ include(extensions)
 function(pre_dt_module_run)
   # Convert relative paths to absolute paths relative to the application
   # source directory.
-  set(DTS_ROOT ${BSP_DIR} ${PROJECT_DIR} ${BOARD_DIR} ${DTS_ROOT})
+  set(DTS_ROOT ${BSP_DIR} ${PROJECT_DIR} ${PROJECT_HARDWARE_DIR} ${DTS_ROOT})
   list(APPEND DTS_ROOT ${MODULE_ROOTS})
-  # DTS_ROOT always includes the application directory, the board
+  # DTS_ROOT always includes the application directory, the hardware config
   # directory, shield directories, and ZEPHYR_BASE.
 
   # list(APPEND
   #   DTS_ROOT
   #   ${APPLICATION_SOURCE_DIR}
-  #   ${BOARD_DIR}
+  #   ${PROJECT_HARDWARE_DIR}
   #   ${SHIELD_DIRS}
   #   ${ZEPHYR_BASE}
   #   )

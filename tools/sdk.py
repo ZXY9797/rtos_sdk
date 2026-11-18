@@ -17,8 +17,7 @@ def run(command):
 
 def configure(args):
     command = ["cmake", "-S", ROOT, "-B", args.build, "-G", "Ninja", f"-Dp={args.product}",
-               f"-DPROFILE={args.profile}", f"-Dt={args.toolchain}"]
-    if args.board: command.append(f"-DBOARD={args.board}")
+               f"-DPROFILE={args.profile}", f"-Dt={args.toolchain}", "-UBOARD", "-UBOARD_ROOT"]
     if args.application: command.append(f"-DAPPLICATION={args.application.resolve()}")
     if args.backend == "rt-thread": command.append("-DEXTRA_CONF_FILE=tests/config/rtthread.conf")
     else: command.append("-UEXTRA_CONF_FILE")
@@ -52,7 +51,6 @@ def main():
     config = commands.add_parser("configure")
     config.add_argument("-p", "--product", required=True)
     config.add_argument("-B", "--build", type=Path, required=True)
-    config.add_argument("--board")
     config.add_argument("--profile", default="default")
     config.add_argument("--toolchain", default="armgcc9")
     config.add_argument("--toolchain-path", type=Path)

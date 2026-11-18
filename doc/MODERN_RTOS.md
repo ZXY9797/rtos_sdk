@@ -9,7 +9,7 @@ SDK 面向 MCU 实时控制，采用声明式硬件配置、静态资源和类�
 | 跨内核事件语义 | `osal/event_bits.h`、公共 `event_group.cc` | 主机并发测试；FreeRTOS/RT-Thread 运行测试固件 |
 | 整帧通信接管 | `FrameTxQueue`、CAN/BLE transport | 邮箱拥塞、满队列、失败和 session reset |
 | 发布配置闭环 | 显式 profile；三合一最终配置检查 | profile 构建、生产策略负向测试 |
-| SDK/应用/板卡解耦 | CMake package、APPLICATION、BOARD_ROOT | external_app fixture 完整链接 |
+| SDK/应用扩展 | CMake package、APPLICATION、项目 config/ 硬件描述 | external_app fixture 完整链接 |
 | 外部模块与依赖 | MODULE_ROOTS、sdk_add_component | 外部 Kconfig 与组件编译 |
 | 编译期能力与运行诊断 | DeviceMetadata、DeviceInfo、稳定 ID | 生成器测试与固件链接 |
 | 硬件资源检查 | DMA/GPIO 占用、pinctrl 位域、已有 IRQ/依赖检查 | 生成器负向测试 |
@@ -26,12 +26,12 @@ SDK 面向 MCU 实时控制，采用声明式硬件配置、静态资源和类�
 ## 构建和扩展
 
 原有 `cmake -S . -B out/demo -G Ninja -Dp=demo` 保持可用。
-App/Boot 共用 `products/<product>/product.cmake` 的默认 BOARD；显式 BOARD 优先。
-公共硬件定义位于 `boards/<board>/board.dts`，外设默认关闭。
+App/Boot 共用 `app/product/<product>/config/board.dts`，外设默认关闭。
+硬件和引脚配置随项目维护，不再单独选择 BOARD 或注册 BOARD_ROOT。
 App 使用 `app/product/<product>/config/app.overlay`；各 Boot 镜像使用
 `bootloader/product/<product>/<image>/config/<image>.overlay`。
-原产品 `config/board.dts` 与根目录的 Boot DTS 已迁移为 overlay。
-目录职责、覆盖顺序和迁移示例见 [板卡与镜像配置](BOARD_CONFIGURATION.md)。
+Boot overlay 仅保存镜像差异，不复制本项目的硬件 DTS。
+目录职责、覆盖顺序和迁移示例见 [项目硬件与镜像配置](BOARD_CONFIGURATION.md)。
 
 配置合并顺序固定为：
 
@@ -54,7 +54,6 @@ Boot profile 来自产品对应镜像的 config，不从通用 Boot 实现目录
 ```cmake
 cmake_minimum_required(VERSION 3.20)
 set(p demo)
-set(BOARD gd32_demo)
 set(APPLICATION "${CMAKE_CURRENT_LIST_DIR}/firmware")
 find_package(RtosSdk REQUIRED CONFIG PATHS "${SDK_ROOT}/share/rtos-sdk-package")
 project(my_product LANGUAGES NONE)
@@ -62,8 +61,9 @@ project(my_product LANGUAGES NONE)
 
 find_package 必须先于第一个 project，以便在主机平台初始化前选择交叉工具链。
 应用创建 app target，SDK 为其接入平台依赖；平台也提供 `sdk::platform` 别名。
-BOARD_ROOT 提供额外板卡根目录，DTC_OVERLAY_FILE 在默认镜像 overlay 后显式追加
-overlay 列表；BOOT_LAYOUT 可选择已有布局名或外部 layout.json。
+独立应用可在 config/board.dts 中描述自己的硬件，未提供时使用所选产品的硬件。
+DTC_OVERLAY_FILE 在默认镜像 overlay 后显式追加 overlay 列表；
+BOOT_LAYOUT 可选择已有布局名或外部 layout.json。
 MODULE_ROOTS 是模块目录列表，每个目录提供 sdk-module.cmake，可设置
 `SDK_MODULE_KCONFIG Kconfig`。模块的 CMakeLists.txt 使用：
 

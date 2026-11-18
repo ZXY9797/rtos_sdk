@@ -2,20 +2,20 @@
   "schema": "rtos-sdk.tests.v1",
   "host": {"runner": "ctest", "capabilities": ["threads", "pure-components"]},
   "firmware": [
-    {"name": "demo-freertos", "arguments": ["-Dp=demo", "-Dt=armgcc9", "-DBOARD=gd32_demo"], "verification": "build", "capabilities": ["dma", "foc", "link"]},
+    {"name": "demo-freertos", "arguments": ["-Dp=demo", "-Dt=armgcc9"], "verification": "build", "capabilities": ["dma", "foc", "link"]},
     {"name": "demo-rtthread", "arguments": ["-Dp=demo", "-Dt=armgcc9", "-DEXTRA_CONF_FILE=tests/config/rtthread.conf"], "verification": "build", "capabilities": ["osal"]},
     {"name": "demo-release", "arguments": ["-Dp=demo", "-Dt=armgcc9", "-DPROFILE=release"], "verification": "build", "capabilities": ["watchdog"]},
-    {"name": "gimbal", "arguments": ["-Dp=gimbal", "-Dt=armgcc9", "-DBOARD=gd32_gimbal"], "verification": "build", "capabilities": ["dma-batch", "timing", "safety"]},
+    {"name": "gimbal", "arguments": ["-Dp=gimbal", "-Dt=armgcc9"], "verification": "build", "capabilities": ["dma-batch", "timing", "safety"]},
     {"name": "gimbal-release", "arguments": ["-Dp=gimbal", "-Dt=armgcc9", "-DPROFILE=release"], "verification": "build", "capabilities": ["watchdog", "timing", "safety"]},
     {"name": "demo-debug", "arguments": ["-Dp=demo", "-Dt=armgcc9", "-DPROFILE=debug"], "verification": "build", "capabilities": ["assertions", "debug-profile"]},
     {"name": "demo-ble", "arguments": ["-Dp=demo_ble", "-Dt=armgcc9"], "verification": "build", "capabilities": ["ble", "link"]},
     {"name": "demo-ble-release", "arguments": ["-Dp=demo_ble", "-Dt=armgcc9", "-DPROFILE=release"], "verification": "build", "capabilities": ["watchdog", "ble"]},
-    {"name": "osal-freertos", "arguments": ["-Dp=demo", "-Dt=armgcc9", "-DBOARD=gd32_demo", "-DAPPLICATION=samples/osal_contract"], "verification": "build", "capabilities": ["osal-contract-runtime"]},
-    {"name": "osal-rtthread", "arguments": ["-Dp=demo", "-Dt=armgcc9", "-DBOARD=gd32_demo", "-DAPPLICATION=samples/osal_contract", "-DEXTRA_CONF_FILE=tests/config/rtthread.conf"], "verification": "build", "capabilities": ["osal-contract-runtime"]}
+    {"name": "osal-freertos", "arguments": ["-Dp=demo", "-Dt=armgcc9", "-DAPPLICATION=samples/osal_contract"], "verification": "build", "capabilities": ["osal-contract-runtime"]},
+    {"name": "osal-rtthread", "arguments": ["-Dp=demo", "-Dt=armgcc9", "-DAPPLICATION=samples/osal_contract", "-DEXTRA_CONF_FILE=tests/config/rtthread.conf"], "verification": "build", "capabilities": ["osal-contract-runtime"]}
   ],
   "target_acceptance": [
-    {"name": "osal-contract", "boards": ["gd32_demo"], "backends": ["freertos", "rt-thread"], "success_marker": "OSAL_CONTRACT_PASS", "requires": ["programming", "serial capture"]},
-    {"name": "control-latency", "boards": ["gd32_gimbal"], "requires": ["logic analyzer", "loaded control loop"], "metrics": ["max_execution_us", "max_latency_us", "deadline_misses", "stack_watermark"]},
+    {"name": "osal-contract", "products": ["demo"], "backends": ["freertos", "rt-thread"], "success_marker": "OSAL_CONTRACT_PASS", "requires": ["programming", "serial capture"]},
+    {"name": "control-latency", "products": ["gimbal"], "requires": ["logic analyzer", "loaded control loop"], "metrics": ["max_execution_us", "max_latency_us", "deadline_misses", "stack_watermark"]},
     {"name": "power-loss-and-break", "requires": ["power interruption", "hardware break injection"], "verification": "hardware"}
   ]
 }

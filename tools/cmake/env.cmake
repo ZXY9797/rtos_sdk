@@ -7,8 +7,13 @@ set(BSP_DIR ${TOP_DIR}/embedded)
 set(APP_DIR ${TOP_DIR}/app)
 set(BOOTLOADER_DIR ${TOP_DIR}/bootloader)
 
-# Product-wide defaults are shared by App and every Boot image.
-include("${TOP_DIR}/products/${PROJECT_NAME}/product.cmake" OPTIONAL)
+# Hardware belongs to the product; Boot images reuse the same description.
+set(PROJECT_HARDWARE_DIR "${APP_DIR}/product/${PROJECT_NAME}/config")
+if(DEFINED BOARD OR DEFINED BOARD_ROOT)
+    message(FATAL_ERROR
+        "Select the product with -Dp, not BOARD/BOARD_ROOT. "
+        "Clear old board cache entries with -UBOARD -UBOARD_ROOT.")
+endif()
 
 if(NOT DEFINED FIRMWARE_TYPE)
     set(FIRMWARE_TYPE app)
@@ -51,11 +56,13 @@ else()
     set(PROJECT_CONFIG_DIR "${PROJECT_PRODUCT_DIR}/config")
 endif()
 
-# A configuration-only override still uses the product's physical board.
-# Keep explicit legacy CONFIG_DIR/board.dts projects usable during migration.
-if(NOT DEFINED BOARD AND DEFINED SDK_DEFAULT_BOARD
-   AND NOT (DEFINED CONFIG_DIR AND EXISTS "${PROJECT_CONFIG_DIR}/board.dts"))
-    set(BOARD "${SDK_DEFAULT_BOARD}")
+# Configuration-only overrides keep the product hardware. An independent App
+# or an explicit image config can provide its own complete hardware description.
+if(FIRMWARE_TYPE STREQUAL "app" AND EXISTS "${PROJECT_DIR}/config/board.dts")
+    set(PROJECT_HARDWARE_DIR "${PROJECT_DIR}/config")
+endif()
+if(EXISTS "${PROJECT_CONFIG_DIR}/board.dts")
+    set(PROJECT_HARDWARE_DIR "${PROJECT_CONFIG_DIR}")
 endif()
 if(NOT DEFINED PROFILE)
     set(PROFILE default)
@@ -64,23 +71,7 @@ if(NOT PROFILE MATCHES "^[A-Za-z0-9_-]+$")
     message(FATAL_ERROR "Invalid PROFILE: ${PROFILE}")
 endif()
 
-if(DEFINED BOARD)
-    foreach(_root IN ITEMS ${BOARD_ROOT} "${TOP_DIR}/boards")
-        if(EXISTS "${_root}/${BOARD}/board.dts")
-            get_filename_component(BOARD_DIR "${_root}/${BOARD}" ABSOLUTE)
-            break()
-        endif()
-    endforeach()
-    if(NOT DEFINED BOARD_DIR)
-        message(FATAL_ERROR "Board ${BOARD} not found in BOARD_ROOT or SDK boards")
-    endif()
-endif()
-
-if(DEFINED BOARD_DIR)
-    set(SDK_BOARD_DTS "${BOARD_DIR}/board.dts")
-else()
-    set(SDK_BOARD_DTS "${PROJECT_CONFIG_DIR}/board.dts")
-endif()
+set(SDK_BOARD_DTS "${PROJECT_HARDWARE_DIR}/board.dts")
 if(NOT EXISTS "${SDK_BOARD_DTS}")
     message(FATAL_ERROR "Missing board DTS: ${SDK_BOARD_DTS}")
 endif()

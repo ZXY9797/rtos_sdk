@@ -8,8 +8,9 @@ The merged board/image DTS selects the SoC through its compatible property.
 The EDT model, `soc.yml` and SoC Kconfig select the backend and architecture
 settings. Public device access uses generated traits and SDK drivers.
 
-Board hardware is owned by `boards/`; image overlays and Kconfig fragments
-are owned by the App or Boot product. See `doc/BOARD_CONFIGURATION.md`.
+Product hardware lives in `app/product/<product>/config/` and is shared by
+App and Boot. Each image owns its overlays and Kconfig fragments.
+See `doc/BOARD_CONFIGURATION.md`.
 Vendor SDKs and hardware resources are preserved for future integration, even
 when they have no current build consumer. Protected roots are recorded in
 `tools/source-policy.json`; licensing and source digests are recorded in

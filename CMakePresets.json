@@ -1,10 +1,10 @@
 {
   "version": 2,
   "configurePresets": [
-    {"name": "demo", "generator": "Ninja", "binaryDir": "${sourceDir}/out/presets/demo", "cacheVariables": {"p": "demo", "t": "armgcc9", "BOARD": "gd32_demo"}},
+    {"name": "demo", "generator": "Ninja", "binaryDir": "${sourceDir}/out/presets/demo", "cacheVariables": {"p": "demo", "t": "armgcc9"}},
     {"name": "demo-release", "inherits": "demo", "binaryDir": "${sourceDir}/out/presets/demo-release", "cacheVariables": {"PROFILE": "release"}},
     {"name": "demo-rtthread", "inherits": "demo", "binaryDir": "${sourceDir}/out/presets/demo-rtthread", "cacheVariables": {"EXTRA_CONF_FILE": "tests/config/rtthread.conf"}},
-    {"name": "gimbal", "generator": "Ninja", "binaryDir": "${sourceDir}/out/presets/gimbal", "cacheVariables": {"p": "gimbal", "t": "armgcc9", "BOARD": "gd32_gimbal"}},
+    {"name": "gimbal", "generator": "Ninja", "binaryDir": "${sourceDir}/out/presets/gimbal", "cacheVariables": {"p": "gimbal", "t": "armgcc9"}},
     {"name": "demo-ble", "generator": "Ninja", "binaryDir": "${sourceDir}/out/presets/demo-ble", "cacheVariables": {"p": "demo_ble", "t": "armgcc9"}}
   ],
   "buildPresets": [

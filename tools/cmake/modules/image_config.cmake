@@ -19,8 +19,8 @@ endfunction()
 
 function(sdk_select_image_configuration)
     set(_configs)
-    if(DEFINED BOARD_DIR AND EXISTS "${BOARD_DIR}/board_defconfig")
-        list(APPEND _configs "${BOARD_DIR}/board_defconfig")
+    if(EXISTS "${PROJECT_HARDWARE_DIR}/board_defconfig")
+        list(APPEND _configs "${PROJECT_HARDWARE_DIR}/board_defconfig")
     endif()
     if(DEFINED CONF_FILE)
         list(APPEND _configs ${CONF_FILE})
@@ -57,6 +57,8 @@ function(sdk_select_image_configuration)
     # Watch directory membership as well as file contents: adding/removing an
     # optional default overlay must also trigger CMake regeneration.
     file(GLOB _image_inputs CONFIGURE_DEPENDS
+         "${PROJECT_CONFIG_DIR}/board.dts"
+         "${PROJECT_HARDWARE_DIR}/board_defconfig"
          "${PROJECT_CONFIG_DIR}/*.overlay"
          "${PROJECT_CONFIG_DIR}/profiles/*.conf")
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS

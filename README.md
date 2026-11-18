@@ -204,12 +204,11 @@ namespace osal {     // OS 抽象层：线程、同步原语
 
 ```
 rtos_sdk/
-├── products/                     # App/Boot 共用的产品元数据与默认板卡
-├── boards/                       # 公共硬件、引脚与 SoC 默认配置
 ├── app/                          # 应用项目
 │   └── product/                  # 产品固件
 │       ├── demo/                 # GD32 FOC 电机控制 Demo
-│       └── demo_ble/             # GR5525 BLE Demo（HID 键盘 + UART 透传）
+│       ├── demo_ble/             # GR5525 BLE Demo（HID 键盘 + UART 透传）
+│       └── gimbal/               # GD32 三轴云台；各项目 config/ 同时维护硬件与软件配置
 │
 ├── bootloader/                   # 启动与升级固件
 │   ├── include/boot/             # 公开 boot API

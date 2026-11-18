@@ -61,7 +61,9 @@ app/product/demo_ble/
   common/
     app_watchdog.cc             demo_ble 的 GR5525 AON 硬件看门狗 provider
   config/
-    app.overlay                 本镜像设备选择，公共硬件见 boards/gr5525_demo
+    board.dts                   本项目硬件，App/Boot 共用
+    board_defconfig             本项目 SoC/时钟默认值
+    app.overlay                 本镜像设备选择
     prj.conf
     profiles/
       debug.conf

@@ -69,7 +69,7 @@ python tools/scripts/check_rtos_ports.py --compiler C:/arm-none-eabi-gcc-9.3.1-1
 先校验备份内容及 SHA-256，再逐文件删除；其他未跟踪文件保留给使用者判断。
 CI 执行保留清单与内容摘要检查。
 
-产品公共元数据在 `products/` 下，同样计入后续审计。纯 C++ runtime 统一归属
+项目硬件与引脚描述在各自的 `app/product/<product>/config/` 下，同样计入后续审计。纯 C++ runtime 统一归属
 `component/runtime`，实验性接口保留在对应组件的 `experimental` 目录和命名空间内。
 
 本次移除的原文件分别保存在本机 `out/sdk-trim/removed-sources.zip`、

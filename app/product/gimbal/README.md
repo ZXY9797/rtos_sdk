@@ -26,7 +26,7 @@ loader payload。
 - [工厂标定流程](doc/CALIBRATION.md)
 - [验证与发布门禁](doc/VALIDATION.md)
 
-`boards/gd32_gimbal/board.dts` 和 `config/app.overlay` 只是参考硬件与资源映射。实际 PCB 的 PWM pinctrl、功率级
+`config/board.dts` 和 `config/app.overlay` 只是参考硬件与资源映射。实际 PCB 的 PWM pinctrl、功率级
 enable/brake/fault、Hall 模拟引脚和可选遥测通道尚不能从现有资料确定；在
 完成原理图映射及板级故障注入前，不得用该参考配置给电机功率级上电。没有
 有效工厂参数时，固件固定停留在 `Calibration`，电机授权保持关闭。

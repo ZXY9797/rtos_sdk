@@ -1,3 +1,5 @@
+/dts-v1/;
+
 /* Shared reference hardware. Firmware overlays opt into peripherals. */
 
 #include <arm/gd/gd32f50x.dtsi>
@@ -163,4 +165,9 @@
         };
 
     };
+};
+#include "pinctrl.dtsi"
+
+/ {
+    model = "DM-4340 Motor Controller";
 };

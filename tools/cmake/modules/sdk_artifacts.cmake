@@ -1,10 +1,8 @@
 set(_metadata_command ${PYTHON_EXECUTABLE} "${TOOLS_DIR}/scripts/sdk_artifacts.py"
     --root "${TOP_DIR}" --application "${PROJECT_DIR}" --build "${PROJECT_BINARY_DIR}"
     --compiler "${CMAKE_C_COMPILER}" --layout "${BOOT_LAYOUT_MANIFEST}"
-    --product "${PRODUCT_NAME}" --firmware "${FIRMWARE_TYPE}" --profile "${PROFILE}")
-if(DEFINED BOARD)
-    list(APPEND _metadata_command --board "${BOARD}")
-endif()
+    --product "${PRODUCT_NAME}" --firmware "${FIRMWARE_TYPE}" --profile "${PROFILE}"
+    --board "${PRODUCT_NAME}")
 foreach(_config IN LISTS SDK_IMAGE_CONFIG_FILES)
     list(APPEND _metadata_command --config-fragment "${_config}")
 endforeach()
