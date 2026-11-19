@@ -166,17 +166,17 @@ def write_lut(client, table, values):
 
 
 CAPTURE_FIELDS = ["version", "flags", "reserved", "timestamp_hz", "pair_seq", "joint_seq",
-                  "joint_us", "input_us", "encoder_seq", "encoder_processed_us", "encoder_raw_count",
-                  "dropped", "input_angle_rad", "output_raw_rad", "output_calibrated_rad"]
+                  "joint_us", "input_us", "dropped",
+                  "input_angle_rad", "output_raw_rad", "output_calibrated_rad"]
+CAPTURE_PACKET = struct.Struct("<BBH6I3f")
 
 
 def capture_row(data):
-    if len(data) != 52:
+    if len(data) != CAPTURE_PACKET.size:
         raise ValueError("invalid capture packet size")
-    row = dict(zip(CAPTURE_FIELDS, struct.unpack("<BBH9I3f", data)))
-    if row["version"] != 1 or row["reserved"] or row["flags"] & ~7 or row["timestamp_hz"] != 1000000:
+    row = dict(zip(CAPTURE_FIELDS, CAPTURE_PACKET.unpack(data)))
+    if row["version"] != 2 or row["reserved"] or row["flags"] & ~1 or row["timestamp_hz"] != 1000000:
         raise ValueError("invalid capture packet header")
-    row["encoder_age_us"] = (row["joint_us"]-row["encoder_processed_us"]) & 0xFFFFFFFF
     return row
 
 

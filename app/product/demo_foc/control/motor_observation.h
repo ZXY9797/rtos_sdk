@@ -42,18 +42,12 @@ struct CycleTiming {
     }
 };
 
-struct EncoderSample {
-    uint32_t sequence {0U}, processed_us {0U}, raw_count {0U};
-    bool valid {false};
-};
-
-// Timestamps describe software observation, never the encoder's sampling time.
+// Timestamps describe when software processed each ADC scan.
 struct CalibrationPair {
     uint32_t sequence {0U}, joint_sequence {0U}, joint_us {0U};
-    uint32_t input_us {0U}, encoder_sequence {0U}, encoder_processed_us {0U};
-    uint32_t encoder_raw_count {0U}, dropped {0U};
+    uint32_t input_us {0U}, dropped {0U};
     float input_angle_rad {0.0F}, output_raw_rad {0.0F}, output_calibrated_rad {0.0F};
-    uint8_t flags {0U}; // bit0 encoder valid, bit1 new encoder, bit2 input valid
+    bool input_valid {false};
 };
 
 struct MotorObservation {

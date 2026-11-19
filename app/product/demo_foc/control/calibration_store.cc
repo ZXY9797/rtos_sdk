@@ -5,13 +5,8 @@
 
 namespace app {
 namespace {
-#if defined(CONFIG_DEMO_FOC_MD007_V1)
 constexpr uint16_t kCalibrationBase = 0x4200U;
 constexpr uint16_t kInteractionId = 0x4300U;
-#else
-constexpr uint16_t kCalibrationBase = 0x4000U;
-constexpr uint16_t kInteractionId = 0x4100U;
-#endif
 hal::Flash& flash_device()
 {
     static hal::Flash flash(hal::flash_create_default());

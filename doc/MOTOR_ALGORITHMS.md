@@ -72,7 +72,7 @@
   OpenLoop 每次快环最多移动 0.02 rad；HeldQVoltage 对应IqOpenLoop，保持已有 q 电压并清 PI，
   不把目标电流解释成电压。零矢量输出 50%；六扇区 SVPWM 在 t1+t2 过限时同比缩放。
   保留占空比反相、`ARR-1` 比较值换算和 ADC 峰前触发偏移换算。
-  demo_foc 硬件配置设峰前 1000 ns、dead_time_ns=0；触发比较值可调用 `adc_trigger_count()`
+  demo_foc 配置 ADC 峰前 1000 ns 触发，PWM 的 `dead-time` 为 100；触发比较值可调用 `adc_trigger_count()`
   计算，硬件适配仍须按 PWM 模式、预分频与 ADC 触发通道配置落实这些时序。
 - 无效输入、停用或母线不满足条件时 `energize=false`。调用方必须据此关闭全部功率输出，
   不能把“50% 中性占空比”当成硬件断能。
@@ -131,15 +131,15 @@ CRC 为 IEEE CRC32（反射多项式 0xEDB88320，初始与最终 XOR 都是 0xF
 
 | 记录常量 `calibration_records::` | 类型 / 版本 | demo_foc NVS ID | payload |
 | --- | --- | --- | --- |
-| current_linear | CURL / 2 | 0x4000 | MotorCurrentLinearCalibData |
-| bus_voltage | VBUS / 2 | 0x4001 | MotorLinearCalibData |
-| input_tmr | ITMR / 4 | 0x4002 | MotorAffine2DCalibData |
-| output_tmr | OTMR / 1 | 0x4003 | MotorTmrPairCalibData |
-| electrical_angle | EANG / 1 | 0x4004 | MotorElecAngleCalibData |
-| input_angle_lut | IANG / 2 | 0x4005 | MotorAngleLutData |
-| output_angle_lut | OANG / 2 | 0x4006 | MotorAngleLutData |
-| joint_zero | JZER / 1 | 0x4007 | JointAngleCalibData |
-| joint_offset | JOFF / 1 | 0x4008 | JointAngleCalibData |
+| current_linear | CURL / 2 | 0x4200 | MotorCurrentLinearCalibData |
+| bus_voltage | VBUS / 2 | 0x4201 | MotorLinearCalibData |
+| input_tmr | ITMR / 4 | 0x4202 | MotorAffine2DCalibData |
+| output_tmr | OTMR / 1 | 0x4203 | MotorTmrPairCalibData |
+| electrical_angle | EANG / 1 | 0x4204 | MotorElecAngleCalibData |
+| input_angle_lut | IANG / 2 | 0x4205 | MotorAngleLutData |
+| output_angle_lut | OANG / 2 | 0x4206 | MotorAngleLutData |
+| joint_zero | JZER / 1 | 0x4207 | JointAngleCalibData |
+| joint_offset | JOFF / 1 | 0x4208 | JointAngleCalibData |
 
 记录解码先完成全部检查再覆盖输出；读回校验还比较 payload 原始字节。
 sequence、存储键、掉电恢复和 NVS 事务由存储适配层管理。HOST/MSN1 等设备身份记录不属于算法标定。

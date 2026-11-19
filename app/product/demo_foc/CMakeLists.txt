@@ -11,10 +11,10 @@ target_sources(app PRIVATE
     control/control_app.cc
     comm/motor_protocol.cc
     comm/interaction_protocol.cc
+    comm/joint_canopen_fd.cc
     comm/motor_link.cc
     ${DRIVERS_GENERATED_CC}
     ${PINCTRL_GENERATED_CC})
-target_sources_ifdef(CONFIG_DEMO_FOC_MD007_V1 app PRIVATE comm/joint_canopen_fd.cc)
 target_link_libraries(app PRIVATE boot_common drivers osal sdk::motor nvs link)
 function(check_demo_foc_callbacks)
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD

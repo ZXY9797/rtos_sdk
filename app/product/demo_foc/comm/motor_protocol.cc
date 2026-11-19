@@ -306,12 +306,11 @@ bool encode_observation(uint8_t kind, const MotorObservation& sample, MotorRespo
 void encode_capture(const CalibrationPair& pair, MotorResponse& response)
 {
     response = {};
-    (void)response.byte(1U); (void)response.byte(pair.flags); (void)response.u16(0U);
+    (void)response.byte(2U); (void)response.byte(pair.input_valid); (void)response.u16(0U);
     (void)response.u32(1000000U);
     (void)response.u32(pair.sequence); (void)response.u32(pair.joint_sequence);
     (void)response.u32(pair.joint_us); (void)response.u32(pair.input_us);
-    (void)response.u32(pair.encoder_sequence); (void)response.u32(pair.encoder_processed_us);
-    (void)response.u32(pair.encoder_raw_count); (void)response.u32(pair.dropped);
+    (void)response.u32(pair.dropped);
     (void)response.real(pair.input_angle_rad); (void)response.real(pair.output_raw_rad);
     (void)response.real(pair.output_calibrated_rad);
 }

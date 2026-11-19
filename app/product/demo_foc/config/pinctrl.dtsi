@@ -18,11 +18,11 @@
         vbus_analog: vbus_analog { pinmux = <GD32_PINMUX_ANALOG(GD32_PORT_A, 4)>; };
         rotor1_analog: rotor1_analog { pinmux = <GD32_PINMUX_ANALOG(GD32_PORT_B, 0)>; };
         rotor2_analog: rotor2_analog { pinmux = <GD32_PINMUX_ANALOG(GD32_PORT_B, 1)>; };
-        joint1_analog: joint1_analog { pinmux = <GD32_PINMUX_ANALOG(GD32_PORT_B, 11)>; };
-        joint2_analog: joint2_analog { pinmux = <GD32_PINMUX_ANALOG(GD32_PORT_A, 7)>; };
+        joint1_analog: joint1_analog { pinmux = <GD32_PINMUX_ANALOG(GD32_PORT_A, 5)>; };
+        joint2_analog: joint2_analog { pinmux = <GD32_PINMUX_ANALOG(GD32_PORT_A, 6)>; };
         board_ntc_analog: board_ntc_analog { pinmux = <GD32_PINMUX_ANALOG(GD32_PORT_B, 10)>; };
         motor_ntc1_analog: motor_ntc1_analog { pinmux = <GD32_PINMUX_ANALOG(GD32_PORT_C, 3)>; };
         motor_ntc2_analog: motor_ntc2_analog { pinmux = <GD32_PINMUX_ANALOG(GD32_PORT_E, 15)>; };
-        status_led_pin: status_led_pin { pinmux = <GD32_PINMUX_OUTPUT_LOW(GD32_PORT_E, 0, GD32_PULL_NONE, GD32_DRIVE_PUSH_PULL, 2)>; };
+        status_led_pin: status_led_pin { pinmux = <GD32_PINMUX_OUTPUT_LOW(GD32_PORT_B, 8, GD32_PULL_NONE, GD32_DRIVE_PUSH_PULL, 2)>; };
     };
 };

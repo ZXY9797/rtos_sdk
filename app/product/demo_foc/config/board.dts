@@ -5,13 +5,13 @@
 #include <dt-bindings/pinctrl/gd32-pinctrl.h>
 / {
     compatible = "gd,gd32f503";
-    model = "FOC motor controller";
+    model = "MD007 V1 joint motor";
     board_leds: leds {
         compatible = "gpio-leds";
         status = "disabled";
         green_led: status-led {
             status = "disabled";
-            gpios = <&gpioe 0 0>;
+            gpios = <&gpiob 8 GPIO_ACTIVE_HIGH>;
             pinctrl-0 = <&status_led_pin>;
             pinctrl-names = "default";
             label = "Status LED";

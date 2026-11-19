@@ -15,8 +15,6 @@ bool start_acquisition(hal::AdcBase::ScanCallback current,
 void stop_acquisition();
 bool apply(const algo::motor::CurrentLoopOutput& output);
 void shutdown();
-#if defined(CONFIG_DEMO_FOC_MD007_V1)
 bool output_enabled();
-#endif
 algo::motor::TemperatureSample temperature(const algo::motor::MotorParameters& parameters);
 } // namespace app::board

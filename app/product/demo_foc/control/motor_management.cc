@@ -129,7 +129,6 @@ MotorObservation MotorControl::observation() const
     return result;
 }
 
-#if defined(CONFIG_DEMO_FOC_MD007_V1)
 JointFeedbackSample MotorControl::joint_feedback_sample() const
 {
     JointFeedbackSample sample;
@@ -144,24 +143,11 @@ JointFeedbackSample MotorControl::joint_feedback_sample() const
                    calibration_.output.tmr1_calib.valid && calibration_.output.tmr2_calib.valid;
     return sample;
 }
-#endif
 
 void MotorControl::record_timing(unsigned loop, uint32_t start_us, uint32_t end_us)
 {
     constexpr uint32_t budgets[] {50U, 250U, 1000U};
     if (loop < 3U) timing_[loop].record(start_us, end_us, budgets[loop]);
-}
-
-bool MotorControl::encoder_frame(uint32_t id, const uint8_t* data, size_t size,
-                                uint32_t processed_us)
-{
-    if ((id & ~0xFU) != 0x680U || !data || size != 3U) return false;
-    encoder_.valid = true;
-    encoder_.raw_count = ((uint32_t(data[0]) << 16U) | (uint32_t(data[1]) << 8U) |
-                          uint32_t(data[2])) & 0x001FFFFFU;
-    encoder_.processed_us = processed_us;
-    ++encoder_.sequence;
-    return true;
 }
 
 bool MotorControl::configure_capture(bool enabled, uint16_t divider)
@@ -171,7 +157,7 @@ bool MotorControl::configure_capture(bool enabled, uint16_t divider)
     capture_divider_ = enabled ? divider : 0U;
     capture_size_ = capture_head_ = 0U;
     capture_phase_ = 0U;
-    capture_dropped_ = capture_sequence_ = paired_encoder_ = 0U;
+    capture_dropped_ = capture_sequence_ = 0U;
     return true;
 }
 
@@ -187,17 +173,11 @@ void MotorControl::capture_pair(uint32_t timestamp_us)
     pair.joint_sequence = joint_count_;
     pair.joint_us = timestamp_us;
     pair.input_us = input_us_;
-    pair.encoder_sequence = encoder_.sequence;
-    pair.encoder_processed_us = encoder_.processed_us;
-    pair.encoder_raw_count = encoder_.raw_count;
     pair.dropped = capture_dropped_;
     pair.input_angle_rad = feedback_.rotor().mech_angle_calib;
     pair.output_raw_rad = feedback_.joint().single_turn_angle_raw;
     pair.output_calibrated_rad = feedback_.joint().single_turn_angle_calib;
-    pair.flags = uint8_t(encoder_.valid) |
-        uint8_t((encoder_.valid && encoder_.sequence != paired_encoder_) << 1U) |
-        uint8_t(rotor_valid_ << 2U);
-    paired_encoder_ = encoder_.sequence;
+    pair.input_valid = rotor_valid_;
     ++capture_size_;
 }
 

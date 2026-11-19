@@ -78,15 +78,15 @@ class MotorToolTests(unittest.TestCase):
         self.assertEqual(values, list(range(360)))
 
     def test_capture_wrap_and_gaps(self):
-        data = struct.pack("<BBH9I3f", 1, 7, 0, 1000000, 99, 400, 5, 3, 8,
-                           0xFFFFFFF0, 123, 7, 0.25, 0.5, 0.75)
+        data = struct.pack("<BBH6I3f", 2, 1, 0, 1000000, 99, 400, 5,
+                           0xFFFFFFF0, 7, 0.25, 0.5, 0.75)
         row = tool.capture_row(data)
-        self.assertEqual(row["encoder_age_us"], 21)
+        self.assertEqual((row["joint_us"], row["input_us"]), (5, 0xFFFFFFF0))
         self.assertEqual(row["dropped"], 7)
         with self.assertRaises(ValueError):
             tool.capture_row(data[:-1])
         with self.assertRaises(ValueError):
-            tool.capture_row(bytes([2])+data[1:])
+            tool.capture_row(bytes([1])+data[1:])
 
     def test_lut_write_and_new_session_readback(self):
         self_test = self
@@ -150,7 +150,7 @@ class MotorToolTests(unittest.TestCase):
         self.assertEqual(tool.motor_status(status)["calibration_samples"], 7)
 
     def test_csv_subscription_cleanup_and_rejected_owner(self):
-        sample = struct.pack("<BBH9I3f", 1, 7, 0, 1000000, 1, 2, 3, 4, 5, 6, 7, 0, 0.1, 0.2, 0.3)
+        sample = struct.pack("<BBH6I3f", 2, 1, 0, 1000000, 1, 2, 3, 4, 0, 0.1, 0.2, 0.3)
         def reply(request):
             ack = tool.frame(0x16, b"\0", request[3], 0x10, 0x20, True)
             return ack + (tool.frame(0x85, sample, 0, 0x10, 0x20) if request[6][0] else b"")
@@ -159,7 +159,7 @@ class MotorToolTests(unittest.TestCase):
             path = Path(folder)/"capture.csv"
             with mock.patch.object(tool.time, "monotonic", side_effect=count(0.0, 0.001)):
                 tool.capture_csv(tool.Client(transport), path, 0.01, 20)
-            self.assertIn("encoder_age_us", path.read_text())
+            self.assertIn("output_raw_rad", path.read_text())
             self.assertEqual(len(path.read_text().splitlines()), 2)
             self.assertEqual(len(transport.writes), 2)
             self.assertEqual(tool.Parser().feed(transport.writes[-1])[0][6], b"\0\0\0")

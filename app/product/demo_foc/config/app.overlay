@@ -1,21 +1,8 @@
 #include <dt-bindings/gpio/gpio.h>
 
-#ifdef DEMO_FOC_MD007_V1
-&joint1_analog { pinmux = <GD32_PINMUX_ANALOG(GD32_PORT_A, 5)>; };
-&joint2_analog { pinmux = <GD32_PINMUX_ANALOG(GD32_PORT_A, 6)>; };
-&status_led_pin {
-    pinmux = <GD32_PINMUX_OUTPUT_LOW(GD32_PORT_B, 8, GD32_PULL_NONE, GD32_DRIVE_PUSH_PULL, 2)>;
-};
-#endif
-
 &pinctrl { status = "okay"; };
 &board_leds { status = "okay"; };
-&green_led {
-    status = "okay";
-#ifdef DEMO_FOC_MD007_V1
-    gpios = <&gpiob 8 GPIO_ACTIVE_HIGH>;
-#endif
-};
+&green_led { status = "okay"; };
 &gpioa { status = "okay"; };
 &gpiob { status = "okay"; };
 &gpioc { status = "okay"; };
@@ -25,13 +12,8 @@
 &usart0 { status = "okay"; current-speed = <2000000>; rx-buffer-size = <1024>; };
 &timer0 {
     status = "okay";
-#ifdef DEMO_FOC_MD007_V1
     period = <4800>;
     dead-time = <100>;
-#else
-    period = <5000>;
-    dead-time = <0>;
-#endif
     three-phase;
     complementary;
     center-aligned;
@@ -40,11 +22,7 @@
 };
 &timer7 {
     status = "okay";
-#ifdef DEMO_FOC_MD007_V1
     prescaler = <191>;
-#else
-    prescaler = <199>;
-#endif
     period = <249>;
 };
 &adc0 {
@@ -72,7 +50,6 @@
 };
 &can0 {
     status = "okay";
-#ifdef DEMO_FOC_MD007_V1
     fd-enabled;
     clock-frequency = <192000000>;
     bitrate = <1000000>;
@@ -87,16 +64,8 @@
     data-sjw = <3>;
     tdc-offset = <18>;
 
-    /* Use this profile on units fitted with the 8 Mbit/s transceiver. */
+    /* MD007 requires a transceiver rated for 8 Mbit/s. */
     can-transceiver { max-bitrate = <8000000>; };
-#else
-    bitrate = <500000>;
-    clock-frequency = <100000000>;
-    nominal-prescaler = <10>;
-    nominal-time-seg1 = <15>;
-    nominal-time-seg2 = <4>;
-    nominal-sjw = <1>;
-#endif
 };
 / {
     chosen { zephyr,console = &usart0; zephyr,shell-uart = &usart0;
@@ -106,15 +75,10 @@
     foc_control: foc-control {
         compatible = "app,foc-control";
         current-channels = <2 1 0 4 8 9>;
-#ifdef DEMO_FOC_MD007_V1
         joint-channels = <5 6>;
         timer-clock-hz = <192000000>;
         brake-enable-gpios = <&gpioc 9 GPIO_ACTIVE_HIGH>;
         brake-voltage-select-gpios = <&gpiob 11 GPIO_ACTIVE_HIGH>;
-#else
-        joint-channels = <17 7>;
-        timer-clock-hz = <200000000>;
-#endif
         temperature-channels = <15 13 14>;
         pwm-frequency-hz = <20000>;
         adc-before-peak-ns = <1000>;

@@ -31,16 +31,14 @@ python tools/demo_foc/motor_tool.py --port COM8 erase all
 用 `status` 查看最终状态。`stop` 请求停止，`stop --emergency` 立即退出背隙流程，
 `clear-fault` 在空闲且保护恢复后清本地故障。
 
-采集命令只订阅数据，不使能或移动电机。将外部编码器接到 CAN0，发送标准 ID 0x680..0x68F、
-三字节大端 21 bit 原始计数。TMR 的三阶段标定和显式运动控制由设备命令完成。
+采集命令订阅转子 TMR 和关节 Hall 的配对快照，电机保持当前使能状态。
 
 ```powershell
 python tools/demo_foc/motor_tool.py --port COM8 capture samples.csv --seconds 30 --divider 20
 ```
 
-CSV 保留输入/输出角、编码器计数、两条采样链的软件时间戳、配对/编码器序号、有效/更新标志、
-累计丢包和编码器处理年龄。不能将这些软件观察时间当成物理同步采样时间；
-拟合前检查有效位、年龄、序号连续性，并按时间回绕及复位切分数据。
+CSV 保留输入/输出角、两条采样链的软件处理时间、配对与关节采样序号、
+输入角有效位和累计丢包数。拟合前检查有效位和序号连续性，按 32 位回绕处理时间差。
 
 LUT CSV 使用 `index,offset_rad` 两列，必须完整包含有序的 0..359 索引及有限的 rad 误差值。
 输入和输出 LUT 的格式相同，输入 LUT 仅存储，控制不应用输入 LUT。
@@ -54,18 +52,14 @@ python tools/demo_foc/motor_tool.py --port COM8 lut-read readback.csv --table ou
 LUT 传输使用独占事务、120 点分块和整表 CRC32；写入 Finish 后开启新读取事务检查持久化内容。
 LUT 读写需要控制禁用。工具不自动执行 Stop，以保留运动控制的显式顺序。
 
-模式事务示例：先读取状态，显式禁用，再进入指定位置；Hold/Restore 都携带完整目标。
-工具从状态中取得接收序号后分配下一序号，不能同时使用多个控制主机。
+UART 可以读取模式状态或请求停机。运行目标通过
+[CANopen FD](../../app/product/demo_foc/doc/md007_v1.md#canopen-fd-接口) 下发。
 
 ```powershell
 python tools/demo_foc/motor_tool.py --port COM8 mode-status
-python tools/demo_foc/motor_tool.py --port COM8 mode disable
-python tools/demo_foc/motor_tool.py --port COM8 mode target --mode 2 --position 0.2 --velocity 0.1 --iq 1
-python tools/demo_foc/motor_tool.py --port COM8 mode hold --mode 2 --position 0.2 --iq 1
-python tools/demo_foc/motor_tool.py --port COM8 mode restore --mode 2 --position 0.3 --velocity 0.1 --iq 1
+python tools/demo_foc/motor_tool.py --port COM8 stop
 ```
 
-事务 ACK 表示接收，查询 ModeStatus 的 busy=false、accepted=applied 且 faults=0 才能确认应用完成。
 协议字段及观测数值顺序见 [项目文档](../../app/product/demo_foc/README.md)。
 
 离线测试不需要串口或 pyserial：
@@ -74,4 +68,4 @@ python tools/demo_foc/motor_tool.py --port COM8 mode restore --mode 2 --position
 python -m unittest discover -s tools/demo_foc -p test_*.py
 ```
 
-物理交互模式、参数管理、力矩/RL 辨识和外力接口见 [交互控制工具](INTERACTION.md)。
+参数管理、力矩/RL 辨识和外力接口见 [交互控制工具](INTERACTION.md)。

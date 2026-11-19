@@ -74,4 +74,5 @@ GPIO 默认状态也可以由 pinctrl 完成，例如 LED 输出低、按键输�
 
 ## 当前接入范围
 
-demo_foc app 当前接入 USART0、LED PA5、KEY PA0。loader 和 upgrade 当前接入 USART0 PA9/PA10。SPI、PWM、ADC 等引脚需要以实际板级走线为准；当前 DTS 中 LED PA5 与常见 SPI0 SCK PA5 存在潜在冲突，所以没有强行给 SPI0 增加默认 pinctrl。
+`demo_foc` 的 App 和 Loader 共用 USART0 的 PB6/PB7 引脚配置。App 启用 PB8 状态灯，
+PA5 和 PA6 配置为关节 Hall 的模拟输入。完整配置见 [MD007 V1](../app/product/demo_foc/doc/md007_v1.md)。

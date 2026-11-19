@@ -6,10 +6,8 @@
 ## 配置步骤
 
 1. 完成电流、Vbus、TMR、电角度与输出零位标定，台架确认 ADC/PWM、方向与关断路径。
-2. 保持电机停止，读取 `limits` 并设置机构行程、速度、温度、热容量、功率和跟随误差。默认普通控制命令期限为 500 ms。
-3. 标定物理力矩映射，核对正反向负载；填写重力、摩擦、弹性、虚拟质量、伺服 K/D 与目标力臂。未测得的参数不要猜测写入。
-4. 对照读回值与独立传感器检查，先以低增益验证模式 4/5，再验证导纳、力控/夹持及弹性/惯量模型。
-5. 持续控制使用应用程序以新应用序号更新目标；外力源以新测量序号更新信号。一次 CLI 目标不会自动续期，超过期限断能。
+2. 保持电机停止，读取 `limits` 并设置机构行程、速度、温度、热容量、功率和跟随误差。
+3. 对照读回值与独立传感器检查配置。运行目标与命令时效由 [CANopen FD 接口](../../app/product/demo_foc/doc/md007_v1.md#canopen-fd-接口) 管理。
 
 ```powershell
 python tools/demo_foc/interaction_tool.py --port COM7 config-read limits
@@ -44,11 +42,12 @@ python tools/demo_foc/motor_tool.py --port COM7 observe temperature
 
 ### 力矩标定
 
-先停止并 `torque-cal begin`，随后通过旧式模式 0 输入多个正反向稳态 Iq；每个稳定工作点用独立输出力矩测量采点：
+先停止并执行 `torque-cal begin`，随后通过 CANopen FD CST 输入多个正反向稳态目标。
+每个稳定工作点用独立输出力矩测量采点。
 
 ```powershell
 python tools/demo_foc/interaction_tool.py --port COM7 torque-cal begin
-# 用 motor_tool 的 mode 命令进入模式 0 并设置已确认安全的 Iq；保持命令更新。
+# 由 CANopen FD 主站设置 CST 目标并保持命令更新。
 python tools/demo_foc/interaction_tool.py --port COM7 torque-cal sample --measured-nm <实测力矩>
 # 采集至少三个具有足够电流跨度的点后停止电机。
 python tools/demo_foc/motor_tool.py --port COM7 stop --emergency
@@ -70,17 +69,7 @@ python tools/demo_foc/interaction_tool.py --port COM7 rl-fit --apply
 `identify` 订阅并排空 R/L 数据，轮询结束；超时会发送一次停止作为清理。发送失败不重试激励命令。
 默认只返回拟合值。`--apply` 将 R 和该锁定方向的有效 L 写入模型，Ld=Lq，解耦仍关闭；不会假定已测得凸极参数或磁链。
 
-### 目标和测量
-
-```powershell
-# 必须先完成物理参数与行程核验；示例为单次低增益目标，单位见 --help。
-python tools/demo_foc/interaction_tool.py --port COM7 joint --mode 5 --values 0 0 0 1 0.02 0
-python tools/demo_foc/interaction_tool.py --port COM7 joint --mode 5 --action disable
-python tools/demo_foc/interaction_tool.py --port COM7 cartesian --mode 11 --pose 0.1 0 0 0 0 0
-```
-
-`joint --values` 为 q、v、tau_ff、K、D、force；支持 4～10、14。`cartesian` 支持 11～13，pose 为世界位置 XYZ 与旋转向量 XYZ，velocity/wrench 同为六项。
-Restore 用于退出 Hold；Stop 后先确认 Disable 才能重新使能。
+### 外力测量
 
 外力输入 API 为 `external_packet(sequence, external, effort, force, wrench, timestamp)`；None 表示该信号无效，0 表示有效的零测量。
 CLI `external` 省略序号时先读取当前序号加一；持续测量生产者应显式维护 uint32 序号和采样时序。传感器停止时发送全无效包；旧/重复序号不会刷新有效期。
@@ -92,7 +81,6 @@ Link 帧版本仍为 1，命令集 0x30。以下长度均不含 ACK 首字节；
 
 | 命令 | 请求 | 应答 |
 | --- | --- | --- |
-| 0x13 ModeTransaction | 原 body v1/32 B；或下述 body v2 | 0x14 格式 |
 | 0x14 ModeStatus | 空 | 16 B；version=1 对应模式 0～3，version=2 对应 4～14；其余 flags/accepted/applied/faults 不变 |
 | 0x17 InteractionConfig | 读 `[op=0, section]`；写 `[op=1, section_packet...]` | 读返回 section_packet；写在校验/持久化/生效后完成 |
 | 0x18 ExternalFeedback | 48 B，格式如下 | 空 |
@@ -103,13 +91,6 @@ Link 帧版本仍为 1，命令集 0x30。以下长度均不含 ACK 首字节；
 
 `section_packet = version u8(1), section u8, field_count u16, fields[field_count] f32`。
 完整配置使用 `version=1, sections=10, reserved u16` 头，按 ID 顺序拼接十个 section_packet；当前 payload 956 B，外包 MCAL CRC32 记录。
-
-body v2 的公共前 8 B：version=2、action、mode、enabled 四 u8，application_sequence u32。
-
-- 物理关节模式总长 40 B：公共头 + q/v/tau/K/D/force 六 f32 + host_timestamp_us u32 + reserved u32。
-- 任务空间模式总长 88 B：公共头 + pose[6]/velocity[6]/wrench[6] 共 18 f32 + host_timestamp_us u32 + reserved u32。
-- action 为 Target=0、Restore=2、Disable=3。Hold/SelectMode 只保留在原 body v1；Disable 要求 enabled=0。
-- 应用序号按 uint32 半范围比较，重发不重启模式过渡、不续期；ACK accepted 不代表机械目标已到达。
 
 ExternalFeedback：version u8=1，flags u8，reserved u16，sequence u32，host_timestamp_us u32，externalNm/effortNm/forceN 三 f32，worldWrench[6] f32。
 flags bit0/1/2/3 分别表示上述三个标量和 wrench 有效。设备本地到达后超过 `external_timeout_s` 自动失效。

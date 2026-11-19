@@ -218,18 +218,13 @@ static void test_observation_and_capture()
     auto timing = control.observation().timing[0];
     assert(timing.count == 2U && timing.maximum_us == 64U && timing.overruns == 1U);
     assert(timing.maximum_interval_us == 80U);
-    uint8_t encoder[] {0xF1U, 0x23U, 0x45U};
-    assert(!control.encoder_frame(0x670U, encoder, 3U, 2U));
-    assert(!control.encoder_frame(0x68FU, encoder, 2U, 2U));
-    assert(control.encoder_frame(0x68FU, encoder, 3U, 2U));
     assert(!control.configure_capture(true, 3U));
     assert(control.configure_capture(true, 4U));
     for (unsigned i = 0U; i < 4U; ++i) assert(control.joint_sample(0.0F, 1.0F, 10U+i));
     app::CalibrationPair pair;
     assert(control.peek_capture(pair));
-    assert(pair.sequence == 1U && pair.encoder_raw_count == 0x112345U);
-    assert(pair.encoder_processed_us == 2U && pair.input_us == 0xFFFFFFF0U);
-    assert(pair.flags == 7U);
+    assert(pair.sequence == 1U && pair.joint_us == 13U);
+    assert(pair.input_valid && pair.input_us == 0xFFFFFFF0U);
     control.consume_capture(999U);
     assert(control.peek_capture(pair));
     control.consume_capture(1U);
@@ -237,7 +232,7 @@ static void test_observation_and_capture()
     for (unsigned i = 0U; i < 17U*4U; ++i) assert(control.joint_sample(0.0F, 1.0F, 20U+i));
     for (unsigned i = 0U; i < 16U; ++i) {
         assert(control.peek_capture(pair));
-        assert(pair.flags == 5U);
+        assert(pair.input_valid);
         control.consume_capture(pair.sequence);
     }
     assert(!control.peek_capture(pair));
@@ -245,8 +240,9 @@ static void test_observation_and_capture()
     assert(control.peek_capture(pair) && pair.dropped == 1U && pair.sequence == 19U);
     app::MotorResponse response;
     app::encode_capture(pair, response);
-    assert(response.size == 52U && app::read_u32(response.data+4) == 1000000U);
-    assert(app::read_u32(response.data+36) == 1U);
+    assert(response.size == 40U && response.data[0] == 2U && response.data[1] == 1U);
+    assert(app::read_u32(response.data+4) == 1000000U);
+    assert(app::read_u32(response.data+24) == 1U);
     assert(app::encode_observation(0U, sample, response) && response.size == 104U);
     assert(app::encode_observation(1U, sample, response) && response.size == 108U);
     assert(app::encode_observation(2U, sample, response) && response.size == 84U);

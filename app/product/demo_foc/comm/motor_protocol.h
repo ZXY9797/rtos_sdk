@@ -46,7 +46,6 @@ bool encode_interaction_section(InteractionConfig config, uint8_t section, Motor
 bool decode_interaction_section(const uint8_t* bytes, size_t size, InteractionConfig& config);
 size_t pack_interaction_config(InteractionConfig config, uint8_t* bytes, size_t capacity);
 bool unpack_interaction_config(const uint8_t* bytes, size_t size, InteractionConfig& config);
-void handle_encoder_frame(uint32_t id, const uint8_t* data, size_t size, uint32_t processed_us);
 bool enqueue_motor_request(const MotorRequest& request);
 bool start_motor_transport();
 bool motor_stream_ready(uint8_t owner);
