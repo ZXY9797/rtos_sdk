@@ -28,7 +28,8 @@ static constexpr uint8_t ACK_ERR_PROD  = 0x07;
 // SOF + ver_len + head_crc + cmd_type + sender + receiver + seq
 // + cmd_set + cmd_id + payload + crc16.
 
-struct __attribute__((packed)) TransferReq {
+#pragma pack(push, 1)
+struct TransferReq {
     uint32_t offset;
     uint32_t length;
     // Exactly `length` payload bytes follow this fixed wire header. Do not
@@ -37,16 +38,16 @@ struct __attribute__((packed)) TransferReq {
 };
 static_assert(sizeof(TransferReq) == 8U);
 
-struct __attribute__((packed)) VerifyReq {
+struct VerifyReq {
     uint8_t sha256[32];
 };
 
-struct __attribute__((packed)) VerifyAck {
+struct VerifyAck {
     uint8_t status;
     uint8_t computed[32];
 };
 
-struct __attribute__((packed)) StatusAck {
+struct StatusAck {
     uint8_t in_loader;
     uint8_t boot_mode;      // 0=staged copy, 1=direct overwrite
     uint8_t slot0_valid;
@@ -54,6 +55,10 @@ struct __attribute__((packed)) StatusAck {
     boot::ImageVersion slot0_ver;
     boot::ImageVersion upgrade_ver;
 };
+#pragma pack(pop)
+static_assert(sizeof(VerifyReq) == 32U);
+static_assert(sizeof(VerifyAck) == 33U);
+static_assert(sizeof(StatusAck) == 4U + 2U * sizeof(boot::ImageVersion));
 
 uint16_t crc16_ccitt(const uint8_t *data, size_t len);
 

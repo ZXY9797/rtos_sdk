@@ -50,13 +50,15 @@ public:
     }
 
 private:
-    struct __attribute__((packed)) SectorHeader {
+#pragma pack(push, 1)
+    struct SectorHeader {
         uint32_t magic;
         uint32_t sequence;
         uint16_t version;
         uint16_t header_size;
         uint32_t crc32;
     };
+#pragma pack(pop)
 
     static_assert(sizeof(SectorHeader) == 16U);
 

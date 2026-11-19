@@ -317,7 +317,7 @@ void test_unsupported_execution_options_are_rejected()
     // Configuration must be checked even when timing collection is disabled.
     for (bool collect_timing : {false, true}) {
         config.timing = collect_timing ? &metrics : nullptr;
-        for (uint8_t value : {1U, 255U}) {
+        for (uint8_t value : {uint8_t{1U}, uint8_t{255U}}) {
             config.execution.overflow = static_cast<runtime::Overflow>(value);
             TEST_ASSERT(!fixture.core.configure(config));
         }

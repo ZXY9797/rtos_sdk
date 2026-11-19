@@ -46,7 +46,10 @@ bool MotorControl::configure(const MotorParameters& parameters, const Calibratio
     temperature_age_s_ = 0;
     for (auto& timing : timing_) timing = {};
     encoder_ = {};
-    capture_divider_ = capture_size_ = capture_head_ = capture_phase_ = 0U;
+    capture_divider_ = 0U;
+    capture_size_ = 0U;
+    capture_head_ = 0U;
+    capture_phase_ = 0U;
     capture_sequence_ = capture_dropped_ = paired_encoder_ = 0U;
     fast_count_ = joint_count_ = checked_fast_count_ = checked_joint_count_ = 0U;
     auto_calibration_.reset(parameters.auto_calibration_enabled);

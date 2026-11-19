@@ -15,7 +15,7 @@
 
 namespace {
 
-link::Frame make_frame(const uint8_t* data, uint16_t data_size)
+link::Frame make_frame(const uint8_t* data, size_t data_size)
 {
     link::Frame frame {};
     frame.sender_id = 0x11U;
@@ -24,7 +24,8 @@ link::Frame make_frame(const uint8_t* data, uint16_t data_size)
     frame.cmd_set = 3U;
     frame.cmd_id = 7U;
     frame.data = data;
-    frame.data_len = data_size;
+    CHECK(data_size <= UINT16_MAX);
+    frame.data_len = static_cast<uint16_t>(data_size);
     return frame;
 }
 

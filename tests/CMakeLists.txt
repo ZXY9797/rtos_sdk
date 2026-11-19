@@ -163,6 +163,9 @@ target_include_directories(link_router_contract PRIVATE
     ../embedded/include
     ../embedded/include/osal
     ../embedded/osal/baremetal)
+if(MSVC)
+    target_include_directories(link_router_contract BEFORE PRIVATE stubs/initcall)
+endif()
 target_compile_definitions(link_router_contract PRIVATE
     CONFIG_LINK_PROCESS_HZ=1000
     CONFIG_LINK_PROCESS_STACK=2048

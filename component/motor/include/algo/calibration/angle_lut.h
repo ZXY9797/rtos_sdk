@@ -117,14 +117,14 @@ struct AngleLutTransfer {
     }
     uint32_t checksum() const {
         // Supported MCU and host-test targets are little endian IEEE754 float32.
-        uint32_t crc = 0xFFFFFFFFU;
+        uint32_t computed_crc = 0xFFFFFFFFU;
         const auto* bytes = reinterpret_cast<const uint8_t*>(data.angle_offset_rad);
         for (size_t i = 0; i < sizeof(data.angle_offset_rad); ++i) {
-            crc ^= bytes[i];
+            computed_crc ^= bytes[i];
             for (unsigned bit = 0; bit < 8; ++bit)
-                crc = (crc >> 1U) ^ ((crc & 1U) ? 0xEDB88320U : 0U);
+                computed_crc = (computed_crc >> 1U) ^ ((computed_crc & 1U) ? 0xEDB88320U : 0U);
         }
-        return crc ^ 0xFFFFFFFFU;
+        return computed_crc ^ 0xFFFFFFFFU;
     }
     bool complete() const {
         for (auto mask : received) if (mask != 0xFFU) return false;

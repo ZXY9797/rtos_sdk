@@ -214,7 +214,7 @@ void test_protocol_validation()
     CHECK(length == link::MIN_FRAME_SIZE);
 
     link::FrameCodec codec;
-    for (uint8_t reserved : {0x40U, 0x80U}) {
+    for (uint8_t reserved : {uint8_t{0x40U}, uint8_t{0x80U}}) {
         CHECK(link::FrameCodec::pack(
             raw.data(), raw.size(), args, nullptr, 0U) == length);
         raw[2] |= reserved;

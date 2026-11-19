@@ -301,7 +301,7 @@ bool motor_parameters(MotorVariant variant, MotorParameters& output)
         output.joint.loop.mit.kd_map.output_max = 30.0F;
         output.joint.loop.mit.position_output_limit_a = 3.9F;
         output.joint.loop.mit.velocity_output_limit_a = 3.9F;
-        output.joint.loop.mit.q_current_limit_a = 3.9;
+        output.joint.loop.mit.q_current_limit_a = 3.9F;
         output.joint.loop.speed.leso.omega = 500.0F;
         output.joint.loop.speed.leso.b0 = 8000.0F;
         output.joint.loop.speed.leso.kp = 0.004F;

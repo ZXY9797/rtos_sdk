@@ -14,7 +14,9 @@ namespace boot {
 void upgrade_state_machine();
 bool flash_copy_upgrade_to_slot0();
 
+#if defined(__GNUC__) || defined(__clang__)
 __attribute__((weak))
+#endif
 uint32_t get_product_id() {
     return layout::kProductId;
 }

@@ -264,8 +264,8 @@ jobs:
             --input out/demo_foc-freertos/demo_foc.bin \
             --output out/demo_foc-app.img
           python bootloader/scripts/merge_firmware.py --layout demo_foc \
-            --preloader out/demo_foc-preloader/demo_preloader.bin \
-            --loader out/demo_foc-loader/demo_loader.bin \
+            --preloader out/demo_foc-preloader/demo_foc_preloader.bin \
+            --loader out/demo_foc-loader/demo_foc_loader.bin \
             --app out/demo_foc-app.img --output out/demo_3in1.bin
           python bootloader/scripts/pack_image.py --layout demo_ble \
             --input out/demo_foc-ble/demo_ble.bin \

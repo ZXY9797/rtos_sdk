@@ -186,7 +186,7 @@ bool AnalogLpHpTransform(const FilterSysConfig& config,
         for (int i = 0; i < *p_count; ++i) {
             p[i] = Scale(p[i], wa);
         }
-        *k *= powf(wa, degree);
+        *k *= powf(wa, static_cast<float>(degree));
         return true;
     }
 

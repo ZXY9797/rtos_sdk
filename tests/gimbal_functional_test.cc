@@ -480,7 +480,7 @@ struct SharedTestValue {
 
 [[nodiscard]] bool test_shared_memory_concurrency()
 {
-    constexpr uint32_t kIterations = 20000U;
+    static constexpr uint32_t kIterations = 20000U;
     ipc::SnapshotTopic<SharedTestValue> topic;
     std::atomic<bool> done {false};
     std::atomic<bool> valid {true};

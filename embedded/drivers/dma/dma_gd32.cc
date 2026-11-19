@@ -126,7 +126,7 @@ DmaChannel &DmaChannel::operator=(DmaChannel &&other) noexcept {
 }
 
 static volatile uint32_t &mux_cfg(uint8_t mux_ch) {
-    return *reinterpret_cast<volatile uint32_t *>(DMAMUX_BASE + mux_ch * 4U);
+    return *reinterpret_cast<volatile uint32_t *>(uintptr_t{DMAMUX_BASE} + mux_ch * 4U);
 }
 
 Status DmaChannel::config(const DmaConfig &cfg) {
@@ -136,7 +136,7 @@ Status DmaChannel::config(const DmaConfig &cfg) {
         return Status::InvalidArgument;
     }
 
-    auto *dma = reinterpret_cast<gd32::DmaRegs *>(m_dma);
+    auto *dma = reinterpret_cast<gd32::DmaRegs *>(uintptr_t{m_dma});
     auto &ch = dma->CH[m_ch];
 
     ch.CTL &= ~DMA_CHXCTL_CHEN;
@@ -165,25 +165,25 @@ Status DmaChannel::config(const DmaConfig &cfg) {
 
 Status DmaChannel::start() {
     if (m_ch >= channel_count(m_dma)) return Status::InvalidArgument;
-    reinterpret_cast<gd32::DmaRegs *>(m_dma)->CH[m_ch].CTL |= DMA_CHXCTL_CHEN;
+    reinterpret_cast<gd32::DmaRegs *>(uintptr_t{m_dma})->CH[m_ch].CTL |= DMA_CHXCTL_CHEN;
     return Status::Ok;
 }
 
 Status DmaChannel::stop() {
     if (m_ch >= channel_count(m_dma)) return Status::InvalidArgument;
-    reinterpret_cast<gd32::DmaRegs *>(m_dma)->CH[m_ch].CTL &= ~DMA_CHXCTL_CHEN;
+    reinterpret_cast<gd32::DmaRegs *>(uintptr_t{m_dma})->CH[m_ch].CTL &= ~DMA_CHXCTL_CHEN;
     return Status::Ok;
 }
 
 bool DmaChannel::is_transfer_complete() const {
     if (m_ch >= channel_count(m_dma)) return false;
-    auto *dma = reinterpret_cast<const gd32::DmaRegs *>(m_dma);
+    auto *dma = reinterpret_cast<const gd32::DmaRegs *>(uintptr_t{m_dma});
     return (dma->INTF & (DMA_INTF_FTFIF << (m_ch * 4U))) != 0;
 }
 
 void DmaChannel::clear_flags() {
     if (m_ch >= channel_count(m_dma)) return;
-    auto *dma = reinterpret_cast<gd32::DmaRegs *>(m_dma);
+    auto *dma = reinterpret_cast<gd32::DmaRegs *>(uintptr_t{m_dma});
     dma->INTC = (DMA_INTC_GIFC | DMA_INTC_FTFIFC
                  | DMA_INTC_HTFIFC | DMA_INTC_ERRIFC)
                 << (m_ch * 4U);

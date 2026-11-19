@@ -4,6 +4,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import subprocess
+from collections.abc import Iterable
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -21,33 +23,50 @@ SOURCES = [
 ]
 
 
-def tree_digest(root: Path) -> str:
+def file_digest(path: Path) -> bytes:
+    data = path.read_bytes()
+    if b"\0" not in data[:4096]:
+        data = data.replace(b"\r\n", b"\n")
+    return hashlib.sha256(data).digest()
+
+
+def tracked_files(root: Path, paths: Iterable[str]) -> list[Path] | None:
+    if not (root / ".git").exists():
+        return None
+    output = subprocess.check_output(["git", "-C", str(root), "ls-files", "-z", "--", *paths])
+    return [root / name for name in output.decode("utf-8", errors="surrogateescape").split("\0") if name]
+
+
+def tree_digest(root: Path, files: Iterable[Path] | None = None) -> str:
     digest = hashlib.sha256()
-    for path in sorted(root.rglob("*"), key=lambda p: p.relative_to(root).as_posix()):
+    if files is None:
+        files = root.rglob("*")
+    for path in sorted(files, key=lambda p: p.relative_to(root).as_posix()):
         if not path.is_file() or any(x in path.parts for x in ("__pycache__", ".git")):
             continue
-        data = path.read_bytes()
-        if b"\0" not in data[:4096]: data = data.replace(b"\r\n", b"\n")
-        digest.update(path.relative_to(root).as_posix().encode() + b"\0")
-        digest.update(hashlib.sha256(data).digest())
+        digest.update(path.relative_to(root).as_posix().encode("utf-8", errors="surrogateescape") + b"\0")
+        digest.update(file_digest(path))
     return digest.hexdigest()
 
 
 def inventory() -> dict:
-    result = {"schema": "rtos-sdk.dependencies.v1", "normalization": "UTF-8 path order; CRLF normalized for non-binary files",
+    files = tracked_files(ROOT, (path for _, path, _, _ in SOURCES))
+    result = {"schema": "rtos-sdk.dependencies.v1",
+            "normalization": "Tracked vendor paths (or exported files), UTF-8 path order, CRLF normalized for non-binary files",
             "dependencies": [{"name": name, "path": path, "version": version,
                               "upstream": url, "upstream_revision": None,
                               "revision_status": "not recorded in original vendor import",
-                              "content_sha256": tree_digest(ROOT / path)}
+                              "content_sha256": tree_digest(ROOT / path, None if files is None else (
+                                  file for file in files if file.is_relative_to(ROOT / path)))}
                              for name, path, version, url in SOURCES],
             "adaptation_boundaries": ["embedded/osal/freertos", "embedded/osal/rt-thread",
                                        "tools/cmake/modules/upstream-helpers.json"],
             "toolchain": {"name": "xPack ARM GCC", "version": "9.3.1-1.4",
                           "linux_archive_sha256": "720dd38a6abadc0286f2b3c8dbc7239c7dbfdd64bc052345d149657e5478b914"}}
-    result['source_policy_sha256'] = hashlib.sha256((ROOT / 'tools/source-policy.json').read_bytes()).hexdigest()
+    result['source_policy_sha256'] = file_digest(ROOT / 'tools/source-policy.json').hex()
     result['python_requirements'] = {
         'path': 'tools/requirements-ci.txt',
-        'sha256': hashlib.sha256((ROOT / 'tools/requirements-ci.txt').read_bytes()).hexdigest()}
+        'sha256': file_digest(ROOT / 'tools/requirements-ci.txt').hex()}
     for item in result['dependencies']:
         if item['name'] == 'FreeRTOS-Kernel':
             item['upstream_revision'] = '9b777ae5c5b8e9e456065a00294d1e5f5f9facf5'

@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -9,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from device_bindings import parse_adapter
 from gen_device_traits import collect_resources, stable_device_id
 from sdk_artifacts import device_graph, write_changed, normalize_paths
-from dependency_inventory import tree_digest
+from dependency_inventory import tracked_files, tree_digest
 from decode_system_diagnostics import decode
 import struct
 
@@ -76,6 +77,25 @@ class ModernContractsTest(unittest.TestCase):
             self.assertEqual(initial, tree_digest(root))
             path.write_bytes(b'changed\n')
             self.assertNotEqual(initial, tree_digest(root))
+
+    def test_inventory_uses_tracked_vendor_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            vendor = root / 'vendor'
+            vendor.mkdir()
+            source = vendor / 'source.c'
+            source.write_bytes(b'original\n')
+            exported_digest = tree_digest(vendor)
+            self.assertIsNone(tracked_files(root, ['vendor']))
+
+            subprocess.run(['git', 'init', '-q', str(root)], check=True)
+            subprocess.run(['git', '-C', str(root), '-c', 'core.autocrlf=false',
+                            'add', 'vendor/source.c'], check=True)
+            (vendor / 'local.a').write_bytes(b'\x00local-only')
+            self.assertEqual(tracked_files(root, ['vendor']), [source])
+            self.assertEqual(tree_digest(vendor, [source]), exported_digest)
+            source.write_bytes(b'edited\n')
+            self.assertNotEqual(tree_digest(vendor, [source]), exported_digest)
 
     def test_artifact_write_is_atomic_and_preserves_unchanged_file(self):
         with tempfile.TemporaryDirectory() as directory:

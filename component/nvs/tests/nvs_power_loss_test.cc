@@ -311,9 +311,9 @@ void legacy_migration_test()
         12U, 11U, 10U, 9U, 8U, 7U, 6U, 5U, 4U, 3U, 2U, 1U,
     };
     seed_legacy_entry(storage, 0U, 0U, 42U, 0U,
-                      old_value.data(), old_value.size());
+                      old_value.data(), static_cast<uint16_t>(old_value.size()));
     seed_legacy_entry(storage, 0U, 1U, 42U, 32U,
-                      new_value.data(), new_value.size());
+                      new_value.data(), static_cast<uint16_t>(new_value.size()));
 
     auto flash = storage.make_driver();
     assert(flash.init() == hal::Status::Ok);

@@ -40,14 +40,14 @@ size_t offset_of(uint32_t address) {
 }
 
 void reset_flash() {
-    std::fill(g_flash.begin(), g_flash.end(), 0xFFU);
+    std::fill(g_flash.begin(), g_flash.end(), uint8_t{0xFFU});
     g_fail_next_commit_word = false;
     g_fail_write_at = UINT32_MAX;
 }
 
 void test_journal_commit_and_storage_isolation() {
     reset_flash();
-    std::fill_n(g_flash.begin() + kStorageOffset, kSectorSize, 0xA5U);
+    std::fill_n(g_flash.begin() + kStorageOffset, kSectorSize, uint8_t{0xA5U});
     const std::vector<uint8_t> storage_before(
         g_flash.begin() + kStorageOffset,
         g_flash.begin() + kStorageOffset + kSectorSize);
@@ -201,7 +201,7 @@ bool flash_erase(uint32_t address, size_t length) {
         || (length % kSectorSize) != 0U) {
         return false;
     }
-    std::fill_n(g_flash.begin() + offset_of(address), length, 0xFFU);
+    std::fill_n(g_flash.begin() + offset_of(address), length, uint8_t{0xFFU});
     return true;
 }
 

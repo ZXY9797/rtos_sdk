@@ -12,13 +12,15 @@ inline constexpr size_t kAteSize = 8U;
 // Allocation descriptor. Data grows upward while descriptors grow downward.
 // part=0xA5 and crc8 authenticate this immutable descriptor; a separate
 // write-block-sized marker commits the record after its payload is durable.
-struct __attribute__((packed)) Ate {
+#pragma pack(push, 1)
+struct Ate {
     uint16_t id {};
     uint16_t offset {};
     uint16_t len {};
     uint8_t part {0xFFU};
     uint8_t crc8 {0xFFU};
 };
+#pragma pack(pop)
 
 static_assert(sizeof(Ate) == kAteSize);
 

@@ -1,6 +1,6 @@
 {
   "schema": "rtos-sdk.dependencies.v1",
-  "normalization": "UTF-8 path order; CRLF normalized for non-binary files",
+  "normalization": "Tracked vendor paths (or exported files), UTF-8 path order, CRLF normalized for non-binary files",
   "dependencies": [
     {
       "name": "FreeRTOS-Kernel",
@@ -9,7 +9,7 @@
       "upstream": "https://github.com/FreeRTOS/FreeRTOS-Kernel",
       "upstream_revision": "9b777ae5c5b8e9e456065a00294d1e5f5f9facf5",
       "revision_status": "verified clean nested vendor checkout; original package restored from verified backups",
-      "content_sha256": "298a35e59272cefe442699b829a5ee653d377d443f8c4d874c9c1af3629cf878"
+      "content_sha256": "94c4ae7089521ce912550d5ceaf6ae169236c55513cd430d1ae57aebcc372c62"
     },
     {
       "name": "RT-Thread",
@@ -81,7 +81,7 @@
       "upstream": "https://github.com/goodix-ble/GR5525.SDK",
       "upstream_revision": null,
       "revision_status": "not recorded in original vendor import",
-      "content_sha256": "9f718cc4afb55113e2affa6a56a3934c95b2bb52358c9d5c20f01a37746a4667"
+      "content_sha256": "0f3f5253a76f8c440649099f340517901c839f212aa6c981f0f030a5b2190965"
     },
     {
       "name": "Goodix BLE profiles",
@@ -103,7 +103,7 @@
     "version": "9.3.1-1.4",
     "linux_archive_sha256": "720dd38a6abadc0286f2b3c8dbc7239c7dbfdd64bc052345d149657e5478b914"
   },
-  "source_policy_sha256": "44e6f497e3362aa3ae7464d3fcffd5878535beca8c2fe65488cb6f2d12b7083b",
+  "source_policy_sha256": "92354218f5f341de75a2e61e3903266544e6943bcd45664f73368014a3efa847",
   "python_requirements": {
     "path": "tools/requirements-ci.txt",
     "sha256": "d89f975827508c48a968e048ae029ac93aa4c80958d5e67d6415aa9f7f05b7ee"

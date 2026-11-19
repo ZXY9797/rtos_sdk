@@ -97,8 +97,6 @@ int FrameCodec::feed(uint8_t byte) {
         reset();
         return -4;
     }
-
-    return 0;
 }
 
 bool FrameCodec::parse_header() {
