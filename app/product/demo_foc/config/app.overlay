@@ -67,7 +67,7 @@
     data-sjw = <3>;
     tdc-offset = <18>;
 
-    /* MD007 requires a transceiver rated for 8 Mbit/s. */
+    /* This configuration requires a transceiver rated for 8 Mbit/s. */
     can-transceiver { max-bitrate = <8000000>; };
 };
 / {
@@ -76,7 +76,7 @@
     aliases { uart0 = &usart0; led0 = &green_led; pwm0 = &timer0; joint-timer = &timer7;
               adc-current = &adc0; adc-joint = &adc1; adc-temperature = &adc2; can0 = &can0; };
     foc_control: foc-control {
-        compatible = "rtos_sdk,md007-control";
+        compatible = "rtos_sdk,joint-control";
         current-channels = <2 1 0 4 8 9>;
         joint-channels = <5 6>;
         timer-clock-hz = <192000000>;

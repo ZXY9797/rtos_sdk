@@ -72,7 +72,8 @@ class ModernContractsTest(unittest.TestCase):
         info["configuration"]["fragments"][0]["sha256"] = "changed"
         self.assertEqual(resource_delta(report(info), baseline)["image_bytes"], 0)
         externals = []
-        for checkout in ("/runner/arm/app", "D:/work/arm/app"):
+        for directory in ("checkout-a", "checkout-b"):
+            checkout = Path(directory, "app").resolve().as_posix()
             sources = {"fragments": [{"path": checkout + "/config/prj.conf"}],
                        "devicetree_sources": [{"path": checkout + "/config/app.overlay"}]}
             externals.append(report(dict(info, application_id="arm/joint", application_path=checkout,
@@ -95,9 +96,9 @@ class ModernContractsTest(unittest.TestCase):
             self.assertIn("image_bytes +1, static_ram_bytes +2", text)
 
     def test_build_directory_is_normalized_before_sdk_root(self):
-        root = Path('/workspace/sdk')
+        root = Path('sdk').resolve()
         build = root / 'out/one'
-        self.assertEqual(normalize_paths('/workspace/sdk/out/one/include /workspace/sdk/src', root, build),
+        self.assertEqual(normalize_paths(f'{build.as_posix()}/include {root.as_posix()}/src', root, build),
                          'BUILD_ROOT/include SDK_ROOT/src')
 
     def test_diagnostic_truncation_and_unknown_record_handling(self):

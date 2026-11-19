@@ -35,7 +35,7 @@ hal::GpioPort<
     DT_REG_ADDR(DT_GPIO_CTLR(MOTOR_NODE, brake_voltage_select_gpios)),
     DT_GPIO_PIN(MOTOR_NODE, brake_voltage_select_gpios),
     DT_GPIO_FLAGS(MOTOR_NODE, brake_voltage_select_gpios)> brake_voltage;
-#if defined(CONFIG_DEMO_FOC_MD007_MOTION)
+#if defined(CONFIG_DEMO_FOC_JOINT_MOTION)
 enum class BrakeState : uint8_t { Locked, Releasing, Released };
 constexpr uint32_t kBrakeReleaseUs = 300000U;
 BrakeState brake_state = BrakeState::Locked;
@@ -112,7 +112,7 @@ void shutdown()
     (void)power_pwm().disable_output();
     brake_enable.off();
     brake_voltage.off();
-#if defined(CONFIG_DEMO_FOC_MD007_MOTION)
+#if defined(CONFIG_DEMO_FOC_JOINT_MOTION)
     brake_state = BrakeState::Locked;
     previous_phase = BrakePhase::Locked;
 #endif
@@ -131,14 +131,14 @@ void stop_acquisition()
 bool apply(const algo::motor::CurrentLoopOutput& output, BrakePhase phase, bool supported_service)
 {
     if (!output.valid || !output.energize) {
-#if defined(CONFIG_DEMO_FOC_MD007_MOTION)
+#if defined(CONFIG_DEMO_FOC_JOINT_MOTION)
         if (powered || brake_state != BrakeState::Locked) shutdown();
 #else
         if (powered) shutdown();
 #endif
         return true;
     }
-#if !defined(CONFIG_DEMO_FOC_MD007_MOTION)
+#if !defined(CONFIG_DEMO_FOC_JOINT_MOTION)
     (void)phase;
     (void)supported_service;
     // Commission using acquisition and network feedback while the measured

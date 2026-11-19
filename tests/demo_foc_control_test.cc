@@ -515,7 +515,7 @@ static void test_loaded_brake()
     assert(!brake.step(c, 1, 2001000, .00025F, 1, 0, 0, iq)); // preload never established
 }
 
-static void test_md007_handoff()
+static void test_joint_drive_handoff()
 {
     MotorParameters p;
     assert(motor_parameters(MotorVariant::ProfileF, p));
@@ -597,7 +597,7 @@ static void test_md007_handoff()
 int main()
 {
     test_loaded_brake();
-    test_md007_handoff();
+    test_joint_drive_handoff();
     test_control_and_gates();
     test_calibration_persistence_and_fault();
     test_linear_and_reference_commits();

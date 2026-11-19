@@ -53,7 +53,7 @@ LUT 传输使用独占事务、120 点分块和整表 CRC32；写入 Finish 后�
 LUT 读写需要控制禁用。工具不自动执行 Stop，以保留运动控制的显式顺序。
 
 UART 可以读取模式状态或请求停机。运行目标通过
-[CANopen FD](../../app/product/demo_foc/doc/md007_v1.md#canopen-fd-接口) 下发。
+[CANopen FD](../../app/product/demo_foc/doc/joint_drive.md#canopen-fd-接口) 下发。
 
 ```powershell
 python tools/demo_foc/motor_tool.py --port COM8 mode-status

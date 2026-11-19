@@ -142,7 +142,7 @@ security/watchdog provider 时配置按预期失败。RT-Thread 参考配置位�
 本地验证 `demo_ble` 量产配置时使用与厂商库匹配的 GCC 9.3.1：
 
 ```powershell
-$env:ARMGCC9_TOOLCHAIN_PATH='C:/arm-none-eabi-gcc-9.3.1-1.4'
+# 通过 ARMGCC9_TOOLCHAIN_PATH 或 PATH 选择 GCC 9.3.1
 cmake -S . -B out/demo_ble_production -GNinja -Dp=demo_ble -Df=app `
   '-DPROFILE=release'
 cmake --build out/demo_ble_production --parallel

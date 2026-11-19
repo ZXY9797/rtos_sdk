@@ -27,8 +27,7 @@ Demo 源码在 `app/product/demo_foc/main.cc`，产品目录结构见 [APP_LAYOU
 ## 构建 Demo BLE（GR5525 HID 键盘 + UART 透传）
 
 ```bash
-# 设置 GCC 9.3.1 工具链路径（Goodix libble_sdk.a 要求）
-export ARMGCC9_TOOLCHAIN_PATH=/path/to/xpack-arm-none-eabi-gcc-9.3.1-1.4
+# 通过 ARMGCC9_TOOLCHAIN_PATH 或 PATH 选择 GCC 9.3.1
 
 # 配置（使用 armgcc9 工具链）
 python tools/sdk.py configure -p demo_ble -B out/demo_ble

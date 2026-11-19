@@ -13,13 +13,11 @@ if (WIN32)
   set(ENV{PYTHONIOENCODING} "utf-8")
 endif()
 
-if(APPLE)
-    # Homebrew 路径（Intel Mac）
-    list(APPEND ADDITIONAL_PATHS "/usr/local/bin" "/opt/homebrew/bin")
-    # 虚拟环境路径
-    if(DEFINED ENV{VIRTUAL_ENV})
-        list(APPEND ADDITIONAL_PATHS "$ENV{VIRTUAL_ENV}/bin")
-    endif()
+if(APPLE AND DEFINED ENV{HOMEBREW_PREFIX})
+    list(APPEND ADDITIONAL_PATHS "$ENV{HOMEBREW_PREFIX}/bin")
+endif()
+if(APPLE AND DEFINED ENV{VIRTUAL_ENV})
+    list(APPEND ADDITIONAL_PATHS "$ENV{VIRTUAL_ENV}/bin")
 endif()
 
 set(PYTHON_MINIMUM_REQUIRED 3.10)

@@ -63,7 +63,7 @@ def write_section(client, section, updates):
 def joint_pdo(controlword, mode, sync, sequence, source, source_age_ms, position_rad=0,
               velocity_rad_s=0, torque_nm=0, rated_per_mille=0, stiffness=0, damping=0,
               external_nm=None, external_sequence=0, external_age_ms=0, support_a=None):
-    """Encode the MD007 synchronous RPDO2 in SI units; ages are supplied by the producer."""
+    """Encode the joint demo synchronous RPDO2 in SI units; ages are supplied by the producer."""
     if mode not in (8, 9, 10, -1, -2, -3) or not 1 <= sync <= 240:
         raise ValueError("unsupported drive mode or SYNC counter")
     if stiffness < 0 or damping < 0 or abs(rated_per_mille) > 1000:

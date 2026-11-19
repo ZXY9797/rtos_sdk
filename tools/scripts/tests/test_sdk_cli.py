@@ -40,14 +40,14 @@ class SdkCliTest(unittest.TestCase):
         args = SimpleNamespace(build=self.build, product="demo_foc", profile=None,
                                toolchain=None, backend="rt-thread", toolchain_path=None,
                                application=ROOT / "samples/osal_contract",
-                               cmake_arg=["-DEXTRA_CONF_FILE=tests/config/md007_motion.conf"])
+                               cmake_arg=["-DEXTRA_CONF_FILE=tests/config/demo_foc_motion.conf"])
         with patch.object(sdk, "ROOT", source):
             sdk.configure(args)
             app, image, fragments = (self.build / "selection").read_text().splitlines()
             self.assertEqual(Path(app), args.application)
             self.assertEqual(image, "app")
             fragments = [Path(item) for item in fragments.split(";")]
-            self.assertEqual(fragments[-2], ROOT / "tests/config/md007_motion.conf")
+            self.assertEqual(fragments[-2], ROOT / "tests/config/demo_foc_motion.conf")
             self.assertEqual(fragments[-1].read_text().strip(), "CONFIG_RTOS_RT_THREAD=y")
             args.application = args.backend = None
             overrides = ("BOOT_LAYOUT", "LINKER_SCRIPT", "LOADER_PAYLOAD_FILE", "SDK_APPLICATION_ID")
@@ -60,7 +60,7 @@ class SdkCliTest(unittest.TestCase):
             self.assertEqual(Path(app), ROOT / "app/product/demo_foc")
             self.assertEqual(image, "app")
             self.assertNotIn("sdk-backend.conf", fragments)
-            self.assertNotIn("md007_motion.conf", fragments)
+            self.assertNotIn("demo_foc_motion.conf", fragments)
             cache = (self.build / "CMakeCache.txt").read_text()
             for key in overrides:
                 self.assertNotIn(f"{key}:UNINITIALIZED=previous", cache)

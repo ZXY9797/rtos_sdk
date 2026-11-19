@@ -75,4 +75,4 @@ GPIO 默认状态也可以由 pinctrl 完成，例如 LED 输出低、按键输�
 ## 当前接入范围
 
 `demo_foc` 的 App 和 Loader 共用 USART0 的 PB6/PB7 引脚配置。App 启用 PB8 状态灯，
-PA5 和 PA6 配置为关节 Hall 的模拟输入。完整配置见 [MD007 V1](../app/product/demo_foc/doc/md007_v1.md)。
+PA5 和 PA6 配置为关节 Hall 的模拟输入。完整配置见 [关节驱动示例](../app/product/demo_foc/doc/joint_drive.md)。

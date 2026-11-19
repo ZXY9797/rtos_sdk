@@ -1,6 +1,6 @@
-# MD007 V1 关节驱动
+# FOC 关节驱动示例
 
-`demo_foc` 固定使用 MD007 V1 板级配置。电机参数为 `MotorVariant::ProfileF`，
+`demo_foc` 使用示例板级配置。电机参数为 `MotorVariant::ProfileF`，
 14 极对、64:1 减速比、3.5 Nm/A 力矩系数和 4 A 额定电流。
 CST 命令按额定转矩的千分比换算。
 
@@ -36,7 +36,7 @@ cmake --build out/demo_foc --parallel
 ```
 
 该配置默认用于读数和总线联调。需要启用运动执行时，通过配置片段启用
-`CONFIG_DEMO_FOC_MD007_MOTION`。测试矩阵使用 `tests/config/md007_motion.conf`
+`CONFIG_DEMO_FOC_JOINT_MOTION`。测试矩阵使用 `tests/config/demo_foc_motion.conf`
 编译运动路径。机械支撑负载后，使用 UART 工具 `supported-service 1` 进入标定维护，
 完成传感器和机械零位标定后用 `supported-service 0` 退出。配置 `limits` 的机械行程、
 连续电流与速度限制，配置 `brake` 的带符号保持电流、允许电流误差、预载稳定时间、
@@ -45,7 +45,7 @@ cmake --build out/demo_foc --parallel
 阈值为零关闭接触停机。各轴参数独立，缺失必需参数时禁止正常运动。
 
 每次启动、变更标定或配置、暂停采样后，在静止状态发送 `confirm-axis <机构实测位置rad> <已核对方向±1>`。
-节点同时核对零位有效性、方向、行程和单圈角，可从实测机械位置恢复整圈数。MD007 ProfileF 的
+节点同时核对零位有效性、方向、行程和单圈角，可从实测机械位置恢复整圈数。示例的
 配置方向为 +1。断电移动后的多圈位置需由独立基准提供。启用双端角度外力估算时，还需要在已确认零负载的工况下给 `confirm-axis` 加 `--unloaded`，以对齐转子折算角与输出轴角的弹性零位。缺少这个基准时，导纳和拖动需使用有时效的外部力矩测量。
 标定记录从 NVS 的 `0x4200` 起编号，交互控制配置使用 `0x4300`。
 节点 ID 由 `CONFIG_DEMO_FOC_CANOPEN_NODE_ID` 配置，

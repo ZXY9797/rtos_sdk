@@ -19,22 +19,24 @@ download, breakpoint, register-write, or memory-write operation.
 
 ## Configuration
 
+Set the tool environment variables in the example to the installed executables.
+
 Create JSON on the PC:
 
 ```json
 {
   "schema_version": 1,
-  "ozone_exe": "C:/Program Files/SEGGER/Ozone/Ozone.exe",
-  "jlink_commander": "C:/Program Files/SEGGER/JLink/JLink.exe",
+  "ozone_exe": "$OZONE_EXE",
+  "jlink_commander": "$JLINK_EXE",
   "device": "STM32F407VG",
   "probe_serial": "123456789",
   "target_interface": "SWD",
   "speed": "1 MHz",
-  "elf": "D:/firmware/build/firmware.elf",
-  "symbol_tool": "C:/ArmGNU/bin/arm-none-eabi-nm.exe",
+  "elf": "build/firmware.elf",
+  "symbol_tool": "$ARM_NM",
   "automation_port": 19200,
   "timeout_s": 20,
-  "output_dir": "D:/mcu-captures",
+  "output_dir": "out/ozone-captures",
   "allowed_ram_ranges": [
     {"name": "sram", "kind": "ram", "start": "0x20000000", "end": "0x20020000"}
   ],
@@ -54,7 +56,7 @@ When multiple J-Links are connected, enumerate them before preparing the configu
 
 ```powershell
 python scripts/ozone_live_attach.py --list-probes `
-  --jlink-commander "C:/Program Files/SEGGER/JLink/JLink.exe"
+  --jlink-commander "$env:JLINK_EXE"
 ```
 
 This runs `ShowEmuList USB` without a target `Connect` command and returns JSON containing

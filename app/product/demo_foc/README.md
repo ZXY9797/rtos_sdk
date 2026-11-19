@@ -3,8 +3,8 @@
 单电机 FOC 应用，使用 `sdk::motor` 中的标定、反馈、关节控制、FOC、辨识及保护算法。
 项目层负责采样、PWM 提交、任务调度、命令分发和持久化。控制器和拟合算法只实现一份。
 
-`-Dp=demo_foc` 构建 MD007 V1 关节驱动，配置 8 Mbit/s CAN FD，
-按主站的 500 Hz SYNC 上报关节反馈。接线、PDO 映射和运动配置见 [MD007 V1](doc/md007_v1.md)。
+`-Dp=demo_foc` 构建 FOC 关节驱动示例，配置 8 Mbit/s CAN FD，
+按主站的 500 Hz SYNC 上报关节反馈。接线、PDO 映射和运动配置见 [关节驱动示例](doc/joint_drive.md)。
 
 ## 调用链
 
@@ -93,7 +93,7 @@ ACK 表示命令已处理，标定和辨识的最终状态通过 Status 查询�
 | 0x16 | Capture | enable u8、divider u16；UART，关节采样分频至少 4 |
 
 使能、切换运动模式和下发目标使用 CANopen FD 的控制字和 PDO。
-UART 可请求停机。运动标定和辨识需要构建时启用 `CONFIG_DEMO_FOC_MD007_MOTION`。
+UART 可请求停机。运动标定和辨识需要构建时启用 `CONFIG_DEMO_FOC_JOINT_MOTION`。
 
 标定、LUT、辨识、背隙与普通闭环互斥。完整标定依次执行输入 TMR → 电角度 → 输出 TMR，
 每阶段写入并校验后才进入下一阶段。失败不发布候选；原有有效数据继续保留。
@@ -182,11 +182,10 @@ LUT 使用一个活动输出表和事务暂存表，成功写回后才发布；�
 ## 构建与验证
 
 ```powershell
-cmake -S . -B out/demo_foc -G Ninja -Dp=demo_foc -Dt=armgcc9 `
-  -DARMGCC9_TOOLCHAIN_PATH=C:/arm-none-eabi-gcc-9.3.1-1.4
+# 通过 ARMGCC9_TOOLCHAIN_PATH 或 PATH 选择 GCC 9.3.1
+cmake -S . -B out/demo_foc -G Ninja -Dp=demo_foc -Dt=armgcc9
 cmake --build out/demo_foc
-python bootloader/scripts/build_3in1.py demo_foc --out out/demo_foc_3in1 `
-  --toolchain-path C:/arm-none-eabi-gcc-9.3.1-1.4
+python bootloader/scripts/build_3in1.py demo_foc --out out/demo_foc_3in1
 ```
 
 主机测试包含产品模式互斥、标定提交/失败回滚、传感器故障、协议编码和 ADC DMA 双缓冲。
@@ -198,4 +197,4 @@ python bootloader/scripts/build_3in1.py demo_foc --out out/demo_foc_3in1 `
 
 运动前通过 UART 设置机构行程、速度和带载抱闸参数，并确认关节机械坐标。交互控制配置记录使用 NVS `0x4300`。
 Observe kind=3 提供各 NTC 电压、温度和有效位。关节命令超时和恢复流程见
-[CANopen FD 接口](doc/md007_v1.md#canopen-fd-接口)。
+[CANopen FD 接口](doc/joint_drive.md#canopen-fd-接口)。

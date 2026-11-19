@@ -23,7 +23,7 @@ bool MotorControl::apply_network_target(const JointDriveTarget& target, uint32_t
     JointTargetOrder order;
     order.position_rad = target.position_urad * 1.0e-6F;
     order.velocity_rad_s = target.velocity_urad_s * 1.0e-6F;
-    // CST is per mille of rated torque. The same k6216 torque constant
+    // CST is per mille of rated torque. The configured torque constant
     // maps rated torque and target torque to rated and target q current.
     order.torque_a = target.torque_per_mille * 0.004F;
     order.host_timestamp_us = now_us;

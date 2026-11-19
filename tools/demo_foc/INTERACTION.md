@@ -7,7 +7,7 @@
 
 1. 完成电流、Vbus、TMR、电角度与输出零位标定，台架确认 ADC/PWM、方向与关断路径。
 2. 保持电机停止，读取 `limits` 并设置机构行程、速度、温度、热容量、功率和跟随误差。
-3. 对照读回值与独立传感器检查配置。运行目标与命令时效由 [CANopen FD 接口](../../app/product/demo_foc/doc/md007_v1.md#canopen-fd-接口) 管理。
+3. 对照读回值与独立传感器检查配置。运行目标与命令时效由 [CANopen FD 接口](../../app/product/demo_foc/doc/joint_drive.md#canopen-fd-接口) 管理。
 
 ```powershell
 python tools/demo_foc/interaction_tool.py --port COM7 config-read limits
@@ -109,7 +109,7 @@ execution_faults bit0～9 分别是相过流、超速、硬行程、跟随误差
 
 轴承载配置使用 `config-read brake` 和 `config-write brake`。
 `supported-service 1/0` 用于进入和退出已提供机械支撑的标定工况。
-`confirm-axis` 核对机械坐标。驱动接口及各参数单位见 [MD007 节点接口](../../app/product/demo_foc/doc/md007_v1.md)。
+`confirm-axis` 核对机械坐标。驱动接口及各参数单位见 [关节驱动接口](../../app/product/demo_foc/doc/joint_drive.md)。
 
 ## 检查
 

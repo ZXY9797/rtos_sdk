@@ -60,8 +60,8 @@ python -m pip install -r tools/requirements-ci.txt
 python tools/scripts/source_audit.py --check
 python tools/scripts/dependency_inventory.py
 python tools/sdk.py test --suite host -B out/sdk-checks
-python tools/sdk.py test --suite firmware -B out/sdk-matrix --toolchain-path C:/arm-none-eabi-gcc-9.3.1-1.4
-python tools/scripts/check_rtos_ports.py --compiler C:/arm-none-eabi-gcc-9.3.1-1.4/bin/arm-none-eabi-gcc.exe --build out/port-checks
+python tools/sdk.py test --suite firmware -B out/sdk-matrix
+python tools/sdk.py test --suite contracts --case rtos-ports -B out/port-checks
 ```
 
 审计默认只读。确需再次裁剪时，先审阅默认输出或 `--report` 的候选清单，再使用
@@ -72,13 +72,7 @@ CI 执行保留清单与内容摘要检查。
 项目硬件与引脚描述在各自的 `app/product/<product>/config/` 下，同样计入后续审计。纯 C++ runtime 统一归属
 `component/runtime`，实验性接口保留在对应组件的 `experimental` 目录和命名空间内。
 
-本次移除的原文件分别保存在本机 `out/sdk-trim/removed-sources.zip`、
-`removed-ll-stubs.zip`、`removed-cache-menu.zip`、`removed-unused-cache.zip`；
-剩余的旧 ELF 解析器和样本输出分别保存在 `removed-duplicate-parser.zip`、
-`removed-parser-reference-outputs.zip`，重复 YAML 包保存在 `removed-duplicate-yaml.zip`；
-修改前的 LL 转接头保存在
-`original-ll-dispatch.zip`。恢复前先核对清单和目标路径，
-选择性恢复文件，避免覆盖后续修改。输出目录中的备份不进入 SDK 分发。
+恢复备份时先核对清单和目标路径，选择性恢复文件，保留后续修改。
 
 新增芯片、内核端口或 BLE 服务时，同步补齐后端、内容摘要和代表性验证；已有厂商文件
 可以先保留，再按需要接入。不要为重新生成摘要而无条件接受来源不明的库。

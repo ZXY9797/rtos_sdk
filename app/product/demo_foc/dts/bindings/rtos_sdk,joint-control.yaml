@@ -1,5 +1,5 @@
 description: Product FOC acquisition and PWM timing
-compatible: "rtos_sdk,md007-control"
+compatible: "rtos_sdk,joint-control"
 include: base.yaml
 properties:
   current-channels:

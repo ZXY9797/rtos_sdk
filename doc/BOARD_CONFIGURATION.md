@@ -83,15 +83,15 @@ Kconfig：
 `sdk.py configure` 每次根据本次参数选择产品、应用、镜像配置和 overlay。相对构建路径相对于调用目录。
 省略 `--application` 时使用产品应用，省略 `--backend` 时使用镜像自身的 Kconfig 内核选择。
 显式选择内核时，普通功能片段与内核可以组合，例如
-`python tools/sdk.py configure -p demo_foc -B out/foc-motion --backend rt-thread --cmake-arg=-DEXTRA_CONF_FILE=tests/config/md007_motion.conf`。
+`python tools/sdk.py configure -p demo_foc -B out/foc-motion --backend rt-thread --cmake-arg=-DEXTRA_CONF_FILE=tests/config/demo_foc_motion.conf`。
 
 ```powershell
 python tools/sdk.py configure -p gimbal -B out/gimbal-release --profile release
 python tools/sdk.py build -B out/gimbal-release
 
-# 在默认 App overlay 后追加测试配置；分号列表必须整体引用
+# 在默认 App overlay 后追加仓库根目录的 test.overlay
 cmake -S . -B out/gimbal-test -G Ninja -Dp=gimbal `
-  '-DDTC_OVERLAY_FILE=D:/my-product/test.overlay'
+  '-DDTC_OVERLAY_FILE=test.overlay'
 
 # Boot profile 来自本产品、本镜像的 config/profiles
 cmake -S . -B out/gimbal-loader -G Ninja -Dp=gimbal `

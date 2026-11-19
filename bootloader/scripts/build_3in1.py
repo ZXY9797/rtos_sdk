@@ -20,14 +20,8 @@ sys.path.insert(0, str(ROOT / "tools"))
 from scripts.sdk_image import image_cache_reset_args
 
 STAGES = ("preloader", "loader", "app")
-TOOLCHAIN_CANDIDATES = (
-    ROOT / "out/toolchains/gcc-9.3.1/xpack-arm-none-eabi-gcc-9.3.1-1.4",
-    Path("D:/code/mcu_prebuilt/win_x64/xpack-arm-none-eabi-gcc-9.3.1-1.4"),
-)
-DEFAULT_GCC9 = next(
-    (path for path in TOOLCHAIN_CANDIDATES if path.exists()),
-    None,
-)
+CI_GCC9 = ROOT / "out/toolchains/gcc-9.3.1/xpack-arm-none-eabi-gcc-9.3.1-1.4"
+DEFAULT_GCC9 = CI_GCC9 if CI_GCC9.is_dir() else None
 
 
 def resolve_user_path(path: Path | None) -> Path | None:

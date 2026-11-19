@@ -13,7 +13,7 @@ import time
 
 def add_arguments(parser: argparse.ArgumentParser):
     parser.add_argument("-B", "--build", type=Path, required=True, help="linked OSAL contract build")
-    parser.add_argument("--port", required=True, help="serial device (e.g. COM3 or /dev/ttyUSB0)")
+    parser.add_argument("--port", required=True, help="serial device connected to the test board")
     parser.add_argument("--baud", type=int, default=115200)
     parser.add_argument("--timeout", type=float, default=30, help="capture deadline in seconds")
     parser.add_argument("--output", type=Path, help="parent directory for per-run evidence")

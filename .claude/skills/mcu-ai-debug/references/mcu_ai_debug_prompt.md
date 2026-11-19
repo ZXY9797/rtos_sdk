@@ -104,21 +104,21 @@ GDB 模式的代价是链路更复杂：需要管理 `JLinkGDBServer`、GDB 进�
    - `SWD`
    - `JTAG`
 
-4. J-Link 安装目录，例如：
-   - Windows: `C:\Program Files\SEGGER\JLink`
-   - Linux: `/opt/SEGGER/JLink`
-   - macOS: `/Applications/SEGGER/JLink`
+4. J-Link 安装目录，通过环境变量 JLINK_DIR 提供。
+   - Windows: `%JLINK_DIR%`
+   - Linux: `$JLINK_DIR`
+   - macOS: `$JLINK_DIR`
 
 5. 如果选择验证模式，询问 `JLink.exe` 或 `JLinkExe` 路径，例如：
-   - Windows: `C:\Program Files\SEGGER\JLink\JLink.exe`
+   - Windows: `%JLINK_DIR%\JLink.exe`
    - Linux/macOS: `JLinkExe`
 
 6. 如果选择 debug 模式，询问 `JLinkGDBServer` 可执行文件路径，例如：
-   - Windows: `C:\Program Files\SEGGER\JLink\JLinkGDBServerCL.exe`
+   - Windows: `%JLINK_DIR%\JLinkGDBServerCL.exe`
    - Linux/macOS: `JLinkGDBServerCLExe` 或实际安装路径
 
 7. 如果选择 debug 模式，询问 `arm-none-eabi-gdb` 路径，例如：
-   - Windows: `C:\Program Files (x86)\Arm GNU Toolchain arm-none-eabi\...\bin\arm-none-eabi-gdb.exe`
+   - Windows: `%ARM_GNU_TOOLCHAIN_PATH%\bin\arm-none-eabi-gdb.exe`
    - Linux/macOS: `arm-none-eabi-gdb`
 
 8. 固件 ELF 文件路径，例如：
@@ -204,15 +204,15 @@ where JLinkRTTClient.exe
 如果 `where` 找不到，尝试：
 
 ```cmd
-dir /s /b "C:\Program Files\SEGGER\JLink\JLinkGDBServerCL.exe"
-dir /s /b "C:\Program Files\SEGGER\JLink\JLink.exe"
-dir /s /b "C:\Program Files\SEGGER\JLink\JLinkRTTClient.exe"
+dir /s /b "%JLINK_DIR%\JLinkGDBServerCL.exe"
+dir /s /b "%JLINK_DIR%\JLink.exe"
+dir /s /b "%JLINK_DIR%\JLinkRTTClient.exe"
 ```
 
 也可以搜索 Arm GNU Toolchain：
 
 ```cmd
-dir /s /b "C:\Program Files*\arm-none-eabi-gdb.exe"
+dir /s /b "%ARM_GNU_TOOLCHAIN_PATH%\bin\arm-none-eabi-gdb.exe"
 ```
 
 ### 4.2 Linux/macOS
@@ -235,8 +235,8 @@ which JLinkRTTClient
 常见安装路径：
 
 ```bash
-find /opt -name "JLinkGDBServer*" 2>/dev/null
-find /Applications -name "JLinkGDBServer*" 2>/dev/null
+find "$JLINK_DIR" -name "JLinkGDBServer*"
+
 ```
 
 ---
@@ -412,7 +412,7 @@ AI 可以通过 `.map` 文件查找 `g_probe_status` 地址，再用 `mem32` 读
 Windows 示例：
 
 ```cmd
-"C:\Program Files\SEGGER\JLink\JLinkGDBServerCL.exe" ^
+"%JLINK_DIR%\JLinkGDBServerCL.exe" ^
   -device STM32F407VG ^
   -if SWD ^
   -speed auto ^
@@ -1075,8 +1075,8 @@ where JLinkRTTClient.exe
 
 如果找不到 J-Link，请再执行：
 
-dir /s /b "C:\Program Files\SEGGER\JLink\JLinkGDBServerCL.exe"
-dir /s /b "C:\Program Files\SEGGER\JLink\JLink.exe"
+dir /s /b "%JLINK_DIR%\JLinkGDBServerCL.exe"
+dir /s /b "%JLINK_DIR%\JLink.exe"
 
 把输出贴给我。
 ```
@@ -1093,8 +1093,8 @@ which JLinkRTTClient
 
 如果找不到 J-Link，请执行：
 
-find /opt /Applications -name "JLinkGDBServer*" 2>/dev/null
-find /opt /Applications -name "JLinkExe" 2>/dev/null
+find "$JLINK_DIR" -name "JLinkGDBServer*"
+find "$JLINK_DIR" -name "JLinkExe"
 
 把输出贴给我。
 ```
@@ -1117,9 +1117,9 @@ debug_config.json
   "mcu_device": "STM32F407VG",
   "interface": "SWD",
   "speed": "auto",
-  "jlink": "C:/Program Files/SEGGER/JLink/JLink.exe",
-  "jlink_gdbserver": "C:/Program Files/SEGGER/JLink/JLinkGDBServerCL.exe",
-  "gdb": "C:/ArmGNUToolchain/bin/arm-none-eabi-gdb.exe",
+  "jlink": "tools/jlink/JLink.exe",
+  "jlink_gdbserver": "tools/jlink/JLinkGDBServerCL.exe",
+  "gdb": "tools/arm-gnu/bin/arm-none-eabi-gdb.exe",
   "elf": "build/firmware.elf",
   "bin": "build/firmware.bin",
   "load_address": "0x08000000",

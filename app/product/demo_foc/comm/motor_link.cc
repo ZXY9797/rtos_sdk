@@ -38,7 +38,7 @@ bool start_motor_transport()
     auto& can = board::main_can().native();
     constexpr hal::CanFilter filters[] {
         {0x000U, 0x7FFU}, {0x080U, 0x7FFU}, {0x600U, 0x780U},
-#if defined(CONFIG_DEMO_FOC_MD007_MOTION)
+#if defined(CONFIG_DEMO_FOC_JOINT_MOTION)
         {0x200U + CONFIG_DEMO_FOC_CANOPEN_NODE_ID, 0x7FFU},
         {0x300U + CONFIG_DEMO_FOC_CANOPEN_NODE_ID, 0x7FFU},
 #endif

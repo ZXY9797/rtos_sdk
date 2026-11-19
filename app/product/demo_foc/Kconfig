@@ -7,9 +7,9 @@ config DEMO_FOC_CANOPEN_NODE_ID
     range 1 127
     default 1
 
-config DEMO_FOC_MD007_MOTION
-    bool "Enable MD007 joint motion after board commissioning"
+config DEMO_FOC_JOINT_MOTION
+    bool "Enable demo joint motion after board commissioning"
     help
-      Allow calibrated motor operation and enable k6216 brake sequencing.
+      Allow calibrated motor operation and enable joint brake sequencing.
       Requires verified phase order, dead time, brake operation and joint limits.
 endmenu

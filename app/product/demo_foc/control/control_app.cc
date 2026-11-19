@@ -40,8 +40,8 @@ MotorAngleLutData read_lut {};
 uint8_t interaction_record[CalibrationRecord::maximum_payload_size]{};
 InteractionConfig interaction_candidate{};
 
-static_assert(DT_PROP(DT_ALIAS(can0), fd_enabled), "MD007 requires an FD CAN controller");
-#if defined(CONFIG_DEMO_FOC_MD007_MOTION)
+static_assert(DT_PROP(DT_ALIAS(can0), fd_enabled), "Joint feedback requires an FD CAN controller");
+#if defined(CONFIG_DEMO_FOC_JOINT_MOTION)
 bool command_joint_drive(JointDriveAction action, const JointDriveTarget& target, uint32_t now_us)
 {
     hal::IrqGuard guard;
@@ -392,7 +392,7 @@ bool execute_lut(const MotorRequest& command, MotorResponse& response)
 bool execute(const MotorRequest& command, MotorResponse& response)
 {
     const auto* data = command.data;
-#if !defined(CONFIG_DEMO_FOC_MD007_MOTION)
+#if !defined(CONFIG_DEMO_FOC_JOINT_MOTION)
     switch (command.command) {
     case MotorCommand::Calibrate:
     case MotorCommand::Backlash:
@@ -424,7 +424,7 @@ bool execute(const MotorRequest& command, MotorResponse& response)
     case MotorCommand::Status: return command.size == 0U;
     case MotorCommand::Enable: {
         if (command.size != 1U || data[0] != 0U) return false;
-#if defined(CONFIG_DEMO_FOC_MD007_MOTION)
+#if defined(CONFIG_DEMO_FOC_JOINT_MOTION)
         joint_network.inhibit(system_clock::now_us());
 #endif
         hal::IrqGuard guard;
@@ -443,7 +443,7 @@ bool execute(const MotorRequest& command, MotorResponse& response)
     }
     case MotorCommand::Stop: {
         if (command.size != 1U || data[0] > 1U) return false;
-#if defined(CONFIG_DEMO_FOC_MD007_MOTION)
+#if defined(CONFIG_DEMO_FOC_JOINT_MOTION)
         joint_network.inhibit(system_clock::now_us());
 #endif
         hal::IrqGuard guard;
@@ -751,7 +751,7 @@ int start_control()
     if (running.load(std::memory_order_acquire)) return 0;
     MotorParameters parameters;
     CalibrationValues calibration;
-    constexpr auto motor_variant = MotorVariant::ProfileF; // kmotor/k6216
+    constexpr auto motor_variant = MotorVariant::ProfileF;
     if (!motor_parameters(motor_variant, parameters) || !calibration_store.mount()) return -1;
     calibration_store.load(calibration);
     if (!parameters.brake_enabled) return -1;
@@ -793,7 +793,7 @@ int start_control()
         stop_control(); return -1;
     }
     running.store(true, std::memory_order_release);
-    LOGI("foc", "MD007 V1 k6216; joint FD node=%u", CONFIG_DEMO_FOC_CANOPEN_NODE_ID);
+    LOGI("foc", "Joint CAN FD demo, node=%u", CONFIG_DEMO_FOC_CANOPEN_NODE_ID);
     return 0;
 }
 

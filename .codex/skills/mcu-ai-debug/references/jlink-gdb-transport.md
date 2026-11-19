@@ -90,8 +90,8 @@ by this task. Do not kill all J-Link/Ozone/GDB processes by name.
 
 ## Serial and RTT evidence
 
-Discover the actual COM port or `/dev/serial/by-id` device from USB identity, configuration
-and current owner; `/dev/ttyACM0` and 115200 are examples, not defaults for every board.
+Discover the serial device from USB identity, configuration
+and current owner. Verify the baud rate from the target configuration.
 Check baud/parity/stop bits, flow control and DTR/RTS/reset wiring before opening it.
 Keep one serial reader to avoid splitting evidence across consumers.
 

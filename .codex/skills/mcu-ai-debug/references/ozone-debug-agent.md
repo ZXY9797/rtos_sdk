@@ -62,21 +62,23 @@ owner; do not terminate that owner to make room without an authorized handoff.
 
 ## Configuration
 
+Set the tool environment variables in the example to the installed executables.
+
 ```json
 {
   "schema_version": 1,
-  "ozone_exe": "C:/Program Files/SEGGER/Ozone/Ozone.exe",
-  "jlink_commander": "C:/Program Files/SEGGER/JLink/JLink.exe",
+  "ozone_exe": "$OZONE_EXE",
+  "jlink_commander": "$JLINK_EXE",
   "device": "STM32F407VG",
   "probe_serial": "123456789",
   "target_interface": "SWD",
   "speed": "4 MHz",
-  "elf": "D:/firmware/build/firmware.elf",
-  "objdump_tool": "C:/ArmGNU/bin/arm-none-eabi-objdump.exe",
+  "elf": "build/firmware.elf",
+  "objdump_tool": "$ARM_OBJDUMP",
   "automation_port": 19200,
   "control_token": "replace-with-a-random-secret-at-least-16-characters",
   "timeout_s": 20,
-  "output_dir": "D:/mcu-debug-sessions",
+  "output_dir": "out/ozone-debug",
   "max_block_bytes": 1048576,
   "enabled_modes": ["observe", "live_modify", "stopped_debug"],
   "allowed_read_ranges": [
