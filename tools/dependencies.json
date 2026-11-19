@@ -54,7 +54,7 @@
       "upstream": "https://www.gigadevice.com/",
       "upstream_revision": null,
       "revision_status": "not recorded in original vendor import",
-      "content_sha256": "ddf84cb116aaff12bed4afbf41e2ec95513a9d31e8639b25078d9dfac4a7e243"
+      "content_sha256": "22259a48105823adb742be81d1ed6fdab0091cfa164d2afe8834a5a0a585bd0d"
     },
     {
       "name": "STM32Cube",

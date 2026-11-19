@@ -2,7 +2,7 @@ description: GD32 CAN controller
 
 compatible: "gd,gd32-can"
 
-include: [can-controller.yaml, base.yaml, pinctrl-device.yaml]
+include: [can-fd-controller.yaml, pinctrl-device.yaml]
 
 cxx-driver:
   adapter:
@@ -37,6 +37,15 @@ properties:
   bitrate:
     type: int
     default: 500000
+
+  fd-enabled:
+    type: boolean
+    description: Enable ISO CAN FD framing on this controller.
+
+  tdc-offset:
+    type: int
+    default: 0
+    description: Secondary sample point offset in CAN clock periods. Zero disables TDC.
 
   label:
     type: string

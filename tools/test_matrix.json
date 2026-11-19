@@ -8,6 +8,7 @@
     {"name": "gimbal", "arguments": ["-Dp=gimbal", "-Dt=armgcc9"], "verification": "build", "capabilities": ["dma-batch", "timing", "safety"]},
     {"name": "gimbal-release", "arguments": ["-Dp=gimbal", "-Dt=armgcc9", "-DPROFILE=release"], "verification": "build", "capabilities": ["watchdog", "timing", "safety"]},
     {"name": "demo_foc-debug", "arguments": ["-Dp=demo_foc", "-Dt=armgcc9", "-DPROFILE=debug"], "verification": "build", "capabilities": ["assertions", "debug-profile"]},
+    {"name": "demo_foc-md007-v1", "arguments": ["-Dp=demo_foc", "-Dt=armgcc9", "-DPROFILE=md007_v1", "-DEXTRA_CONF_FILE=tests/config/md007_motion.conf"], "verification": "build", "capabilities": ["gd32f503", "can-fd", "joint-sync", "brake"]},
     {"name": "demo_ble", "arguments": ["-Dp=demo_ble", "-Dt=armgcc9"], "verification": "build", "capabilities": ["ble", "link"]},
     {"name": "demo_ble-release", "arguments": ["-Dp=demo_ble", "-Dt=armgcc9", "-DPROFILE=release"], "verification": "build", "capabilities": ["watchdog", "ble"]},
     {"name": "osal-freertos", "arguments": ["-Dp=demo_foc", "-Dt=armgcc9", "-DAPPLICATION=samples/osal_contract"], "verification": "build", "capabilities": ["osal-contract-runtime"]},

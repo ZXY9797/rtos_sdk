@@ -1,4 +1,5 @@
 #include <drivers/can.h>
+#include <drivers/can_dlc.h>
 #include <assert.h>
 #include <soc.h>
 #include <cstring>
@@ -18,6 +19,7 @@ static constexpr uint8_t kCan1FilterStartBank = 14U;
 struct CanInstance {
     uint32_t base {0};
     bool started {false};
+    bool fd_enabled {false};
 };
 
 static CanInstance s_instances[kMaxCans];
@@ -69,6 +71,38 @@ static bool timing_matches(const CanConfig &config) {
         == config.clock_hz;
 }
 
+static bool fd_timing_matches(const CanConfig& config)
+{
+    if (config.data_bitrate == 0U || config.data_bitrate > 8000000U ||
+        config.data_prescaler == 0U || config.data_prescaler > 1024U ||
+        config.data_time_seg1 == 0U || config.data_time_seg1 > 16U ||
+        config.data_time_seg2 == 0U || config.data_time_seg2 > 8U ||
+        config.data_sjw == 0U || config.data_sjw > config.data_time_seg2) {
+        return false;
+    }
+    return uint64_t(config.data_bitrate) * config.data_prescaler *
+           (1U + config.data_time_seg1 + config.data_time_seg2) == config.clock_hz;
+}
+
+static bool configure_fd(uint32_t base, const CanConfig& config)
+{
+    can_fd_tdc_struct tdc {};
+    tdc.tdc_mode = CAN_TDCMOD_CALC_AND_OFFSET;
+    tdc.tdc_offset = config.tdc_offset;
+    can_fdframe_struct fd {};
+    can_struct_para_init(CAN_FD_FRAME_STRUCT, &fd);
+    fd.fd_frame = ENABLE;
+    fd.data_prescaler = config.data_prescaler;
+    fd.data_time_segment_1 = config.data_time_seg1 - 1U;
+    fd.data_time_segment_2 = config.data_time_seg2 - 1U;
+    fd.data_resync_jump_width = config.data_sjw - 1U;
+    if (config.tdc_offset != 0U) {
+        fd.delay_compensation = ENABLE;
+        fd.p_delay_compensation = &tdc;
+    }
+    return can_fd_init(base, &fd) == SUCCESS;
+}
+
 Can &Can::instance(uint8_t port) {
     static Can insts[kMaxCans] = {Can(0), Can(1)};
     static Can invalid(kMaxCans);
@@ -80,7 +114,9 @@ Status Can::init(const CanConfig &config) {
     if (!lock.owns_lock()) return Status::Busy;
     uint32_t base = can_base_from_port(m_port);
     if (!base || m_initialized.load(std::memory_order_acquire)
-        || !timing_matches(config)) {
+        || !timing_matches(config)
+        || (config.fd_enabled && (!fd_timing_matches(config) ||
+                                  config.clock_hz != rcu_clock_freq_get(CK_APB2)))) {
         return Status::InvalidArgument;
     }
     osal::LockGuard hardware_lock(s_hardware_mutex);
@@ -116,7 +152,7 @@ Status Can::init(const CanConfig &config) {
     params.rec_fifo_overwrite = DISABLE;
     params.trans_fifo_order = DISABLE;
 
-    if (can_init(base, &params) != SUCCESS) {
+    if (can_init(base, &params) != SUCCESS || (config.fd_enabled && !configure_fd(base, config))) {
         can_deinit(base);
         s_instances[m_port].base = 0U;
         release_unused_can_clocks(m_port);
@@ -128,6 +164,7 @@ Status Can::init(const CanConfig &config) {
     const uint16_t filter = m_port == 0U ? 0U : kCan1FilterStartBank;
     can_filter_mask_mode_init(0U, 0U, CAN_STANDARD_FIFO0, filter);
 
+    s_instances[m_port].fd_enabled = config.fd_enabled;
     s_initialized_mask |= static_cast<uint8_t>(1U << m_port);
     m_initialized.store(true, std::memory_order_release);
     return Status::Ok;
@@ -146,8 +183,7 @@ Status Can::deinit() {
         }
     }
     can_deinit(base);
-    s_instances[m_port].started = false;
-    s_instances[m_port].base = 0U;
+    s_instances[m_port] = {};
     s_initialized_mask &= static_cast<uint8_t>(~(1U << m_port));
     release_unused_can_clocks(m_port);
     m_initialized.store(false, std::memory_order_release);
@@ -284,6 +320,120 @@ Status Can::get_rx_message(uint32_t *id, uint8_t *data,
     memcpy(data, rx_msg.rx_data, rx_msg.rx_dlen);
 
     return Status::Ok;
+}
+
+Status Can::set_standard_filters(const CanFilter* filters, size_t count)
+{
+    if (!filters || count == 0U || count > kCan1FilterStartBank)
+        return Status::InvalidArgument;
+    for (size_t i = 0; i < count; ++i) {
+        if (filters[i].id > CAN_SFID_MASK || filters[i].mask > CAN_SFID_MASK)
+            return Status::InvalidArgument;
+    }
+    osal::LockGuard lock(m_operation_mutex, 0U);
+    if (!lock.owns_lock()) return Status::Busy;
+    if (!m_initialized.load(std::memory_order_acquire) || s_instances[m_port].started)
+        return Status::InvalidArgument;
+    osal::LockGuard hardware_lock(s_hardware_mutex, 0U);
+    if (!hardware_lock.owns_lock()) return Status::Busy;
+
+    const uint16_t base = m_port == 0U ? 0U : kCan1FilterStartBank;
+    for (size_t i = 0; i < kCan1FilterStartBank; ++i) {
+        if (i < count) {
+            can_filter_mask_mode_init(filters[i].id, filters[i].mask,
+                                      CAN_STANDARD_FIFO0, base + i);
+        } else {
+            can_filter_parameter_struct disabled {};
+            can_struct_para_init(CAN_FILTER_STRUCT, &disabled);
+            disabled.filter_number = base + i;
+            disabled.filter_enable = DISABLE;
+            can_filter_init(&disabled);
+        }
+    }
+    return Status::Ok;
+}
+
+Status Can::abort_pending_fd(uint32_t id)
+{
+    if (id > CAN_SFID_MASK) return Status::InvalidArgument;
+    osal::LockGuard lock(m_operation_mutex, 0U);
+    if (!lock.owns_lock()) return Status::Busy;
+    if (!m_initialized.load(std::memory_order_acquire) || !s_instances[m_port].started)
+        return Status::InvalidArgument;
+    const uint32_t base = s_instances[m_port].base;
+    const uint32_t available = CAN_TSTAT(base);
+    for (unsigned i = 0U; i < 3U; ++i) {
+        if (!(available & (CAN_TSTAT_TME0 << i)) &&
+            (CAN_TMP(base, i) & CAN_TMP_FDF) != 0U &&
+            (CAN_TMI(base, i) & (CAN_TMI_FF | CAN_TMI_SFID)) == TMI_SFID(id))
+            CAN_TSTAT(base) = CAN_TSTAT_MST0 << (i * 8U);
+    }
+    return Status::Ok;
+}
+
+Status Can::send_fd(const CanFrame& frame)
+{
+    uint8_t dlc, padded_size;
+    if (!frame.fd || frame.id > (frame.extended ? CAN_EFID_MASK : CAN_SFID_MASK) ||
+        !can_fd_length_to_dlc(frame.size, dlc, padded_size)) return Status::InvalidArgument;
+    osal::LockGuard lock(m_operation_mutex, 0U);
+    if (!lock.owns_lock()) return Status::Busy;
+    if (!m_initialized.load(std::memory_order_acquire) || !s_instances[m_port].started)
+        return Status::InvalidArgument;
+    if (!s_instances[m_port].fd_enabled) return Status::NotSupported;
+    const uint32_t base = s_instances[m_port].base;
+    const uint32_t available = CAN_TSTAT(base);
+    uint8_t mailbox = 0U;
+    while (mailbox < 3U && !(available & (CAN_TSTAT_TME0 << mailbox))) ++mailbox;
+    if (mailbox == 3U) return Status::Busy;
+
+    const uint32_t id = frame.extended ? TMI_EFID(frame.id) | CAN_TMI_FF : TMI_SFID(frame.id);
+    CAN_TMI(base, mailbox) = id;
+    CAN_TMP(base, mailbox) = dlc | CAN_TMP_FDF | (frame.brs ? CAN_TMP_BRS : 0U);
+    // In FD mode, each access to DATA0 advances the mailbox payload word.
+    for (unsigned offset = 0U; offset < padded_size; offset += 4U) {
+        uint32_t word = 0U;
+        for (unsigned i = 0U; i < 4U && offset + i < frame.size; ++i)
+            word |= uint32_t(frame.data[offset + i]) << (i * 8U);
+        CAN_TMDATA0(base, mailbox) = word;
+    }
+    CAN_TMI(base, mailbox) = id | CAN_TMI_TEN;
+    return Status::Ok;
+}
+
+Status Can::receive(CanFrame& frame)
+{
+    osal::LockGuard lock(m_operation_mutex, 0U);
+    if (!lock.owns_lock()) return Status::Busy;
+    if (!m_initialized.load(std::memory_order_acquire) || !s_instances[m_port].started)
+        return Status::InvalidArgument;
+    if (!s_instances[m_port].fd_enabled) return Status::NotSupported;
+    const uint32_t base = s_instances[m_port].base;
+    if (can_receive_message_length_get(base, CAN_FIFO0) == 0U) return Status::Timeout;
+
+    frame = {};
+    const uint32_t id = CAN_RFIFOMI(base, CAN_FIFO0);
+    const uint32_t properties = CAN_RFIFOMP(base, CAN_FIFO0);
+    frame.extended = (id & CAN_RFIFOMI_FF) != 0U;
+    frame.id = frame.extended ? GET_RFIFOMI_EFID(id) : GET_RFIFOMI_SFID(id);
+    frame.fd = (properties & CAN_RFIFOMP_FDF) != 0U;
+    frame.brs = frame.fd && (properties & CAN_RFIFOMP_BRS) != 0U;
+    const uint8_t dlc = GET_RFIFOMP_DLENC(properties);
+    if (frame.fd) {
+        (void)can_fd_dlc_to_length(dlc, frame.size);
+    } else {
+        frame.size = dlc > 8U ? 8U : dlc;
+    }
+    const bool data_frame = (id & CAN_RFIFOMI_FT) == 0U;
+    if (data_frame) {
+        for (unsigned offset = 0U; offset < frame.size; offset += 4U) {
+            const uint32_t word = CAN_RFIFOMDATA0(base, CAN_FIFO0);
+            for (unsigned i = 0U; i < 4U && offset + i < frame.size; ++i)
+                frame.data[offset + i] = static_cast<uint8_t>(word >> (i * 8U));
+        }
+    }
+    can_fifo_release(base, CAN_FIFO0);
+    return data_frame ? Status::Ok : Status::HardwareError;
 }
 
 } // namespace hal

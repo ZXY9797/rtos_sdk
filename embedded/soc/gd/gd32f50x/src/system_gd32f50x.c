@@ -1,8 +1,8 @@
 /*
  * GD32F50x system clock initialization.
  *
- * The 200 MHz sequence follows the vendor firmware library: HXTAL / 2 * 50,
- * with staged AHB prescaler changes to limit Vcore transients.
+ * Staged AHB prescaler changes limit Vcore transients during the switch
+ * from the internal oscillator to the PLL.
  */
 
 #include "gd32f50x.h"
@@ -10,8 +10,20 @@
 #include "gd32f50x_pmu.h"
 #include "gd32f50x_rcu.h"
 
+#if defined(CONFIG_GD32F50X_PLL_192MHZ)
+#define SYSTEM_CLOCK_HZ       ((uint32_t)192000000U)
+#define BOARD_PLL_MULTIPLIER  RCU_PLL0_MUL48
+#else
 #define SYSTEM_CLOCK_HZ       ((uint32_t)200000000U)
+#define BOARD_PLL_MULTIPLIER  RCU_PLL0_MUL50
+#endif
 #define CLOCK_SWITCH_DELAY    ((uint32_t)0x50U)
+
+#if defined(CONFIG_GD32F50X_HXTAL_12MHZ)
+#define BOARD_HXTAL_PREDIV RCU_PREDIV0_DIV3
+#else
+#define BOARD_HXTAL_PREDIV RCU_PREDIV0_DIV2
+#endif
 
 uint32_t SystemCoreClock = SYSTEM_CLOCK_HZ;
 
@@ -94,7 +106,7 @@ static void reset_clock_tree(void)
     RCU_ADDINT = 0x00400000U;
 }
 
-static void configure_200mhz_hxtal(void)
+static void configure_hxtal_pll(void)
 {
     RCU_CTL |= RCU_CTL_HXTALEN;
     if (!wait_for_mask(&RCU_CTL, RCU_CTL_HXTALSTB,
@@ -109,10 +121,10 @@ static void configure_200mhz_hxtal(void)
         | RCU_APB1_CKAHB_DIV2 | RCU_APB2_CKAHB_DIV1;
 
     RCU_CFG1 = (RCU_CFG1 & ~(RCU_CFG1_PLL0SEL | RCU_CFG1_PREDIV0))
-        | RCU_PLL0SRC_HXTAL | RCU_PREDIV0_DIV2;
+        | RCU_PLL0SRC_HXTAL | BOARD_HXTAL_PREDIV;
     RCU_CFG0 = (RCU_CFG0
                 & ~(RCU_CFG0_PLL0MF_0_3 | RCU_CFG0_PLL0MF_4_5))
-        | RCU_PLL0_MUL50;
+        | BOARD_PLL_MULTIPLIER;
     RCU_CTL |= RCU_CTL_PLL0EN;
     if (!wait_for_mask(&RCU_CTL, RCU_CTL_PLL0STB,
                        RCU_CTL_PLL0STB, HXTAL_STARTUP_TIMEOUT)) {
@@ -141,5 +153,5 @@ void SystemInit(void)
     enable_fmc_no_wait_load();
     return_to_irc8m();
     reset_clock_tree();
-    configure_200mhz_hxtal();
+    configure_hxtal_pll();
 }

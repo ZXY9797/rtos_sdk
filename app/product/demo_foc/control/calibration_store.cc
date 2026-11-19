@@ -5,6 +5,13 @@
 
 namespace app {
 namespace {
+#if defined(CONFIG_DEMO_FOC_MD007_V1)
+constexpr uint16_t kCalibrationBase = 0x4200U;
+constexpr uint16_t kInteractionId = 0x4300U;
+#else
+constexpr uint16_t kCalibrationBase = 0x4000U;
+constexpr uint16_t kInteractionId = 0x4100U;
+#endif
 hal::Flash& flash_device()
 {
     static hal::Flash flash(hal::flash_create_default());
@@ -19,7 +26,7 @@ nvs::Nvs<hal::Flash>& store()
 }
 uint16_t storage_id(CalibrationRecordId id)
 {
-    return uint16_t(0x4000U + static_cast<unsigned>(id));
+    return uint16_t(kCalibrationBase + static_cast<unsigned>(id));
 }
 }
 
@@ -83,14 +90,14 @@ bool CalibrationStore::write_interaction(const uint8_t *bytes, size_t count)
     using Record = algo::motor::CalibrationRecord;
     constexpr algo::motor::CalibrationRecordType type{0x494E5443U, 1U};
     const size_t size = Record::encode(type, ++sequence_, bytes, count, record_, sizeof(record_));
-    return size && store().write(0x4100U, record_, size) == int32_t(size) &&
-           store().read(0x4100U, record_, sizeof(record_)) == int32_t(size) &&
+    return size && store().write(kInteractionId, record_, size) == int32_t(size) &&
+           store().read(kInteractionId, record_, sizeof(record_)) == int32_t(size) &&
            Record::verify_readback(type, record_, size, bytes, count);
 }
 int CalibrationStore::read_interaction(uint8_t *bytes, size_t capacity)
 {
     using Record = algo::motor::CalibrationRecord;
-    const int32_t count = store().read(0x4100U, record_, sizeof(record_));
+    const int32_t count = store().read(kInteractionId, record_, sizeof(record_));
     if (count == -int32_t(nvs::Status::NotFound))
         return 0;
     if (count < int32_t(Record::header_size) || size_t(count) - Record::header_size > capacity)

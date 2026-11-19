@@ -43,6 +43,13 @@ target_compile_options(demo_foc_control_test PRIVATE
     $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-UNDEBUG>)
 add_test(NAME demo_foc_control COMMAND demo_foc_control_test)
 
+add_executable(joint_canopen_fd_test
+    joint_canopen_fd_test.cc
+    ../app/product/demo_foc/comm/joint_canopen_fd.cc)
+target_include_directories(joint_canopen_fd_test PRIVATE
+    ../app/product/demo_foc ../embedded/include)
+add_test(NAME joint_canopen_fd COMMAND joint_canopen_fd_test)
+
 add_executable(link_can_observer_test link_can_observer_test.cc)
 target_include_directories(link_can_observer_test PRIVATE
     stubs ../component/link/include ../embedded/include ../embedded/include/osal ../embedded/osal/baremetal)

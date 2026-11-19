@@ -30,6 +30,16 @@
             DT_PROP_OR(node_id, data_time_seg2, 4U);               \
         static constexpr uint32_t kDataSjw =                       \
             DT_PROP_OR(node_id, data_sjw, 1U);                     \
+        static constexpr bool kFdEnabled =                        \
+            DT_PROP_OR(node_id, fd_enabled, false);                \
+        static constexpr uint32_t kTdcOffset =                    \
+            DT_PROP_OR(node_id, tdc_offset, 0U);                   \
+        static constexpr uint32_t kPhyBitrate =                   \
+            DT_PROP_OR(DT_CHILD(node_id, can_transceiver),         \
+                       max_bitrate, 0U);                          \
+        static_assert(kTdcOffset <= UINT8_MAX);                   \
+        static_assert(!kFdEnabled || kDataBitrate <= kPhyBitrate, \
+                      "CAN FD bitrate exceeds transceiver rating");\
                                                                    \
         static_assert(kBitrate > 0U, "CAN bitrate must be nonzero");\
         static_assert(kClockHz > 0U,                               \
@@ -79,6 +89,8 @@
             config.data_time_seg2 =                               \
                 static_cast<uint8_t>(kDataTimeSeg2);               \
             config.data_sjw = static_cast<uint8_t>(kDataSjw);      \
+            config.fd_enabled = kFdEnabled;                       \
+            config.tdc_offset = static_cast<uint8_t>(kTdcOffset);  \
             return static_cast<int>(instance.init(config));        \
         }                                                          \
     };

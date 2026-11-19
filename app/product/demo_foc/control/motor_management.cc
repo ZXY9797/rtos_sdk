@@ -129,6 +129,23 @@ MotorObservation MotorControl::observation() const
     return result;
 }
 
+#if defined(CONFIG_DEMO_FOC_MD007_V1)
+JointFeedbackSample MotorControl::joint_feedback_sample() const
+{
+    JointFeedbackSample sample;
+    sample.position_rad = feedback_.joint().multi_turn_angle_filted;
+    sample.velocity_rad_s = feedback_.joint().angular_velocity;
+    sample.current_a = parameters_.telemetry_q_current_sign * current_output_.current_a.q;
+    sample.bus_voltage_v = feedback_.electrical().vbus_calib;
+    sample.sample_us = joint_us_;
+    sample.sequence = joint_count_;
+    sample.faults = mode_status().faults;
+    sample.valid = joint_valid_ && fast_count_ != 0U &&
+                   calibration_.output.tmr1_calib.valid && calibration_.output.tmr2_calib.valid;
+    return sample;
+}
+#endif
+
 void MotorControl::record_timing(unsigned loop, uint32_t start_us, uint32_t end_us)
 {
     constexpr uint32_t budgets[] {50U, 250U, 1000U};

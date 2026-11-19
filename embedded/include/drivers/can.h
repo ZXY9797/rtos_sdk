@@ -1,6 +1,7 @@
 #pragma once
 
 #include <drivers/status.h>
+#include <drivers/can_frame.h>
 #include <osal.h>
 #include <atomic>
 #include <cstdint>
@@ -20,6 +21,13 @@ struct CanConfig {
     uint8_t data_time_seg1 {15U};
     uint8_t data_time_seg2 {4U};
     uint8_t data_sjw {1U};
+    bool fd_enabled {false};
+    uint8_t tdc_offset {0U};
+};
+
+struct CanFilter {
+    uint16_t id;
+    uint16_t mask;
 };
 
 class Can {
@@ -40,6 +48,12 @@ public:
     [[nodiscard]] Status get_rx_message(uint32_t *id, uint8_t *data,
                                         uint8_t capacity, uint8_t *len,
                                         bool *is_extended = nullptr);
+#if defined(CONFIG_CAN_GD32)
+    [[nodiscard]] Status send_fd(const CanFrame& frame);
+    [[nodiscard]] Status receive(CanFrame& frame);
+    [[nodiscard]] Status set_standard_filters(const CanFilter* filters, size_t count);
+    [[nodiscard]] Status abort_pending_fd(uint32_t id);
+#endif
 
 private:
     explicit Can(uint8_t port) : m_port(port) {}

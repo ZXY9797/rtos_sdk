@@ -38,6 +38,107 @@ MotorAngleLutData read_lut {};
 uint8_t interaction_record[CalibrationRecord::maximum_payload_size]{};
 InteractionConfig interaction_candidate{};
 
+#if defined(CONFIG_DEMO_FOC_MD007_V1)
+static_assert(DT_PROP(DT_ALIAS(can0), fd_enabled), "MD007 requires an FD CAN controller");
+#if defined(CONFIG_DEMO_FOC_MD007_MOTION)
+bool command_joint_drive(JointDriveAction action, const JointDriveTarget& target, uint32_t now_us)
+{
+    hal::IrqGuard guard;
+    if (action == JointDriveAction::Disable) {
+        motor.stop(true);
+        board::shutdown();
+        return true;
+    }
+    if (action == JointDriveAction::ResetFault)
+        return !system_safety::latched() && motor.clear_fault();
+
+    const auto& limits = motor.interaction_config().execution;
+    const auto sample = motor.joint_feedback_sample();
+    if (system_safety::latched() || !acquiring.load(std::memory_order_relaxed) ||
+        !limits.position_limits || !sample.valid ||
+        uint32_t(system_clock::now_us() - sample.sample_us) > 1000U ||
+        sample.position_rad < limits.minimum_position_rad ||
+        sample.position_rad > limits.maximum_position_rad)
+        return false;
+    constexpr JointTargetMode modes[] {JointTargetMode::Position, JointTargetMode::Velocity,
+                                       JointTargetMode::Torque};
+    if (target.mode < 8U || target.mode > 10U) return false;
+    const auto mode = modes[target.mode - 8U];
+    JointTargetOrder order;
+    order.position_rad = target.position_urad * 1.0e-6F;
+    order.velocity_rad_s = target.velocity_urad_s * 1.0e-6F;
+    // CST is per mille of rated torque. The same k6216 torque constant
+    // maps rated torque and target torque to rated and target q current.
+    order.torque_a = target.torque_per_mille * 0.004F;
+    order.host_timestamp_us = now_us;
+    if ((mode == JointTargetMode::Position && (order.position_rad < limits.minimum_position_rad ||
+                                               order.position_rad > limits.maximum_position_rad)) ||
+        (mode == JointTargetMode::Velocity &&
+         (order.velocity_rad_s < -limits.maximum_velocity_rad_s ||
+          order.velocity_rad_s > limits.maximum_velocity_rad_s)) ||
+        target.torque_per_mille < -1000 || target.torque_per_mille > 1000)
+        return false;
+    if (motor.drive_requested()) {
+        if (motor.mode_status().mode != mode) return false;
+    } else {
+        if (!motor.select_mode(mode) || !motor.enable(true)) return false;
+    }
+    if (motor.submit(order)) return true;
+    motor.stop(true);
+    board::shutdown();
+    return false;
+}
+
+JointCanopenFd joint_network {CONFIG_DEMO_FOC_CANOPEN_NODE_ID, command_joint_drive};
+#else
+JointCanopenFd joint_network {CONFIG_DEMO_FOC_CANOPEN_NODE_ID};
+#endif
+uint32_t feedback_sent_us = 0U;
+bool feedback_mailbox_pending = false;
+
+bool send_joint_frame(void* context, const hal::CanFrame& frame)
+{
+    auto& can = *static_cast<hal::Can*>(context);
+    const bool feedback = frame.id == joint_network.feedback_cob_id();
+    if (feedback && feedback_mailbox_pending) {
+        if (can.abort_pending_fd(frame.id) != hal::Status::Ok) return false;
+        feedback_mailbox_pending = false;
+    }
+    if (can.send_fd(frame) != hal::Status::Ok) return false;
+    if (feedback) {
+        feedback_mailbox_pending = true;
+        feedback_sent_us = system_clock::now_us();
+    }
+    return true;
+}
+
+void poll_joint_network()
+{
+    auto& can = board::main_can().native();
+    const uint32_t service_time = system_clock::now_us();
+    if (feedback_mailbox_pending && service_time - feedback_sent_us >= 1000U &&
+        can.abort_pending_fd(joint_network.feedback_cob_id()) == hal::Status::Ok)
+        feedback_mailbox_pending = false;
+    joint_network.service(service_time, send_joint_frame, &can);
+    for (unsigned i = 0; i < 8U; ++i) {
+        hal::CanFrame frame;
+        const auto status = can.receive(frame);
+        if (status == hal::Status::HardwareError) continue;
+        if (status != hal::Status::Ok) break;
+        JointFeedbackSample sample;
+        uint32_t now;
+        {
+            hal::IrqGuard guard;
+            sample = motor.joint_feedback_sample();
+            sample.valid = sample.valid && acquiring.load(std::memory_order_relaxed);
+            sample.output_enabled = board::output_enabled();
+            now = system_clock::now_us();
+        }
+        joint_network.process(frame, sample, now, send_joint_frame, &can);
+    }
+}
+#endif
+
 struct TimingScope {
     unsigned loop;
     uint32_t start_us {system_clock::now_us()};
@@ -304,10 +405,29 @@ bool execute_lut(const MotorRequest& command, MotorResponse& response)
 bool execute(const MotorRequest& command, MotorResponse& response)
 {
     const auto* data = command.data;
+#if defined(CONFIG_DEMO_FOC_MD007_V1)
+    switch (command.command) {
+    case MotorCommand::Enable: if (data[0] != 0U) return false; break;
+    case MotorCommand::Mode:
+    case MotorCommand::ModeTransaction:
+    case MotorCommand::Target:
+#if !defined(CONFIG_DEMO_FOC_MD007_MOTION)
+    case MotorCommand::Calibrate:
+    case MotorCommand::Backlash:
+    case MotorCommand::Rl:
+    case MotorCommand::Sweep:
+#endif
+        return false;
+    default: break;
+    }
+#endif
     switch (command.command) {
     case MotorCommand::Status: return command.size == 0U;
     case MotorCommand::Enable: {
         if (command.size != 1U || data[0] > 1U || (data[0] && system_safety::latched())) return false;
+#if defined(CONFIG_DEMO_FOC_MD007_MOTION)
+        if (!data[0]) joint_network.inhibit(system_clock::now_us());
+#endif
         hal::IrqGuard guard;
         const bool ok = motor.enable(data[0] != 0U);
         if (!data[0] && !motor.status().backlash.active) board::shutdown();
@@ -337,6 +457,9 @@ bool execute(const MotorRequest& command, MotorResponse& response)
     }
     case MotorCommand::Stop: {
         if (command.size != 1U || data[0] > 1U) return false;
+#if defined(CONFIG_DEMO_FOC_MD007_MOTION)
+        joint_network.inhibit(system_clock::now_us());
+#endif
         hal::IrqGuard guard;
         motor.stop(data[0] != 0U);
         if (!motor.status().backlash.active) board::shutdown();
@@ -601,6 +724,9 @@ void slow_entry(void*, const osal::PeriodicStats& stats)
 {
     if (!running.load(std::memory_order_acquire)) return;
     TimingScope timing {2U};
+#if defined(CONFIG_DEMO_FOC_MD007_V1)
+    poll_joint_network();
+#endif
     static uint32_t previous_missed = 0U;
     const auto temperature = board::temperature(motor.parameters());
     {
@@ -663,12 +789,22 @@ int start_control()
     if (running.load(std::memory_order_acquire)) return 0;
     MotorParameters parameters;
     CalibrationValues calibration;
-    if (!motor_parameters(MotorVariant::ProfileA, parameters) || !calibration_store.mount()) return -1;
+#if defined(CONFIG_DEMO_FOC_MD007_V1)
+    constexpr auto motor_variant = MotorVariant::ProfileF; // kmotor/k6216
+#else
+    constexpr auto motor_variant = MotorVariant::ProfileA;
+#endif
+    if (!motor_parameters(motor_variant, parameters) || !calibration_store.mount()) return -1;
 #if defined(CONFIG_MOTOR_AUTO_CALIBRATION)
     parameters.auto_calibration_enabled = true;
 #endif
     calibration_store.load(calibration);
-    if (parameters.brake_enabled || !motor.configure(parameters, calibration)) return -1;
+#if defined(CONFIG_DEMO_FOC_MD007_V1)
+    if (!parameters.brake_enabled) return -1;
+#else
+    if (parameters.brake_enabled) return -1;
+#endif
+    if (!motor.configure(parameters, calibration)) return -1;
     const int interaction_size =
         calibration_store.read_interaction(interaction_record, sizeof(interaction_record));
     if (interaction_size < 0 ||
@@ -693,6 +829,10 @@ int start_control()
                                                        board::shutdown();
                                                    });
     if (safety_output < 0 || !start_motor_transport()) { stop_control(); return -1; }
+#if defined(CONFIG_DEMO_FOC_MD007_V1)
+    joint_network.reset();
+    feedback_mailbox_pending = false;
+#endif
     osal::PeriodicThreadConfig config;
     config.name = "foc_slow";
     config.entry = slow_entry;
@@ -704,7 +844,11 @@ int start_control()
         stop_control(); return -1;
     }
     running.store(true, std::memory_order_release);
+#if defined(CONFIG_DEMO_FOC_MD007_V1)
+    LOGI("foc", "MD007 V1 k6216; joint FD node=%u", CONFIG_DEMO_FOC_CANOPEN_NODE_ID);
+#else
     LOGI("foc", "20 kHz current / 4 kHz joint / 1 kHz service; Link set=0x30 addr=0x10");
+#endif
     return 0;
 }
 
@@ -717,6 +861,10 @@ void stop_control()
         board::shutdown();
     }
     slow_thread.destroy();
+#if defined(CONFIG_DEMO_FOC_MD007_V1)
+    (void)board::main_can().native().abort_pending_fd(joint_network.feedback_cob_id());
+    feedback_mailbox_pending = false;
+#endif
     pause_acquisition();
     commands.destroy();
     if (safety_output >= 0) { system_safety::unregister_output(safety_output); safety_output = -1; }

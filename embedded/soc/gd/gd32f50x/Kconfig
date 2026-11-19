@@ -13,3 +13,17 @@ config SOC
 config SOC_NAME
     string
     default "GD32F50X"
+
+config GD32F50X_HXTAL_12MHZ
+    bool "GD32F50x board has a 12 MHz HXTAL"
+    depends on SOC_SERIES_GD32F50X
+    help
+      Select the PLL input divider for a 12 MHz board crystal.
+      Without this option the system clock assumes an 8 MHz crystal.
+
+config GD32F50X_PLL_192MHZ
+    bool "Run GD32F50x PLL at 192 MHz"
+    depends on SOC_SERIES_GD32F50X
+    help
+      This supplies a 192 MHz APB2 kernel clock for exact
+      8 Mbit/s CAN FD timing.

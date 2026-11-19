@@ -3,6 +3,9 @@
 #include <algo/motor.h>
 #include "control/motor_observation.h"
 #include "control/interaction_config.h"
+#if defined(CONFIG_DEMO_FOC_MD007_V1)
+#include "comm/joint_canopen_fd.h"
+#endif
 #include <cstddef>
 #include <cstdint>
 
@@ -73,6 +76,10 @@ public:
     bool mode_command(const ModeCommand& command);
     ModeStatus mode_status() const;
     MotorObservation observation() const;
+#if defined(CONFIG_DEMO_FOC_MD007_V1)
+    JointFeedbackSample joint_feedback_sample() const;
+    bool drive_requested() const { return enabled_; }
+#endif
     void record_timing(unsigned loop, uint32_t start_us, uint32_t end_us);
     bool encoder_frame(uint32_t id, const uint8_t* data, size_t size, uint32_t processed_us);
     bool configure_capture(bool enabled, uint16_t divider);

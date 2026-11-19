@@ -6,6 +6,10 @@ target_include_directories(soc
         ${BSP_DIR}/include
 )
 
+if(CONFIG_GD32F50X_HXTAL_12MHZ)
+    target_compile_definitions(soc PUBLIC HXTAL_VALUE=12000000U)
+endif()
+
 # Core GD32 SoC sources.
 set(SOC_SOURCES
     soc.c

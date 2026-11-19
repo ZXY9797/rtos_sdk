@@ -9,11 +9,13 @@
 namespace app {
 
 namespace {
+#if !defined(CONFIG_DEMO_FOC_MD007_V1)
 void on_raw_can(void*, uint32_t id, const uint8_t* data, size_t size, bool extended)
 {
     if (!extended) handle_encoder_frame(id, data, size, system_clock::now_us());
 }
 link::CanLink can_link(0U, 0x100U, 7U, on_raw_can);
+#endif
 link::UartLink uart_link(board::console());
 bool transport_started = false;
 link::HandlerResult on_request(const link::Frame& frame, const link::CompletionToken& completion, void*)
@@ -36,16 +38,33 @@ LINK_HOST_ASYNC_HANDLER(0U, 0U, kMotorCommandSet, 0xFFU, 0U, 0U, on_request, nul
 bool start_motor_transport()
 {
     if (transport_started) return true;
-    can_link.set_id(1U);
     uart_link.set_id(2U);
     const link::RouteEntry routes[] {
         link::make_route(link::route_by_host(0x20U, 0xF0U).to(2U)),
+#if !defined(CONFIG_DEMO_FOC_MD007_V1)
         link::make_route(link::route_by_host(0x30U, 0xF0U).to(1U)),
+#endif
     };
+#if !defined(CONFIG_DEMO_FOC_MD007_V1)
+    can_link.set_id(1U);
+#endif
     auto& router = link::Router::instance();
     router.set_self_addr(0x10U);
-    if (board::main_can().native().start() != hal::Status::Ok ||
-        !router.set_routes(routes, 2U) || !uart_link.is_ready()) return false;
+    auto& can = board::main_can().native();
+#if defined(CONFIG_DEMO_FOC_MD007_V1)
+    constexpr hal::CanFilter filters[] {
+        {0x000U, 0x7FFU}, {0x080U, 0x7FFU}, {0x600U, 0x780U},
+#if defined(CONFIG_DEMO_FOC_MD007_MOTION)
+        {0x200U + CONFIG_DEMO_FOC_CANOPEN_NODE_ID, 0x7FFU},
+#endif
+    };
+    if (!can.is_started() &&
+        can.set_standard_filters(filters, sizeof(filters) / sizeof(filters[0])) != hal::Status::Ok)
+        return false;
+#endif
+    if (can.start() != hal::Status::Ok ||
+        !router.set_routes(routes, sizeof(routes) / sizeof(routes[0])) ||
+        !uart_link.is_ready()) return false;
     transport_started = true;
     return true;
 }

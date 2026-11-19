@@ -1,10 +1,20 @@
 #include "board/board_devices.h"
 #include <gd32_regs.h>
 #include <devicetree.h>
+#include <devicetree/gpio.h>
+#include <drivers/gpio.h>
+#include <irq.h>
+#include <system/clock.h>
 
 namespace app::board {
 namespace {
 #define MOTOR_NODE DT_NODELABEL(foc_control)
+#if defined(CONFIG_DEMO_FOC_MD007_V1)
+static_assert(DT_PROP(MOTOR_NODE, timer_clock_hz) == CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC);
+#else
+static_assert(!DT_NODE_HAS_PROP(MOTOR_NODE, brake_enable_gpios),
+              "The MD007 board overlay requires CONFIG_DEMO_FOC_MD007_V1");
+#endif
 constexpr uint32_t kPeriod = DT_PROP(DT_ALIAS(pwm0), period);
 static_assert(kPeriod == DT_PROP(MOTOR_NODE, timer_clock_hz) /
                          (2U * DT_PROP(MOTOR_NODE, pwm_frequency_hz)));
@@ -14,6 +24,39 @@ static_assert((DT_PROP(DT_ALIAS(joint_timer), prescaler)+1U) *
 alignas(4) uint16_t current_buffer[12] {};
 alignas(4) uint16_t joint_buffer[4] {};
 bool powered = false;
+#if defined(CONFIG_DEMO_FOC_MD007_V1)
+hal::GpioPort<
+    DT_REG_ADDR(DT_GPIO_CTLR(MOTOR_NODE, brake_enable_gpios)),
+    DT_GPIO_PIN(MOTOR_NODE, brake_enable_gpios),
+    DT_GPIO_FLAGS(MOTOR_NODE, brake_enable_gpios)> brake_enable;
+hal::GpioPort<
+    DT_REG_ADDR(DT_GPIO_CTLR(MOTOR_NODE, brake_voltage_select_gpios)),
+    DT_GPIO_PIN(MOTOR_NODE, brake_voltage_select_gpios),
+    DT_GPIO_FLAGS(MOTOR_NODE, brake_voltage_select_gpios)> brake_voltage;
+#endif
+#if defined(CONFIG_DEMO_FOC_MD007_MOTION)
+enum class BrakeState : uint8_t { Locked, Releasing, Released };
+constexpr uint32_t kBrakeReleaseUs = 300000U;
+BrakeState brake_state = BrakeState::Locked;
+uint32_t brake_start_us = 0U;
+
+bool prepare_brake()
+{
+    hal::IrqGuard guard;
+    const uint32_t now = system_clock::now_us();
+    if (brake_state == BrakeState::Locked) {
+        brake_voltage.on();
+        brake_enable.on();
+        brake_start_us = now;
+        brake_state = BrakeState::Releasing;
+    }
+    if (brake_state == BrakeState::Releasing && now - brake_start_us >= kBrakeReleaseUs) {
+        brake_voltage.off();
+        brake_state = BrakeState::Released;
+    }
+    return brake_state == BrakeState::Released;
+}
+#endif
 }
 
 decltype(device_get(uart0)) console() { return device_get(uart0); }
@@ -28,6 +71,10 @@ bool start_acquisition(hal::AdcBase::ScanCallback current,
                        hal::AdcBase::ScanCallback joint, void* context)
 {
     stop_acquisition();
+#if defined(CONFIG_DEMO_FOC_MD007_V1)
+    if (brake_enable.configure(GPIO_OUTPUT_LOW) != 0 ||
+        brake_voltage.configure(GPIO_OUTPUT_LOW) != 0) return false;
+#endif
     hal::AdcScanConfig scan;
     constexpr uint8_t channels[] = DT_PROP(MOTOR_NODE, current_channels);
     static_assert(sizeof(channels) == 6U);
@@ -66,7 +113,17 @@ bool start_acquisition(hal::AdcBase::ScanCallback current,
 
 void shutdown()
 {
+#if defined(CONFIG_DEMO_FOC_MD007_V1)
+    hal::IrqGuard guard;
+#endif
     (void)power_pwm().disable_output();
+#if defined(CONFIG_DEMO_FOC_MD007_V1)
+    brake_enable.off();
+    brake_voltage.off();
+#endif
+#if defined(CONFIG_DEMO_FOC_MD007_MOTION)
+    brake_state = BrakeState::Locked;
+#endif
     powered = false;
 }
 
@@ -82,9 +139,22 @@ void stop_acquisition()
 bool apply(const algo::motor::CurrentLoopOutput& output)
 {
     if (!output.valid || !output.energize) {
+#if defined(CONFIG_DEMO_FOC_MD007_MOTION)
+        if (powered || brake_state != BrakeState::Locked) shutdown();
+#else
         if (powered) shutdown();
+#endif
         return true;
     }
+#if defined(CONFIG_DEMO_FOC_MD007_V1) && !defined(CONFIG_DEMO_FOC_MD007_MOTION)
+    // Commission using acquisition and network feedback while the measured
+    // motor limits and brake release timing are being established.
+    shutdown();
+    return false;
+#else
+#if defined(CONFIG_DEMO_FOC_MD007_MOTION)
+    if (!prepare_brake()) return true;
+#endif
     using Loop = algo::motor::CurrentLoop;
     if (power_pwm().set_three_phase_pulses(Loop::duty_count(output.duty_percent.u, kPeriod),
         Loop::duty_count(output.duty_percent.v, kPeriod),
@@ -96,7 +166,12 @@ bool apply(const algo::motor::CurrentLoopOutput& output)
         powered = true;
     }
     return true;
+#endif
 }
+
+#if defined(CONFIG_DEMO_FOC_MD007_V1)
+bool output_enabled() { return powered; }
+#endif
 
 algo::motor::TemperatureSample temperature(const algo::motor::MotorParameters& parameters)
 {
