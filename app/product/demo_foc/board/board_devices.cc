@@ -31,9 +31,10 @@ hal::GpioPort<
 enum class BrakeState : uint8_t { Locked, Releasing, Released };
 constexpr uint32_t kBrakeReleaseUs = 300000U;
 BrakeState brake_state = BrakeState::Locked;
+BrakePhase previous_phase = BrakePhase::Locked;
 uint32_t brake_start_us = 0U;
 
-bool prepare_brake()
+bool prepare_service_brake()
 {
     hal::IrqGuard guard;
     const uint32_t now = system_clock::now_us();
@@ -110,6 +111,7 @@ void shutdown()
     brake_voltage.off();
 #if defined(CONFIG_DEMO_FOC_MD007_MOTION)
     brake_state = BrakeState::Locked;
+    previous_phase = BrakePhase::Locked;
 #endif
     powered = false;
 }
@@ -123,7 +125,7 @@ void stop_acquisition()
     (void)joint_adc().stop_scan();
 }
 
-bool apply(const algo::motor::CurrentLoopOutput& output)
+bool apply(const algo::motor::CurrentLoopOutput& output, BrakePhase phase, bool supported_service)
 {
     if (!output.valid || !output.energize) {
 #if defined(CONFIG_DEMO_FOC_MD007_MOTION)
@@ -134,12 +136,17 @@ bool apply(const algo::motor::CurrentLoopOutput& output)
         return true;
     }
 #if !defined(CONFIG_DEMO_FOC_MD007_MOTION)
+    (void)phase;
+    (void)supported_service;
     // Commission using acquisition and network feedback while the measured
     // motor limits and brake release timing are being established.
     shutdown();
     return false;
 #else
-    if (!prepare_brake()) return true;
+    if (phase == BrakePhase::Locked) {
+        if (!supported_service) { shutdown(); return false; }
+        if (!prepare_service_brake()) return true;
+    }
     using Loop = algo::motor::CurrentLoop;
     if (power_pwm().set_three_phase_pulses(Loop::duty_count(output.duty_percent.u, kPeriod),
         Loop::duty_count(output.duty_percent.v, kPeriod),
@@ -149,6 +156,19 @@ bool apply(const algo::motor::CurrentLoopOutput& output)
     if (!powered) {
         if (power_pwm().enable_output() != hal::Status::Ok) { shutdown(); return false; }
         powered = true;
+    }
+    if (phase != previous_phase) {
+        previous_phase = phase;
+        if (phase == BrakePhase::Releasing) {
+            brake_voltage.on();
+            brake_enable.on();
+        } else if (phase == BrakePhase::Running || phase == BrakePhase::Stopping) {
+            brake_voltage.off();
+            brake_enable.on();
+        } else {
+            brake_enable.off();
+            brake_voltage.off();
+        }
     }
     return true;
 #endif

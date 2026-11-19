@@ -18,41 +18,10 @@ bool MotorControl::torque_calibration(uint8_t action, float measured_nm, Interac
     return false;
 }
 using namespace algo::interaction;
-using namespace algo::robotics;
-namespace
-{
-bool cartesian_chain(const CartesianModel &c, SerialChain<1> &chain)
-{
-    if (!std::isfinite(c.length_m) || c.length_m < 0 || !std::isfinite(c.com_m) || c.com_m < 0 ||
-        c.com_m > c.length_m)
-        return false;
-    Link link;
-    link.axis = {0, 0, 1};
-    link.mass = c.mass_kg;
-    link.center_of_mass = {c.com_m, 0, 0};
-    link.inertia[0][0] = link.inertia[1][1] = link.inertia[2][2] = c.inertia_kg_m2;
-    Pose tool;
-    tool.position = {c.length_m, 0, 0};
-    return chain.configure({link}, tool);
-}
-auto task_config(const InteractionConfig &c)
-{
-    auto config = c.cartesian.controller;
-    config.torque_limit[0] = c.joint.torque_limit_nm;
-    config.torque_rate[0] = c.joint.torque_rate_nm_s;
-    // Zero gains/geometry are an unconfigured model. Storage can precede commissioning.
-    for (float &x : config.wrench_limit)
-        if (x == 0)
-            x = c.joint.torque_limit_nm;
-    return config;
-}
-} // namespace
 bool MotorControl::validate_interaction(const InteractionConfig &c) const
 {
     algo::motor::ExecutionLimits limits;
     JointInteraction joint;
-    SerialChain<1> chain;
-    CartesianController<1> task;
     auto current_config = parameters_.current;
     current_config.resistance_ohm = c.electrical.resistance;
     current_config.ld_h = c.electrical.ld;
@@ -65,15 +34,12 @@ bool MotorControl::validate_interaction(const InteractionConfig &c) const
     return limits.configure(c.execution, parameters_.joint.loop.torque.q_current_limit_a,
                             parameters_.current_frequency_hz, parameters_.joint.frequency_hz) &&
            joint.configure(c.joint, parameters_.joint.frequency_hz) && joint.set_cogging(c.cogging_nm, 64) &&
-           current.configure(current_config) && cartesian_chain(c.cartesian, chain) &&
-           task.configure(chain, task_config(c), 1 / parameters_.joint.frequency_hz);
+           current.configure(current_config);
 }
 bool MotorControl::configure_interaction(const InteractionConfig &c)
 {
     if (!idle() || !validate_interaction(c))
         return false;
-    SerialChain<1> chain;
-    (void)cartesian_chain(c.cartesian, chain);
     auto current_config = parameters_.current;
     current_config.resistance_ohm = c.electrical.resistance;
     current_config.ld_h = c.electrical.ld;
@@ -83,9 +49,9 @@ bool MotorControl::configure_interaction(const InteractionConfig &c)
     if (!limits_.configure(c.execution, parameters_.joint.loop.torque.q_current_limit_a,
                            parameters_.current_frequency_hz, parameters_.joint.frequency_hz, true) ||
         !interaction_.configure(c.joint, parameters_.joint.frequency_hz) ||
-        !interaction_.set_cogging(c.cogging_nm, 64) || !current_.configure(current_config) ||
-        !cartesian_.configure(chain, task_config(c), 1 / parameters_.joint.frequency_hz))
+        !interaction_.set_cogging(c.cogging_nm, 64) || !current_.configure(current_config))
         return false;
+    invalidate_axis();
     interaction_config_ = c;
     interaction_snapshot_ = {};
     if (c.execution.position_limits)
@@ -96,9 +62,9 @@ bool MotorControl::configure_interaction(const InteractionConfig &c)
     external_age_s_ = 0;
     return true;
 }
-bool MotorControl::external_feedback(uint32_t sequence, uint8_t flags, const float *v)
+bool MotorControl::external_feedback(uint32_t sequence, uint8_t flags, const float *v, float age_s)
 {
-    if (!v || flags > 15)
+    if (!v || flags > 15 || !std::isfinite(age_s) || age_s < 0)
         return false;
     for (unsigned i = 0; i < 9; ++i)
         if (!std::isfinite(v[i]))
@@ -109,7 +75,7 @@ bool MotorControl::external_feedback(uint32_t sequence, uint8_t flags, const flo
         return true;
     external_seen_ = true;
     external_sequence_ = sequence;
-    external_age_s_ = 0;
+    external_age_s_ = age_s;
     external_.external_nm = v[0];
     external_.effort_nm = v[1];
     external_.force_n = v[2];
@@ -126,7 +92,6 @@ JointFeedback MotorControl::interaction_feedback() const
     auto f = external_;
     const auto &v = feedback_.velocity();
     f.position_rad = feedback_.joint().multi_turn_angle_filted;
-    f.velocity_rad_s = v.output_angular_velocity;
     f.load_velocity_rad_s = feedback_.joint().angular_velocity;
     f.velocity_rad_s = f.load_velocity_rad_s;
     f.motor_equivalent_rad = v.output_equivalent_multi_turn_angle_filted_rad;
@@ -142,65 +107,16 @@ bool MotorControl::interaction_command(const ModeCommand &c)
     if (mode < 4 || mode > 14)
         return false;
     const auto f = interaction_feedback();
-    if (mode >= 11 && mode <= 13)
-    {
-        if (!interaction_config_.joint.torque.valid() || interaction_config_.cartesian.length_m <= 0)
-            return false;
-        auto target = cartesian_target_;
-        target.mode = mode == 11   ? CartesianMode::Impedance
-                      : mode == 12 ? CartesianMode::Hybrid
-                                   : CartesianMode::Admittance;
-        for (unsigned i = 0; i < 6; ++i)
-        {
-            if (!std::isfinite(c.task_pose[i]) || !std::isfinite(c.task_velocity[i]) ||
-                !std::isfinite(c.task_wrench[i]))
-                return false;
-            target.velocity[i] = c.task_velocity[i];
-            target.wrench[i] = c.task_wrench[i];
-        }
-        target.pose.position = {c.task_pose[0], c.task_pose[1], c.task_pose[2]};
-        const Vec3 rot{c.task_pose[3], c.task_pose[4], c.task_pose[5]};
-        const float angle = std::sqrt(dot(rot, rot));
-        target.pose.orientation = angle > 1e-7F ? rotation(scale(rot, 1 / angle), angle) : identity();
-        if (mode != 11 && (!wrench_valid_ || external_age_s_ > interaction_config_.joint.external_timeout_s))
-            return false;
-        if (!cartesian_active_ || control_mode_ != mode)
-        {
-            cartesian_.reset();
-            cartesian_.track_applied({interaction_config_.joint.torque.torque(q_target_a_)});
-        }
-        cartesian_target_ = target;
-        cartesian_active_ = true;
-        interaction_.stop();
-    }
-    else
-    {
-        const auto joint_mode = mode == 14 ? JointMode::InertiaShaping : static_cast<JointMode>(mode - 4);
-        if (!interaction_.active() || control_mode_ != mode)
-        {
-            if (!interaction_.start(joint_mode, c.physical, f, q_target_a_))
-                return false;
-        }
-        else if (!interaction_.submit(c.physical))
-            return false;
-        cartesian_active_ = false;
-    }
+    if (mode >= 11 && mode <= 13) return false;
+    const auto joint_mode = mode == 14 ? JointMode::InertiaShaping : static_cast<JointMode>(mode - 4);
+    if (!interaction_.active() || control_mode_ != mode) {
+        if (!interaction_.start(joint_mode, c.physical, f, q_target_a_)) return false;
+    } else if (!interaction_.submit(c.physical)) return false;
     control_mode_ = uint8_t(mode);
     return true;
 }
 float MotorControl::interaction_update(bool &valid, bool &energize, bool &complete)
 {
-    if (cartesian_active_)
-    {
-        cartesian_result_ = cartesian_.update(
-            {feedback_.joint().multi_turn_angle_filted}, {feedback_.velocity().output_angular_velocity},
-            cartesian_target_, external_wrench_,
-            wrench_valid_ && external_age_s_ <= interaction_config_.joint.external_timeout_s);
-        valid = cartesian_result_.valid;
-        energize = valid;
-        complete = valid;
-        return valid ? interaction_config_.joint.torque.current(cartesian_result_.torque[0]) : 0;
-    }
     const auto r = interaction_.update(interaction_feedback());
     interaction_snapshot_ = r;
     valid = r.valid;

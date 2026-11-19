@@ -5,7 +5,7 @@ import math
 import struct
 import time
 from pathlib import Path
-from motor_tool import Client, mode_status, motor_status
+from motor_tool import Client, motor_status
 
 SECTIONS = {
     "limits": "phase_current_a continuous_current_a excess_i2t_a2_s maximum_velocity_rad_s current_slew_a_s command_timeout_s temperature_timeout_s minimum_position_rad maximum_position_rad hard_limit_margin_rad following_error_rad following_time_s motoring_power_w regenerative_power_w derate_start_c derate_stop_c position_limits mechanical_power".split(),
@@ -21,6 +21,7 @@ SECTIONS = {
     "cartesian_admittance": [f"{axis}_{name}" for axis in "xyzXYZ" for name in
         "inertia damping stiffness position_limit velocity_limit acceleration_limit jerk_limit force_deadband".split()],
     "cogging": [f"nm_{i}" for i in range(64)],
+    "brake": "hold_a tolerance_a preload_ms release_ms engage_ms travel_rad still_rad_s deceleration kp_a_rad kd_a_s_rad collision_nm collision_ms".split(),
 }
 
 
@@ -57,6 +58,33 @@ def write_section(client, section, updates):
     if section_packet(section, received) != packet:
         raise ValueError("configuration readback differs; write was not retried")
     return received
+
+
+def joint_pdo(controlword, mode, sync, sequence, source, source_age_ms, position_rad=0,
+              velocity_rad_s=0, torque_nm=0, rated_per_mille=0, stiffness=0, damping=0,
+              external_nm=None, external_sequence=0, external_age_ms=0, support_a=None):
+    """Encode the MD007 synchronous RPDO2 in SI units; ages are supplied by the producer."""
+    if mode not in (8, 9, 10, -1, -2, -3) or not 1 <= sync <= 240:
+        raise ValueError("unsupported drive mode or SYNC counter")
+    if stiffness < 0 or damping < 0 or abs(rated_per_mille) > 1000:
+        raise ValueError("invalid gains or rated torque")
+    if (mode == 10 and torque_nm) or (mode != 10 and rated_per_mille):
+        raise ValueError("CST uses rated_per_mille; physical modes use torque_nm")
+    effort = rated_per_mille if mode == 10 else round(1000 * torque_nm)
+    flags = int(external_nm is not None) | (int(support_a is not None) << 1)
+    return struct.pack("<HbBIIiiiIIiIHHBBh", controlword, mode, sync, sequence, source,
+                       round(position_rad * 1e6), round(velocity_rad_s * 1e6), effort,
+                       round(stiffness * 1000), round(damping * 1000), round((external_nm or 0) * 1000),
+                       external_sequence, source_age_ms, external_age_ms, flags, 0,
+                       round((support_a or 0) * 1000))
+
+
+def decode_joint_ack(data):
+    if len(data) != 48:
+        raise ValueError("TPDO2 requires 48 bytes")
+    fields = ("sequence applied_us delay_us dropped stale missed_sync max_age_us brake "
+              "effort_flags applied_valid sync output_mnm external_mnm external_age_us first_fault").split()
+    return dict(zip(fields, struct.unpack("<7I4B2i2I", data)))
 
 
 def physical_packet(mode, action, sequence, values, timestamp=0):
@@ -133,7 +161,7 @@ def identify(client, apply=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--port", required=True)
+    parser.add_argument("--port")
     parser.add_argument("--baud", type=int, default=2000000)
     sub = parser.add_subparsers(dest="command", required=True)
     read = sub.add_parser("config-read")
@@ -142,6 +170,12 @@ def main():
     write.add_argument("section", choices=SECTIONS)
     write.add_argument("json_file", help="JSON object containing the fields to change")
     sub.add_parser("status")
+    confirm = sub.add_parser("confirm-axis", help="confirm measured mechanical position and verified direction")
+    confirm.add_argument("position_rad", type=float)
+    confirm.add_argument("direction", type=int, choices=[-1, 1])
+    confirm.add_argument("--unloaded", action="store_true", help="tare motor/load deflection at verified zero load")
+    service = sub.add_parser("supported-service", help="calibration with a mechanically supported load")
+    service.add_argument("enabled", type=int, choices=[0, 1])
     for name in ("rl-fit", "identify"):
         item = sub.add_parser(name)
         item.add_argument("--apply", action="store_true")
@@ -154,18 +188,17 @@ def main():
     external.add_argument("--effort-nm", type=float)
     external.add_argument("--force-n", type=float)
     external.add_argument("--wrench", type=float, nargs=6)
-    for name in ("joint", "cartesian"):
-        item = sub.add_parser(name)
-        item.add_argument("--mode", type=int, choices=list(range(4, 11))+[14] if name == "joint" else range(11, 14), required=True)
-        item.add_argument("--action", choices=["target", "restore", "disable"], default="target")
-        if name == "joint":
-            item.add_argument("--values", type=float, nargs=6, default=[0]*6,
-                              metavar="VALUE", help="q rad, v rad/s, Nm, Nm/rad, Nm s/rad, N")
-        else:
-            item.add_argument("--pose", type=float, nargs=6, default=[0]*6)
-            item.add_argument("--velocity", type=float, nargs=6, default=[0]*6)
-            item.add_argument("--wrench", type=float, nargs=6, default=[0]*6)
+    sub.add_parser("encode-rpdo").add_argument("json_file")
+    sub.add_parser("decode-tpdo2").add_argument("hex_data")
     args = parser.parse_args()
+    if args.command == "encode-rpdo":
+        print(joint_pdo(**json.loads(Path(args.json_file).read_text(encoding="utf-8-sig"))).hex())
+        return
+    if args.command == "decode-tpdo2":
+        print(json.dumps(decode_joint_ack(bytes.fromhex(args.hex_data)), indent=2))
+        return
+    if not args.port:
+        parser.error("commissioning commands require --port")
     import serial
     with serial.Serial(args.port, args.baud, timeout=0.05, write_timeout=1) as port:
         client = Client(port)
@@ -174,6 +207,12 @@ def main():
             result = read_section(client, args.section)
         elif args.command == "config-write":
             result = write_section(client, args.section, json.loads(Path(args.json_file).read_text(encoding="utf-8-sig")))
+        elif args.command == "confirm-axis":
+            client.request(0x1C, struct.pack("<fbB", args.position_rad, args.direction, args.unloaded))
+            result = {"axis_confirmed": True}
+        elif args.command == "supported-service":
+            client.request(0x1D, bytes([args.enabled]))
+            result = {"supported_service": bool(args.enabled)}
         elif args.command == "status":
             result = interaction_status(client.request(0x19))
         elif args.command == "rl-fit":
@@ -191,12 +230,6 @@ def main():
                 raise ValueError("sample requires finite --measured-nm")
             data = client.request(0x1B, bytes([action]) + (struct.pack("<f", args.measured_nm) if action == 1 else b""))
             result = dict(zip(["joint_nm_per_iq_a", "bias_nm", "rms_nm"], struct.unpack("<3f", data)))
-        else:
-            sequence = (mode_status(client.request(0x14))["accepted"]+1) & 0xFFFFFFFF
-            action = dict(target=0, restore=2, disable=3)[args.action]
-            packet = physical_packet(args.mode, action, sequence, args.values, stamp) if args.command == "joint" else cartesian_packet(
-                args.mode, action, sequence, args.pose, args.velocity, args.wrench, stamp)
-            result = mode_status(client.request(0x13, packet))
         print(json.dumps(result, indent=2))
 
 

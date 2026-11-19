@@ -77,11 +77,11 @@ size_t pack_interaction_config(InteractionConfig c, uint8_t *bytes, size_t capac
 }
 bool unpack_interaction_config(const uint8_t *b, size_t size, InteractionConfig &config)
 {
-    if (!b || size < 4 || b[0] != 1 || b[1] != kInteractionSections || b[2] || b[3])
+    if (!b || size < 4 || b[0] != 1 || (b[1] != 10 && b[1] != kInteractionSections) || b[2] || b[3])
         return false;
     InteractionConfig candidate;
     size_t offset = 4;
-    for (unsigned i = 0; i < kInteractionSections; ++i)
+    for (unsigned i = 0; i < b[1]; ++i)
     {
         if (offset + 4 > size || b[offset + 1] != i)
             return false;

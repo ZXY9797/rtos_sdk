@@ -42,6 +42,8 @@ public:
                 velocity_.angular_velocity};
     }
     // Snapshot before existing zero/offset references, after output LUT.
+    bool recover_turn(float known_position, float tolerance);
+    void align_unloaded(float elastic_zero);
     bool joint_reference_candidate(bool zero_reference, MotorCalibData& candidate) const;
 
 private:

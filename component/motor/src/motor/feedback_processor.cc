@@ -84,6 +84,32 @@ bool FeedbackProcessor::joint_sample(float tmr1, float tmr2)
            std::isfinite(velocity_.angular_velocity);
 }
 
+bool FeedbackProcessor::recover_turn(float known_position, float tolerance)
+{
+    if (!joint_.internal.has_last_single_turn_angle || !std::isfinite(known_position) ||
+        !std::isfinite(tolerance) || tolerance <= 0 || tolerance >= 3.14159F) return false;
+    constexpr float tau = 6.283185307F;
+    const float turns = std::round((known_position - joint_.multi_turn_angle_filted) / tau);
+    if (!std::isfinite(turns) || std::fabs(turns) > 10000) return false;
+    const float shift = turns * tau;
+    if (std::fabs(joint_.multi_turn_angle_filted + shift - known_position) > tolerance) return false;
+    velocity_.output_equivalent_multi_turn_angle_rad += shift;
+    velocity_.output_equivalent_multi_turn_angle_filted_rad += shift;
+    joint_.turn_count += static_cast<int32_t>(turns);
+    joint_.internal.multi_turn_angle_raw += shift;
+    joint_.multi_turn_angle += shift;
+    joint_.multi_turn_angle_filted += shift;
+    return true;
+}
+
+void FeedbackProcessor::align_unloaded(float elastic_zero)
+{
+    const float shift = joint_.multi_turn_angle_filted + elastic_zero -
+                        velocity_.output_equivalent_multi_turn_angle_filted_rad;
+    velocity_.output_equivalent_multi_turn_angle_rad += shift;
+    velocity_.output_equivalent_multi_turn_angle_filted_rad += shift;
+}
+
 bool FeedbackProcessor::joint_reference_candidate(bool zero_reference,
                                                   MotorCalibData& candidate) const
 {

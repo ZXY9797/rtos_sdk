@@ -499,8 +499,105 @@ static void test_interaction_configuration_and_execution()
     assert(!app::decode_mode_command(physical, 40, decoded));
 }
 
+static void test_loaded_brake()
+{
+    app::BrakeControl brake;
+    const app::BrakeConfig c{1, .1F, 2, 3, 4, .05F, .01F, 2, 3, .5F, 0, 0};
+    float iq = 0;
+    brake.start(1, 0);
+    assert(brake.step(c, 1, 10000, .00025F, 1, 0, 0, iq));
+    assert(iq == 1 && brake.phase() == app::BrakePhase::Preload);
+    assert(brake.step(c, 1, 11000, .00025F, 1, 0, 1, iq));
+    assert(brake.step(c, 1, 13000, .00025F, 1, 0, 1, iq));
+    assert(brake.phase() == app::BrakePhase::Releasing);
+    assert(!brake.step(c, 1, 13250, .00025F, 1.1F, 0, 1, iq)); // excessive drift
+    brake.start(1, 0);
+    assert(!brake.step(c, 1, 2001000, .00025F, 1, 0, 0, iq)); // preload never established
+}
+
+static void test_md007_handoff()
+{
+    MotorParameters p;
+    assert(motor_parameters(MotorVariant::ProfileF, p));
+    app::MotorControl motor;
+    auto calibration = valid_calibration();
+    calibration.joint.joint_zero_angle = {true, 0};
+    assert(motor.configure(p, calibration));
+    auto config = motor.interaction_config();
+    config.brake = {0, .2F, 2, 3, 4, .1F, .1F, 1, 1, .1F, 0, 0};
+    config.execution.position_limits = true;
+    config.execution.minimum_position_rad = -8;
+    config.execution.maximum_position_rad = 8;
+    config.joint.torque = {2, 0};
+    config.joint.servo_stiffness = 2;
+    assert(motor.configure_interaction(config));
+    const float voltage[6]{1.65F, 1.65F, 1.65F, 1.2F, 0, 1};
+    uint32_t now = UINT32_MAX - 8000U;
+    auto step = [&] {
+        now += 250;
+        motor.current_sample(voltage, now);
+        assert(motor.joint_sample(0, 1, now));
+    };
+    step();
+    const float known = motor.status().position_rad + basic_math::kTwoPi;
+    app::JointDriveTarget cmd;
+    cmd.extended = true;
+    cmd.mode = app::kImpedanceMode;
+    cmd.position_urad = int32_t(known * 1e6F);
+    cmd.sequence = 5;
+    assert(!motor.apply_network_target(cmd, now));
+    assert(!motor.confirm_axis(known, -1, now));
+    assert(!motor.confirm_axis(known + 0.5F, 1, now));
+    assert(motor.confirm_axis(known, 1, now));
+    assert(std::fabs(motor.status().position_rad - known) < .001F);
+    assert(motor.apply_network_target(cmd, now));
+    for (unsigned i = 0; i < 32; ++i) {
+        if (i % 8 == 0) { ++cmd.sequence; assert(motor.apply_network_target(cmd, now)); }
+        step();
+        if (i < 8) assert(motor.brake_phase() == app::BrakePhase::Preload);
+    }
+    auto sample = motor.joint_feedback_sample();
+    assert(motor.brake_phase() == app::BrakePhase::Running && sample.applied_valid);
+    assert(sample.applied_sequence == cmd.sequence && sample.apply_delay_us <= 250);
+    assert(sample.effort_flags == 1);
+    for (unsigned i = 0; i < 60; ++i) step();
+    assert(motor.brake_phase() == app::BrakePhase::Locked && motor.idle());
+    assert(motor.joint_feedback_sample().faults & (1U << 31));
+    assert(!motor.apply_network_target(cmd, now));
+    assert(motor.clear_fault());
+    cmd.mode = app::kAdmittanceMode;
+    assert(!motor.apply_network_target(cmd, now)); // no external torque measurement
+    assert(motor.idle() && motor.brake_phase() == app::BrakePhase::Locked);
+    for (unsigned i = 0; i < 24; ++i) step();
+    cmd.external_valid = true;
+    cmd.external_sequence = 1;
+    assert(motor.apply_network_target(cmd, now));
+    assert(motor.joint_feedback_sample().effort_flags & 2U);
+    motor.controlled_stop(now);
+    for (unsigned i = 0; i < 24; ++i) step();
+    assert(motor.idle());
+    assert(motor.configure_interaction(config));
+    assert(!motor.axis_confirmed());
+    config.joint.use_model_external = true;
+    config.joint.elastic.stiffness_nm_rad = 1;
+    assert(motor.configure_interaction(config));
+    assert(motor.confirm_axis(known, 1, now));
+    cmd.external_valid = false;
+    assert(!motor.apply_network_target(cmd, now));
+    assert(motor.confirm_axis(known, 1, now, true));
+    assert(motor.apply_network_target(cmd, now));
+    motor.stop(true);
+    calibration.joint.joint_zero_angle.valid = false;
+    assert(motor.configure(p, calibration));
+    assert(motor.configure_interaction(config));
+    step();
+    assert(!motor.confirm_axis(motor.status().position_rad, 1, now));
+}
+
 int main()
 {
+    test_loaded_brake();
+    test_md007_handoff();
     test_control_and_gates();
     test_calibration_persistence_and_fault();
     test_linear_and_reference_commits();

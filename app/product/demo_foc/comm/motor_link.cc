@@ -12,7 +12,7 @@ bool transport_started = false;
 link::HandlerResult on_request(const link::Frame& frame, const link::CompletionToken& completion, void*)
 {
     if (frame.data_len > sizeof(MotorRequest::data) ||
-        frame.cmd_id > static_cast<unsigned>(MotorCommand::TorqueCalibration))
+        frame.cmd_id > static_cast<unsigned>(MotorCommand::SupportedService))
         return link::HandlerResult::completed(2U);
     MotorRequest request;
     request.command = static_cast<MotorCommand>(frame.cmd_id);
@@ -40,6 +40,7 @@ bool start_motor_transport()
         {0x000U, 0x7FFU}, {0x080U, 0x7FFU}, {0x600U, 0x780U},
 #if defined(CONFIG_DEMO_FOC_MD007_MOTION)
         {0x200U + CONFIG_DEMO_FOC_CANOPEN_NODE_ID, 0x7FFU},
+        {0x300U + CONFIG_DEMO_FOC_CANOPEN_NODE_ID, 0x7FFU},
 #endif
     };
     if (!can.is_started() &&

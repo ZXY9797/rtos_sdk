@@ -353,8 +353,9 @@ Status Can::set_standard_filters(const CanFilter* filters, size_t count)
     return Status::Ok;
 }
 
-Status Can::abort_pending_fd(uint32_t id)
+Status Can::abort_pending_fd(uint32_t id, bool* requested)
 {
+    if (requested) *requested = false;
     if (id > CAN_SFID_MASK) return Status::InvalidArgument;
     osal::LockGuard lock(m_operation_mutex, 0U);
     if (!lock.owns_lock()) return Status::Busy;
@@ -365,8 +366,10 @@ Status Can::abort_pending_fd(uint32_t id)
     for (unsigned i = 0U; i < 3U; ++i) {
         if (!(available & (CAN_TSTAT_TME0 << i)) &&
             (CAN_TMP(base, i) & CAN_TMP_FDF) != 0U &&
-            (CAN_TMI(base, i) & (CAN_TMI_FF | CAN_TMI_SFID)) == TMI_SFID(id))
+            (CAN_TMI(base, i) & (CAN_TMI_FF | CAN_TMI_SFID)) == TMI_SFID(id)) {
             CAN_TSTAT(base) = CAN_TSTAT_MST0 << (i * 8U);
+            if (requested) *requested = true;
+        }
     }
     return Status::Ok;
 }

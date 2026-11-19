@@ -1,6 +1,7 @@
 #pragma once
 #include <drivers_generated.h>
 #include <algo/motor.h>
+#include "control/brake_control.h"
 
 namespace app::board {
 decltype(device_get(uart0)) console();
@@ -13,7 +14,7 @@ decltype(device_get(adc_temperature)) temperature_adc();
 bool start_acquisition(hal::AdcBase::ScanCallback current,
                        hal::AdcBase::ScanCallback joint, void* context);
 void stop_acquisition();
-bool apply(const algo::motor::CurrentLoopOutput& output);
+bool apply(const algo::motor::CurrentLoopOutput& output, BrakePhase phase, bool supported_service);
 void shutdown();
 bool output_enabled();
 algo::motor::TemperatureSample temperature(const algo::motor::MotorParameters& parameters);

@@ -35,6 +35,7 @@ uint8_t telemetry_owner = 0U, capture_owner = 0U, telemetry_kind = 0U;
 uint16_t telemetry_period_ms = 20U;
 uint32_t telemetry_sent_ms = 0U;
 int safety_output = -1;
+bool supported_service = false;
 MotorAngleLutData read_lut {};
 uint8_t interaction_record[CalibrationRecord::maximum_payload_size]{};
 InteractionConfig interaction_candidate{};
@@ -45,80 +46,65 @@ bool command_joint_drive(JointDriveAction action, const JointDriveTarget& target
 {
     hal::IrqGuard guard;
     if (action == JointDriveAction::Disable) {
-        motor.stop(true);
-        board::shutdown();
+        motor.controlled_stop(now_us);
         return true;
     }
     if (action == JointDriveAction::ResetFault)
         return !system_safety::latched() && motor.clear_fault();
 
-    const auto& limits = motor.interaction_config().execution;
-    const auto sample = motor.joint_feedback_sample();
-    if (system_safety::latched() || !acquiring.load(std::memory_order_relaxed) ||
-        !limits.position_limits || !sample.valid ||
-        uint32_t(system_clock::now_us() - sample.sample_us) > 1000U ||
-        sample.position_rad < limits.minimum_position_rad ||
-        sample.position_rad > limits.maximum_position_rad)
-        return false;
-    constexpr JointTargetMode modes[] {JointTargetMode::Position, JointTargetMode::Velocity,
-                                       JointTargetMode::Torque};
-    if (target.mode < 8U || target.mode > 10U) return false;
-    const auto mode = modes[target.mode - 8U];
-    JointTargetOrder order;
-    order.position_rad = target.position_urad * 1.0e-6F;
-    order.velocity_rad_s = target.velocity_urad_s * 1.0e-6F;
-    // CST is per mille of rated torque. The same k6216 torque constant
-    // maps rated torque and target torque to rated and target q current.
-    order.torque_a = target.torque_per_mille * 0.004F;
-    order.host_timestamp_us = now_us;
-    if ((mode == JointTargetMode::Position && (order.position_rad < limits.minimum_position_rad ||
-                                               order.position_rad > limits.maximum_position_rad)) ||
-        (mode == JointTargetMode::Velocity &&
-         (order.velocity_rad_s < -limits.maximum_velocity_rad_s ||
-          order.velocity_rad_s > limits.maximum_velocity_rad_s)) ||
-        target.torque_per_mille < -1000 || target.torque_per_mille > 1000)
-        return false;
-    if (motor.drive_requested()) {
-        if (motor.mode_status().mode != mode) return false;
-    } else {
-        if (!motor.select_mode(mode) || !motor.enable(true)) return false;
-    }
-    if (motor.submit(order)) return true;
-    motor.stop(true);
-    board::shutdown();
-    return false;
+    return !supported_service && !system_safety::latched() && acquiring.load(std::memory_order_relaxed) &&
+           motor.apply_network_target(target, system_clock::now_us());
 }
 
 JointCanopenFd joint_network {CONFIG_DEMO_FOC_CANOPEN_NODE_ID, command_joint_drive};
 #else
 JointCanopenFd joint_network {CONFIG_DEMO_FOC_CANOPEN_NODE_ID};
 #endif
-uint32_t feedback_sent_us = 0U;
-bool feedback_mailbox_pending = false;
+struct FeedbackMailbox {
+    uint32_t id;
+    uint32_t sent_us{};
+    bool pending{};
+};
+FeedbackMailbox feedback_mailboxes[] {
+    {0x180U + CONFIG_DEMO_FOC_CANOPEN_NODE_ID}, {0x280U + CONFIG_DEMO_FOC_CANOPEN_NODE_ID}
+};
+
+bool cancel_feedback(hal::Can& can, FeedbackMailbox& box)
+{
+    if (!box.pending) return true;
+    bool requested = false;
+    if (can.abort_pending_fd(box.id, &requested) != hal::Status::Ok) return false;
+    if (requested) joint_network.record_drop();
+    box.pending = false;
+    return true;
+}
 
 bool send_joint_frame(void* context, const hal::CanFrame& frame)
 {
     auto& can = *static_cast<hal::Can*>(context);
-    const bool feedback = frame.id == joint_network.feedback_cob_id();
-    if (feedback && feedback_mailbox_pending) {
-        if (can.abort_pending_fd(frame.id) != hal::Status::Ok) return false;
-        feedback_mailbox_pending = false;
+    for (auto& box : feedback_mailboxes) {
+        if (frame.id != box.id) continue;
+        if (!cancel_feedback(can, box) || can.send_fd(frame) != hal::Status::Ok) return false;
+        box.pending = true;
+        box.sent_us = system_clock::now_us();
+        return true;
     }
-    if (can.send_fd(frame) != hal::Status::Ok) return false;
-    if (feedback) {
-        feedback_mailbox_pending = true;
-        feedback_sent_us = system_clock::now_us();
-    }
-    return true;
+    return can.send_fd(frame) == hal::Status::Ok;
 }
 
 void poll_joint_network()
 {
     auto& can = board::main_can().native();
     const uint32_t service_time = system_clock::now_us();
-    if (feedback_mailbox_pending && service_time - feedback_sent_us >= 1000U &&
-        can.abort_pending_fd(joint_network.feedback_cob_id()) == hal::Status::Ok)
-        feedback_mailbox_pending = false;
+    for (auto& box : feedback_mailboxes) {
+        if (box.pending && service_time - box.sent_us >= 1000U) (void)cancel_feedback(can, box);
+    }
+    JointFeedbackSample health;
+    {
+        hal::IrqGuard guard;
+        health = motor.joint_feedback_sample();
+    }
+    joint_network.observe(health, service_time, send_joint_frame, &can);
     joint_network.service(service_time, send_joint_frame, &can);
     for (unsigned i = 0; i < 8U; ++i) {
         hal::CanFrame frame;
@@ -131,7 +117,7 @@ void poll_joint_network()
             hal::IrqGuard guard;
             sample = motor.joint_feedback_sample();
             sample.valid = sample.valid && acquiring.load(std::memory_order_relaxed);
-            sample.output_enabled = board::output_enabled();
+            sample.output_enabled = board::output_enabled() && motor.brake_phase() == BrakePhase::Running;
             now = system_clock::now_us();
         }
         joint_network.process(frame, sample, now, send_joint_frame, &can);
@@ -170,7 +156,8 @@ void current_irq(void*, const uint16_t* raw, size_t count, hal::Status status)
     }
     float voltage[6];
     for (size_t i = 0; i < 6U; ++i) voltage[i] = current_scale.voltage(raw[i]);
-    if (!board::apply(motor.current_sample(voltage, timing.start_us))) motor.fault();
+    const auto& output = motor.current_sample(voltage, timing.start_us);
+    if (!board::apply(output, motor.brake_phase(), supported_service)) motor.fault();
 }
 
 void joint_irq(void*, const uint16_t* raw, size_t count, hal::Status status)
@@ -192,6 +179,7 @@ void pause_acquisition()
 {
     hal::IrqGuard guard;
     acquiring.store(false, std::memory_order_release);
+    motor.invalidate_axis();
     board::stop_acquisition();
 }
 
@@ -414,7 +402,25 @@ bool execute(const MotorRequest& command, MotorResponse& response)
     default: break;
     }
 #endif
+    if (!supported_service && (command.command == MotorCommand::Calibrate ||
+        command.command == MotorCommand::Backlash || command.command == MotorCommand::Rl ||
+        command.command == MotorCommand::Sweep)) return false;
     switch (command.command) {
+    case MotorCommand::ConfirmAxis: {
+        if ((command.size != 5U && command.size != 6U) || supported_service ||
+            (command.size == 6U && data[5] > 1U)) return false;
+        hal::IrqGuard guard;
+        return motor.confirm_axis(read_float(data), int8_t(data[4]), system_clock::now_us(),
+                                  command.size == 6U && data[5] == 1U);
+    }
+    case MotorCommand::SupportedService: {
+        if (command.size != 1U || data[0] > 1U) return false;
+        hal::IrqGuard guard;
+        if (!motor.idle()) return false;
+        supported_service = data[0] != 0;
+        motor.invalidate_axis();
+        return true;
+    }
     case MotorCommand::Status: return command.size == 0U;
     case MotorCommand::Enable: {
         if (command.size != 1U || data[0] != 0U) return false;
@@ -422,9 +428,8 @@ bool execute(const MotorRequest& command, MotorResponse& response)
         joint_network.inhibit(system_clock::now_us());
 #endif
         hal::IrqGuard guard;
-        const bool ok = motor.enable(false);
-        if (!motor.status().backlash.active) board::shutdown();
-        return ok;
+        motor.controlled_stop(system_clock::now_us());
+        return true;
     }
     case MotorCommand::Mode:
     case MotorCommand::Target:
@@ -442,8 +447,8 @@ bool execute(const MotorRequest& command, MotorResponse& response)
         joint_network.inhibit(system_clock::now_us());
 #endif
         hal::IrqGuard guard;
-        motor.stop(data[0] != 0U);
-        if (!motor.status().backlash.active) board::shutdown();
+        if (data[0]) { motor.stop(true); board::shutdown(); }
+        else motor.controlled_stop(system_clock::now_us());
         return true;
     }
     case MotorCommand::ClearFault: {
@@ -613,14 +618,8 @@ bool execute(const MotorRequest& command, MotorResponse& response)
               r.elastic_effort_nm, r.energy_j, r.stiffness, r.damping, l.applied_current_a, l.current_limit_a,
               l.command_age_s, l.invalid_temperature_s, l.excess_i2t_a2_s, l.electrical_power_w})
             response.real(x);
-        const auto &task = motor.cartesian_result();
-        response.byte(task.valid);
-        response.byte(0);
-        response.u16(0);
-        for (float x : task.error)
-            response.real(x);
-        for (float x : task.command)
-            response.real(x);
+        // Reserved fields in the diagnostic wire format.
+        for (unsigned i = 0; i < 13; ++i) response.u32(0);
         response.u32(motor.external_sequence());
         response.real(motor.external_age_s());
         response.byte(motor.external_flags());
@@ -782,7 +781,7 @@ int start_control()
                                                    });
     if (safety_output < 0 || !start_motor_transport()) { stop_control(); return -1; }
     joint_network.reset();
-    feedback_mailbox_pending = false;
+    for (auto& box : feedback_mailboxes) box.pending = false;
     osal::PeriodicThreadConfig config;
     config.name = "foc_slow";
     config.entry = slow_entry;
@@ -807,8 +806,7 @@ void stop_control()
         board::shutdown();
     }
     slow_thread.destroy();
-    (void)board::main_can().native().abort_pending_fd(joint_network.feedback_cob_id());
-    feedback_mailbox_pending = false;
+    for (auto& box : feedback_mailboxes) (void)cancel_feedback(board::main_can().native(), box);
     pause_acquisition();
     commands.destroy();
     if (safety_output >= 0) { system_safety::unregister_output(safety_output); safety_output = -1; }

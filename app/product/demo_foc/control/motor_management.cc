@@ -4,6 +4,93 @@
 namespace app {
 using namespace algo::motor;
 
+bool MotorControl::apply_network_target(const JointDriveTarget& target, uint32_t now_us)
+{
+    const auto& limits = interaction_config().execution;
+    const auto sample = joint_feedback_sample();
+    if (!axis_confirmed() || sample.faults ||
+        !limits.position_limits || !sample.valid ||
+        uint32_t(now_us - sample.sample_us) > 1000U ||
+        sample.position_rad < limits.minimum_position_rad ||
+        sample.position_rad > limits.maximum_position_rad)
+        return false;
+    constexpr JointTargetMode modes[] {JointTargetMode::Position, JointTargetMode::Velocity,
+                                       JointTargetMode::Torque};
+    const bool physical = target.extended && target.mode >= kDragMode;
+    if (!physical && (target.mode < 8U || target.mode > 10U)) return false;
+    const auto mode = physical ? static_cast<JointTargetMode>(5U + kImpedanceMode - target.mode)
+                               : modes[target.mode - 8U];
+    JointTargetOrder order;
+    order.position_rad = target.position_urad * 1.0e-6F;
+    order.velocity_rad_s = target.velocity_urad_s * 1.0e-6F;
+    // CST is per mille of rated torque. The same k6216 torque constant
+    // maps rated torque and target torque to rated and target q current.
+    order.torque_a = target.torque_per_mille * 0.004F;
+    order.host_timestamp_us = now_us;
+    if ((mode == JointTargetMode::Position && (order.position_rad < limits.minimum_position_rad ||
+                                               order.position_rad > limits.maximum_position_rad)) ||
+        (mode == JointTargetMode::Velocity &&
+         (order.velocity_rad_s < -limits.maximum_velocity_rad_s ||
+          order.velocity_rad_s > limits.maximum_velocity_rad_s)) ||
+        target.torque_per_mille < -1000 || target.torque_per_mille > 1000)
+        return false;
+    if (brake_phase() == BrakePhase::Stopping || brake_phase() == BrakePhase::Engaging)
+        return false;
+    const auto& b = interaction_config().brake;
+    const float support = target.support_valid ? target.support_ma * .001F : b.hold_a;
+    if (std::fabs(support) + b.tolerance_a > limits.continuous_current_a ||
+        (support != 0 && std::fabs(support) <= b.tolerance_a)) return false;
+    if (target.external_valid) {
+        const float age = target.external_age_ms * .001F;
+        if (age >= interaction_config_.joint.external_timeout_s) return false;
+        const float values[9] {target.external_mnm * .001F};
+        if (!external_feedback(target.external_sequence, 1U, values, age)) return false;
+    }
+    const bool model_available = physical && elastic_referenced_ && interaction_config_.joint.use_model_external &&
+                                 interaction_config_.joint.elastic.stiffness_nm_rad > 0;
+    const bool needs_external = b.collision_nm > 0 || target.mode == kAdmittanceMode || target.mode == kDragMode;
+    if (needs_external && !model_available && !(external_flags() & 1U)) return false;
+    const bool starting = !enabled_;
+    if (physical) {
+        const auto& j = interaction_config().joint;
+        ModeCommand cmd;
+        cmd.enabled = true;
+        cmd.mode = mode;
+        cmd.physical.position_rad = order.position_rad;
+        cmd.physical.velocity_rad_s = order.velocity_rad_s;
+        cmd.physical.torque_nm = target.torque_mnm * 0.001F;
+        cmd.physical.stiffness = target.stiffness_milli * 0.001F;
+        cmd.physical.damping = target.damping_milli * 0.001F;
+        if (!j.torque.valid() || order.position_rad < limits.minimum_position_rad ||
+            order.position_rad > limits.maximum_position_rad ||
+            std::fabs(order.velocity_rad_s) > limits.maximum_velocity_rad_s ||
+            std::fabs(cmd.physical.torque_nm) > j.torque_limit_nm) return false;
+        if (drive_requested() && mode_status().mode != mode) return false;
+        if (starting && !begin_handoff(now_us)) return false;
+        if (!submit_interaction(cmd)) {
+            if (starting) stop(true);
+            else controlled_stop(now_us);
+            return false;
+        }
+        support_current_a_ = support;
+        mark_network_target(target.sequence, now_us);
+        return true;
+    }
+    if (drive_requested()) {
+        if (mode_status().mode != mode) return false;
+    } else {
+        if (!select_mode(mode) || !begin_handoff(now_us)) return false;
+    }
+    if (submit(order)) {
+        support_current_a_ = support;
+        mark_network_target(target.extended ? target.sequence : target.sync, now_us);
+        return true;
+    }
+    if (starting) stop(true);
+    else controlled_stop(now_us);
+    return false;
+}
+
 bool MotorControl::mode_command(const ModeCommand& command)
 {
     const auto& target = command.target;
@@ -51,7 +138,6 @@ bool MotorControl::mode_command(const ModeCommand& command)
                 return false;
             }
             interaction_.stop();
-            cartesian_active_ = false;
             control_mode_ = uint8_t(command.mode);
         }
         stopping_ = false;
@@ -138,8 +224,31 @@ JointFeedbackSample MotorControl::joint_feedback_sample() const
     sample.bus_voltage_v = feedback_.electrical().vbus_calib;
     sample.sample_us = joint_us_;
     sample.sequence = joint_count_;
-    sample.faults = mode_status().faults;
+    sample.faults = mode_status().faults | stop_reason_ | first_fault_;
+    sample.first_fault = first_fault_;
+    sample.fault_us = first_fault_us_;
+    sample.fault_phase = uint8_t(first_fault_phase_);
+    sample.applied_sequence = network_sequence_;
+    sample.applied_us = network_applied_us_;
+    sample.apply_delay_us = applied_delay_us_;
+    sample.applied_valid = network_applied_;
+    sample.brake_phase = uint8_t(brake_.phase());
+    const auto& j = interaction_config_.joint;
+    if (j.torque.valid()) {
+        sample.output_nm = j.torque.torque(current_output_.current_a.q);
+        sample.effort_flags |= 1U;
+    }
+    if ((external_flags() & 1U) != 0) {
+        sample.external_nm = external_.external_nm;
+        sample.external_age_us = uint32_t(std::min(4000.0F, external_age_s_) * 1e6F);
+        sample.effort_flags |= 2U;
+    } else if (elastic_referenced_ && j.use_model_external && j.elastic.stiffness_nm_rad > 0 &&
+               interaction_.active() && interaction_snapshot_.valid && enabled_) {
+        sample.external_nm = interaction_snapshot_.external_estimate_nm;
+        sample.effort_flags |= 4U;
+    }
     sample.valid = joint_valid_ && fast_count_ != 0U &&
+                   int32_t(joint_us_ - input_us_) <= 1000 &&
                    calibration_.output.tmr1_calib.valid && calibration_.output.tmr2_calib.valid;
     return sample;
 }

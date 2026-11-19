@@ -21,7 +21,7 @@ TIMER7 TRGO → ADC1 双通道、16 倍累加 → DMA IRQ（4 kHz）
 
 CANopen FD 运动命令支持 CSP、CSV、CST。位置可切换线性或 S 曲线规划；输入/输出传感器、电角度、
 零位、offset、线性电流/Vbus、LUT360 均有命令入口。R/L、电流扫频和背隙具有独立互斥流程。
-参数使用 `MotorVariant::ProfileF`，14 极对、64:1 减速比。启用运动后可通过 UART 显式发起完整标定。
+参数使用 `MotorVariant::ProfileF`，14 极对、64:1 减速比。机械支撑模式下可通过 UART 显式发起完整标定。
 
 ## 控制能力边界
 
@@ -196,6 +196,6 @@ python bootloader/scripts/build_3in1.py demo_foc --out out/demo_foc_3in1 `
 
 ## 关节保护配置
 
-运动前通过 UART 设置机构行程和速度限制。交互控制配置记录使用 NVS `0x4300`。
+运动前通过 UART 设置机构行程、速度和带载抱闸参数，并确认关节机械坐标。交互控制配置记录使用 NVS `0x4300`。
 Observe kind=3 提供各 NTC 电压、温度和有效位。关节命令超时和恢复流程见
 [CANopen FD 接口](doc/md007_v1.md#canopen-fd-接口)。

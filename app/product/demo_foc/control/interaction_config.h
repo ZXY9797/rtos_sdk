@@ -1,4 +1,5 @@
 #pragma once
+#include "control/brake_control.h"
 #include <algo/interaction.h>
 #include <algo/robotics.h>
 #include <algo/motor/execution_limits.h>
@@ -19,11 +20,12 @@ struct InteractionConfig
 {
     algo::motor::ExecutionConfig execution{};
     algo::interaction::InteractionConfig joint{};
+    BrakeConfig brake{};
     ElectricalModel electrical{};
     CartesianModel cartesian{};
     float cogging_nm[64]{};
 };
-inline constexpr unsigned kInteractionSections = 10;
+inline constexpr unsigned kInteractionSections = 11;
 // One schema drives wire encoding, decoding and persistence. Booleans are encoded
 // as exact float32 0/1; no ABI-dependent C++ object representation is stored.
 template <class Visitor> bool visit_config(InteractionConfig &c, unsigned section, Visitor &&f)
@@ -169,6 +171,13 @@ template <class Visitor> bool visit_config(InteractionConfig &c, unsigned sectio
         for (float &x : c.cogging_nm)
             f(x);
         break;
+    case 10: {
+        auto& b = c.brake;
+        f(b.hold_a); f(b.tolerance_a); f(b.preload_ms); f(b.release_ms); f(b.engage_ms);
+        f(b.travel_rad); f(b.still_rad_s); f(b.deceleration); f(b.kp_a_rad); f(b.kd_a_s_rad);
+        f(b.collision_nm); f(b.collision_ms);
+        break;
+    }
     default:
         return false;
     }

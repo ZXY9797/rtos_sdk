@@ -16,6 +16,7 @@ enum class ExecutionFault : uint32_t
     ExternalSignal = 128U,
     PowerBudget = 256U,
     InteractionController = 512U,
+    BrakeHandoff = 1024U,
 };
 
 struct ExecutionConfig

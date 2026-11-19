@@ -6,6 +6,9 @@
 namespace app {
 using namespace algo::motor;
 
+// Construct the large filter and calibration state in RAM at startup.
+MotorControl::MotorControl() = default;
+
 MotorSensorCalibData MotorControl::sensors() const
 {
     MotorSensorCalibData result;
@@ -24,6 +27,7 @@ bool MotorControl::configure_feedback()
     electrical.iv_calib = calibration_.current.iv_calib;
     electrical.iw_calib = calibration_.current.iw_calib;
     electrical.vbus_calib = calibration_.bus;
+    invalidate_axis();
     rotor_valid_ = joint_valid_ = false;
     sample_.valid = false;
     return feedback_.configure(parameters_, electrical, sensors(), calibration_.joint);
@@ -115,9 +119,46 @@ void MotorControl::reset_control()
     joint_.reset(feedback_.loop_feedback());
     interaction_.stop();
     interaction_snapshot_.energize = false;
-    cartesian_.reset();
-    cartesian_active_ = false;
     (void)limits_.apply(0, 0, 0, 0, false);
+}
+
+bool MotorControl::confirm_axis(float known_position, int direction, uint32_t now, bool unloaded)
+{
+    if (!idle()) return false;
+    invalidate_axis();
+    const auto& config = interaction_config_;
+    if (first_fault_ || !ready() || !calibration_.joint.joint_zero_angle.valid ||
+        direction != parameters_.joint.invert_sign || !config.execution.position_limits ||
+        !config.brake.valid(config.execution.continuous_current_a) ||
+        !std::isfinite(known_position) || now - joint_us_ > 1000U ||
+        std::fabs(feedback_.joint().angular_velocity) > config.brake.still_rad_s ||
+        known_position < config.execution.minimum_position_rad ||
+        known_position > config.execution.maximum_position_rad) return false;
+    support_current_a_ = config.brake.hold_a;
+    axis_confirmed_ = feedback_.recover_turn(known_position, config.brake.travel_rad);
+    if (axis_confirmed_ && unloaded) {
+        feedback_.align_unloaded(config.joint.elastic.zero_rad);
+        elastic_referenced_ = true;
+    }
+    return axis_confirmed_;
+}
+
+bool MotorControl::begin_handoff(uint32_t now)
+{
+    if (stop_reason_ || !axis_confirmed_ || brake_.phase() != BrakePhase::Locked || !enable(true)) return false;
+    brake_.start(feedback_.joint().multi_turn_angle_filted, now);
+    contact_time_s_ = 0;
+    network_applied_ = false;
+    return true;
+}
+
+void MotorControl::controlled_stop(uint32_t now)
+{
+    network_pending_ = false;
+    if (!enabled_ || brake_.phase() == BrakePhase::Locked) { stop(true); return; }
+    const auto& joint = feedback_.joint();
+    brake_.set_stop_timeout(joint.angular_velocity, interaction_config_.brake);
+    brake_.stop(joint.multi_turn_angle_filted, joint.angular_velocity, now);
 }
 
 bool MotorControl::enable(bool value)
@@ -232,12 +273,32 @@ bool MotorControl::joint_sample(float tmr1, float tmr2, uint32_t timestamp_us)
     if (moving && interaction_config_.execution.temperature_timeout_s > 0 &&
         temperature_age_s_ > interaction_config_.execution.temperature_timeout_s)
         limits_.trip(ExecutionFault::TemperatureStale);
+    const bool executing = brake_.phase() == BrakePhase::Preload || brake_.phase() == BrakePhase::Releasing ||
+                           brake_.phase() == BrakePhase::Running;
+    if (executing && timestamp_us - network_received_us_ >= kNetworkTimeoutUs) {
+        stop_reason_ = uint32_t(JointFault::NetworkTimeout);
+        latch_fault(stop_reason_, timestamp_us);
+        controlled_stop(timestamp_us);
+    }
+    if (executing) {
+        const auto& j = interaction_config_.joint;
+        const bool needs_external = control_mode_ == 6 || control_mode_ == 7 ||
+                                    interaction_config_.brake.collision_nm > 0;
+        const bool model = elastic_referenced_ && control_mode_ >= 4 && j.use_model_external && j.elastic.stiffness_nm_rad > 0;
+        if (needs_external && !model && (external_flags() & 1U) == 0) {
+            stop_reason_ = uint32_t(ExecutionFault::ExternalSignal) << 6U;
+            latch_fault(stop_reason_, timestamp_us);
+            controlled_stop(timestamp_us);
+        }
+    }
+    const bool handoff = brake_.phase() != BrakePhase::Locked && brake_.phase() != BrakePhase::Running;
+    if (handoff) limits_.touch_command();
     const auto trace = joint_.trace();
     limits_.supervise(
         feedback_.joint().multi_turn_angle_filted, feedback_.velocity().output_angular_velocity,
         control_mode_ >= 4 ? interaction_.result().reference_rad - feedback_.joint().multi_turn_angle_filted
                            : trace.position_error_rad,
-        enabled_ && (control_mode_ == 2 || control_mode_ == 3 || control_mode_ == 5 || control_mode_ == 6 ||
+        enabled_ && !handoff && (control_mode_ == 2 || control_mode_ == 3 || control_mode_ == 5 || control_mode_ == 6 ||
                      control_mode_ == 7 || control_mode_ == 10),
         moving, enabled_, std::max(temperature_.board_temperature_c, temperature_.motor_temperature_c),
         temperature_.valid);
@@ -249,6 +310,23 @@ bool MotorControl::joint_sample(float tmr1, float tmr2, uint32_t timestamp_us)
     if (!joint_valid_) {
         if (enabled_ || backlash_.active()) fault();
         return false;
+    }
+    if (handoff && enabled_) {
+        const auto& joint = feedback_.joint();
+        float request = 0;
+        if (!brake_.step(interaction_config_.brake, support_current_a_, timestamp_us, 1 / parameters_.joint.frequency_hz,
+                         joint.multi_turn_angle_filted, joint.angular_velocity, current_output_.current_a.q,
+                         request)) {
+            limits_.trip(ExecutionFault::BrakeHandoff);
+            fault();
+            return false;
+        }
+        if (brake_.phase() == BrakePhase::Locked) { stop(true); return true; }
+        q_target_a_ = limits_.apply(request, joint.multi_turn_angle_filted, joint.angular_velocity,
+            interaction_config_.joint.torque.valid() ? interaction_config_.joint.torque.joint_nm_per_iq_a :
+            parameters_.joint.invert_sign, true, interaction_config_.joint.torque.bias_nm);
+        joint_.track_applied(q_target_a_);
+        return true;
     }
     if (backlash_.active()) {
         const float velocity = backlash_.update(
@@ -282,21 +360,16 @@ bool MotorControl::joint_sample(float tmr1, float tmr2, uint32_t timestamp_us)
         interaction_config_.joint.torque.valid() ? interaction_config_.joint.torque.bias_nm : 0.0F);
     if (control_mode_ >= 4)
     {
-        if (!cartesian_active_)
+        q_target_a_ = interaction_.limit_applied(q_target_a_, feedback_.joint().angular_velocity);
+        if (!std::isfinite(q_target_a_) ||
+            std::fabs(q_target_a_) > limits_.state().current_limit_a + 1e-6F)
         {
-            q_target_a_ = interaction_.limit_applied(q_target_a_, feedback_.joint().angular_velocity);
-            if (!std::isfinite(q_target_a_) ||
-                std::fabs(q_target_a_) > limits_.state().current_limit_a + 1e-6F)
-            {
-                limits_.trip(ExecutionFault::PowerBudget);
-                fault();
-                return false;
-            }
-            limits_.track_applied(q_target_a_);
+            limits_.trip(ExecutionFault::PowerBudget);
+            fault();
+            return false;
         }
+        limits_.track_applied(q_target_a_);
         interaction_.track_applied(q_target_a_);
-        if (cartesian_active_)
-            cartesian_.track_applied({interaction_config_.joint.torque.torque(q_target_a_)});
     }
     else
         joint_.track_applied(q_target_a_);
@@ -309,6 +382,33 @@ bool MotorControl::joint_sample(float tmr1, float tmr2, uint32_t timestamp_us)
     }
     if (run && valid && !energize)
         stop(true);
+    if (run && valid && energize && network_pending_ && enabled_) {
+        network_sequence_ = pending_network_sequence_;
+        network_applied_us_ = timestamp_us;
+        applied_delay_us_ = timestamp_us - network_received_us_;
+        network_pending_ = false;
+        network_applied_ = true;
+    }
+    const auto& b = interaction_config_.brake;
+    if (brake_.phase() == BrakePhase::Running && b.collision_nm > 0) {
+        const auto f = interaction_feedback();
+        const bool model = elastic_referenced_ && control_mode_ >= 4 && interaction_snapshot_.valid &&
+                           interaction_config_.joint.use_model_external &&
+                           interaction_config_.joint.elastic.stiffness_nm_rad > 0;
+        const float residual = f.external_valid ? f.external_nm : interaction_snapshot_.external_estimate_nm;
+        if (!f.external_valid && !model) {
+            limits_.trip(ExecutionFault::ExternalSignal);
+            fault();
+            return false;
+        }
+        contact_time_s_ = std::fabs(residual) >= b.collision_nm ?
+            contact_time_s_ + 1 / parameters_.joint.frequency_hz : 0;
+        if (contact_time_s_ * 1000 >= b.collision_ms) {
+            stop_reason_ = uint32_t(JointFault::Contact);
+            latch_fault(stop_reason_, timestamp_us);
+            controlled_stop(timestamp_us);
+        }
+    }
     confirm_mode(complete);
     capture_pair(timestamp_us);
     return true;
@@ -333,6 +433,8 @@ void MotorControl::tick_1ms(uint32_t now_ms, const TemperatureSample& temperatur
                    uint32_t(now_ms-last_joint_ms_) > 2U)) fault();
     diagnostics_.tick_1ms(!hardware_fault_ && !protection_.active(), hardware_fault_ || protection_.active());
     if (protection_.active()) {
+        latch_fault(protection_.fault_mask(), int32_t(input_us_ - joint_us_) >= 0 ? input_us_ : joint_us_);
+        brake_.lock();
         if (mode_managed_) local_disable_ = true;
         enabled_ = false;
         backlash_.cancel(true);
@@ -408,6 +510,8 @@ bool MotorControl::start_backlash()
 
 void MotorControl::stop(bool emergency)
 {
+    brake_.lock();
+    network_pending_ = false;
     if (mode_managed_) local_disable_ = true;
     enabled_ = false;
     calibrator_.cancel();
@@ -417,9 +521,19 @@ void MotorControl::stop(bool emergency)
     if (!backlash_.active()) reset_control();
 }
 
+void MotorControl::latch_fault(uint32_t reason, uint32_t now)
+{
+    if (first_fault_) return;
+    first_fault_ = reason;
+    first_fault_phase_ = brake_.phase();
+    first_fault_us_ = now;
+}
+
 void MotorControl::fault()
 {
     hardware_fault_ = true;
+    const uint32_t sample_us = int32_t(input_us_ - joint_us_) >= 0 ? input_us_ : joint_us_;
+    latch_fault(mode_status().faults, sample_us);
     stop(true);
     current_output_ = {};
 }
@@ -432,6 +546,8 @@ bool MotorControl::clear_fault()
     if (!exclusive_available() || protection_.active() || !limits_.clear())
         return false;
     hardware_fault_ = stopping_ = false;
+    stop_reason_ = first_fault_ = 0;
+    contact_time_s_ = 0;
     reset_control();
     return true;
 }
@@ -541,7 +657,7 @@ bool MotorControl::lut_abort(const AngleLutRequest& request, uint16_t owner)
 bool MotorControl::lut_finish(bool verified)
 {
     if (!lut_.complete_persistence(verified)) { output_view_.updating = false; return false; }
-    if (lut_.apply_output()) output_lut_ = lut_.data();
+    if (lut_.apply_output()) { output_lut_ = lut_.data(); invalidate_axis(); }
     output_view_.updating = false;
     return true;
 }

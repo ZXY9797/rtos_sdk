@@ -10,7 +10,7 @@ enum class MotorCommand : uint8_t {
     Stream, Rl, Sweep, Lut, JointZero, JointOffset, CurrentLinear, BusLinear, Plan,
     CalibrationData, Observe, ModeTransaction, ModeStatus, Telemetry, Capture,
     InteractionConfig, ExternalFeedback, InteractionStatus,
-    ElectricalModel, TorqueCalibration,
+    ElectricalModel, TorqueCalibration, ConfirmAxis, SupportedService,
 };
 
 struct MotorRequest {

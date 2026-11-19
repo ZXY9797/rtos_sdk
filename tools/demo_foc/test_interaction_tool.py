@@ -10,8 +10,9 @@ class InteractionToolTest(unittest.TestCase):
         symbols = "\n".join(check_elf.REQUIRED)
         self.assertEqual(check_elf.missing_callbacks(symbols), [])
         self.assertEqual(check_elf.missing_callbacks("app::start_control()"), list(check_elf.REQUIRED[:3]))
+
     def test_schema(self):
-        self.assertEqual([len(v) for v in tool.SECTIONS.values()], [18, 14, 8, 11, 6, 13, 5, 41, 48, 64])
+        self.assertEqual([len(v) for v in tool.SECTIONS.values()], [18, 14, 8, 11, 6, 13, 5, 41, 48, 64, 12])
         for section, names in tool.SECTIONS.items():
             values = dict.fromkeys(names, 0.0)
             packet = tool.section_packet(section, values)
@@ -29,6 +30,18 @@ class InteractionToolTest(unittest.TestCase):
         self.assertEqual(motor_tool.mode_status(struct.pack("<BBBBIII", 2, 13, 1, 0, 5, 4, 0))["mode"], 13)
         with self.assertRaises(ValueError):
             tool.physical_packet(5, 0, 1, [0, 0, 0, -1, 0, 0])
+
+    def test_joint_fd_wire(self):
+        wire = tool.joint_pdo(15, -1, 239, 0xFFFFFFFF, 7, 4, -.5, 2, -.25,
+                              stiffness=1.5, damping=.5, external_nm=0, external_sequence=8,
+                              support_a=-.125)
+        self.assertEqual(len(wire), 48)
+        self.assertEqual(wire[:4], bytes([15, 0, 255, 239]))
+        self.assertEqual(struct.unpack_from("<3i", wire, 12), (-500000, 2000000, -250))
+        self.assertEqual(struct.unpack_from("<HHBBh", wire, 40), (4, 0, 3, 0, -125))
+        ack = tool.decode_joint_ack(struct.pack("<7I4B2i2I", *range(11), -250, 400, 350, 1 << 31))
+        self.assertEqual(ack["output_mnm"], -250)
+        self.assertEqual(ack["first_fault"], 1 << 31)
 
     def test_measurement_validity(self):
         packet = tool.external_packet(7, external=-1, force=2, wrench=[1]*6)

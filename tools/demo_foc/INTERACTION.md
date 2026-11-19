@@ -90,7 +90,7 @@ Link 帧版本仍为 1，命令集 0x30。以下长度均不含 ACK 首字节；
 | 0x12 Observe / 0x15 Telemetry | kind 新增 3 | 通用 20 B 头 + present_mask u8, valid_mask u8, reserved u16, voltage[3] f32, temperature[3] f32，共 48 B |
 
 `section_packet = version u8(1), section u8, field_count u16, fields[field_count] f32`。
-完整配置使用 `version=1, sections=10, reserved u16` 头，按 ID 顺序拼接十个 section_packet；当前 payload 956 B，外包 MCAL CRC32 记录。
+完整配置使用 `version=1, sections=11, reserved u16` 头，按 ID 顺序拼接各分区并封装 MCAL CRC32 记录。旧十区配置可读取，新增抱闸参数需调试后写入。
 
 ExternalFeedback：version u8=1，flags u8，reserved u16，sequence u32，host_timestamp_us u32，externalNm/effortNm/forceN 三 f32，worldWrench[6] f32。
 flags bit0/1/2/3 分别表示上述三个标量和 wrench 有效。设备本地到达后超过 `external_timeout_s` 自动失效。
@@ -99,13 +99,17 @@ InteractionStatus：
 
 - 0～7：version u8=1、grip u8、flags u8（valid/energize/limited）、reserved u8、execution_faults u32。
 - 8～67：torqueNm, requestedIq, referenceQ, referenceV, externalEstimateNm, elasticEffortNm, energyJ, K, D, appliedIq, currentLimit, commandAge, invalidTemperatureAge, excessI2t, electricalPower，共 15 f32。
-- 68～71：cartesianValid u8、reserved[3]。
-- 72～119：taskError[6], taskCommandWrench[6]，共 12 f32。
+- 68～71：保留，读为零。
+- 72～119：保留，读为零。
 - 120～131：externalSequence u32、externalAge f32、externalFlags u8、reserved[3]。
 
 execution_faults bit0～9 分别是相过流、超速、硬行程、跟随误差、命令超时、温度失效、I²t、外部信号、不可实现的功率/能量预算、夹持控制器故障。
 旧 Status/ModeStatus 把这些位左移 6 位与原故障合并。既有温度/母线保护位不变。
 旧式 Observe kind=1 的控制目标字段用于模式 0～3；物理控制请读取 InteractionStatus。扩展模式的 Observe 头 version=2，模式号使用 flags[11:8]。
+
+轴承载配置使用 `config-read brake` 和 `config-write brake`。
+`supported-service 1/0` 用于进入和退出已提供机械支撑的标定工况。
+`confirm-axis` 核对机械坐标。驱动接口及各参数单位见 [MD007 节点接口](../../app/product/demo_foc/doc/md007_v1.md)。
 
 ## 检查
 

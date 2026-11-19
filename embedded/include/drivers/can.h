@@ -52,7 +52,7 @@ public:
     [[nodiscard]] Status send_fd(const CanFrame& frame);
     [[nodiscard]] Status receive(CanFrame& frame);
     [[nodiscard]] Status set_standard_filters(const CanFilter* filters, size_t count);
-    [[nodiscard]] Status abort_pending_fd(uint32_t id);
+    [[nodiscard]] Status abort_pending_fd(uint32_t id, bool* requested = nullptr);
 #endif
 
 private:

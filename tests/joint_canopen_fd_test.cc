@@ -206,6 +206,58 @@ void check_drive()
     CHECK(apply_count == 2U && transport.frames.back().data[0] == 0x08U);
 }
 
+void check_extended_drive()
+{
+    JointCanopenFd joint(kNode, [](JointDriveAction, const JointDriveTarget&, uint32_t) { return true; });
+    Transport bus;
+    joint.service(0, send, &bus);
+    nmt(joint, bus, 1, 100);
+    auto pdo = frame(0x300U + kNode, 48);
+    pdo.data[2] = app::kImpedanceMode;
+    auto cycle = [&](unsigned n, uint8_t control) {
+        pdo.data[0] = control;
+        pdo.data[3] = uint8_t(n);
+        pdo.data[4] = uint8_t(n);
+        const uint32_t t = n * 2000U;
+        joint.process(pdo, {}, t - 500, send, &bus);
+        sync(joint, bus, t, uint8_t(n), sample(t-100));
+        CHECK(bus.frames.back().id == 0x280U + kNode);
+    };
+    cycle(1, 6);
+    auto read = frame(0x67F, 6);
+    read.data[0] = kNode;
+    read.data[1] = 0x11;
+    read.data[3] = 1;
+    read.data[4] = 1;
+    read.data[5] = 0x16;
+    joint.process(read, {}, 2500, send, &bus);
+    CHECK(read32(bus.frames.back().data + 8) == 0x21100110U);
+    read.data[4] = 0x10;
+    read.data[5] = 0x21;
+    joint.process(read, {}, 2500, send, &bus);
+    CHECK(read32(bus.frames.back().data + 8) == 6U);
+    cycle(2, 7);
+    for (unsigned n = 3; n <= 28; ++n) cycle(n, 15); // bus alive, operator sequence frozen
+    CHECK(read32(bus.frames.back().data + 44) == (1U << 29));
+    bus.busy = true;
+    joint.observe({}, 57000, send, &bus);
+    bus.busy = false;
+    joint.observe({}, 58000, send, &bus);
+    CHECK(bus.frames.back().id == 0x380U + kNode && bus.frames.back().size == 12);
+    CHECK(read32(bus.frames.back().data) == (1U << 29));
+    auto fault = sample(0);
+    fault.valid = false;
+    fault.faults = 4;
+    const auto count = bus.frames.size();
+    joint.observe(fault, 60000, send, &bus);
+    CHECK(bus.frames.size() == count);
+    JointCanopenFd health(kNode);
+    health.service(0, send, &bus);
+    health.observe(fault, 12, send, &bus);
+    CHECK(bus.frames.back().id == 0x380U + kNode);
+    CHECK(read32(bus.frames.back().data) == 4 && read32(bus.frames.back().data + 4) == 12);
+}
+
 void check_sync_cadence()
 {
     JointCanopenFd joint(kNode);
@@ -230,4 +282,5 @@ int main()
     check_usdo();
     check_drive();
     check_sync_cadence();
+    check_extended_drive();
 }
