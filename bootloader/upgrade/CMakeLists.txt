@@ -51,7 +51,6 @@ target_sources(${MODULE_NAME}
         src/upgrade_init.cc
         src/upgrade_main.cc
         ${LOADER_PAYLOAD_SOURCE}
-        ${PINCTRL_GENERATED_CC}
 )
 
 target_link_libraries(${MODULE_NAME}

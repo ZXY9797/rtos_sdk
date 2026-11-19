@@ -443,7 +443,7 @@ def compress_elf(file_path):
             print_info("%-20s %d(%fk)"%("fix section size:", fix_sec_size, fix_sec_size/1024))
             print_info("%-20s %d(%fk)"%("remap section size:", remap_sec_size, remap_sec_size/1024))
             print_info("%-20s %d(%fk)"%("total section size:", total_sec_size, total_sec_size/ 1024))
-            print_info("%-20s %.2f%% (%d/%d)"%("flash usage:",total_sec_size / flash_size_sym['st_value'] * 100, total_sec_size , flash_size_sym['st_value']))
+            print_info("%-20s %.2f%% (%d/%d)"%("link workspace used:",total_sec_size / flash_size_sym['st_value'] * 100, total_sec_size , flash_size_sym['st_value']))
             print_info("================================================================")
 
     # 异常处理

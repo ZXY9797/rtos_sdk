@@ -9,13 +9,91 @@ from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from device_bindings import parse_adapter
 from gen_device_traits import collect_resources, stable_device_id
-from sdk_artifacts import device_graph, write_changed, normalize_paths
+from sdk_artifacts import (board_fingerprint, device_graph, write_changed, normalize_paths, image_usage,
+                           resource_configuration, resource_delta)
+from resource_budget import check_cases
 from dependency_inventory import tracked_files, tree_digest
 from decode_system_diagnostics import decode
 import struct
 
 
 class ModernContractsTest(unittest.TestCase):
+    def test_native_board_binary_is_hashed_before_unreferenced_pins_are_pruned(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            board = root / 'board.dts'
+            board.write_text('/dts-v1/;\n/include/ "pins.dtsi"\n')
+            pins = root / 'pins.dtsi'
+            definition = '/ { /omit-if-no-ref/ pin: pin { data = /incbin/ ("pin.bin"); }; };'
+            pins.write_text(definition)
+            calibration = root / 'pin.bin'
+            calibration.write_bytes(b'\x01')
+            initial = board_fingerprint(board)
+            pins.write_text('/* pin group */\n' + definition)
+            self.assertEqual(initial, board_fingerprint(board))
+            calibration.write_bytes(b'\x02')
+            self.assertNotEqual(initial, board_fingerprint(board))
+
+    def test_physical_image_and_precompression_ram_budget(self):
+        layout = {"ram_base": 0x2000, "ram_size": 0x800, "image_header_size": 128,
+                  "partitions": {"slot0": {"size": 2048}, "upgrade": {"size": 1536},
+                                 "loader": {"size": 512}}}
+        sections = [{"address": 0x2000, "size": 72}, {"address": 0x2100, "size": 128},
+                    {"address": 0x8000, "size": 64}]
+        usage = image_usage({"firmware": "app"}, layout, 1408, sections)
+        self.assertEqual((usage["image_bytes"], usage["remaining_bytes"], usage["static_ram_bytes"]),
+                         (1536, 0, 200))
+        self.assertEqual(image_usage({"firmware": "loader"}, layout, 513, [])["remaining_bytes"], -1)
+        report = {"configuration": {"profile": "default"}, "usage": usage}
+        baseline = dict(report, usage=dict(usage, image_bytes=1540))
+        self.assertEqual(resource_delta(report, baseline)["image_bytes"], -4)
+        with self.assertRaisesRegex(ValueError, "baseline"):
+            resource_delta(report, dict(baseline, configuration={"profile": "debug"}))
+
+    def test_size_baseline_distinguishes_app_board_toolchain_and_overlay(self):
+        info = {"product": "demo", "firmware": "app", "profile": "default",
+                "application_path": "SDK_ROOT/app/product/demo", "board": "demo",
+                "compiler": "arm-none-eabi-gcc.exe (xPack) 9.3.1",
+                "inputs": {"board_sha256": "hardware", "layout": "layout"},
+                "configuration": {"fragments": [{"path": "prj.conf", "sha256": "old"}],
+                                  "devicetree_sources": [{"path": "app.overlay"}]}}
+        def report(metadata):
+            return {"configuration": resource_configuration(metadata, "FREERTOS"),
+                    "usage": {"image_bytes": 1024, "static_ram_bytes": 128}}
+        baseline = report(info)
+        for different in ({"application_path": "SDK_ROOT/samples/osal_contract"},
+                          {"inputs": dict(info["inputs"], board_sha256="other")},
+                          {"compiler": "arm-none-eabi-gcc (GCC) 13"},
+                          {"configuration": dict(info["configuration"], fragments=[{"path": "debug.conf"}])},
+                          {"configuration": dict(info["configuration"], devicetree_sources=[{"path": "extra.overlay"}])}):
+            with self.subTest(different=different), self.assertRaisesRegex(ValueError, "baseline"):
+                resource_delta(report(dict(info, **different)), baseline)
+        info["compiler"] = info["compiler"].replace(".exe", "")
+        info["configuration"]["fragments"][0]["sha256"] = "changed"
+        self.assertEqual(resource_delta(report(info), baseline)["image_bytes"], 0)
+        externals = []
+        for checkout in ("/runner/arm/app", "D:/work/arm/app"):
+            sources = {"fragments": [{"path": checkout + "/config/prj.conf"}],
+                       "devicetree_sources": [{"path": checkout + "/config/app.overlay"}]}
+            externals.append(report(dict(info, application_id="arm/joint", application_path=checkout,
+                                         configuration=sources)))
+        self.assertEqual(resource_delta(*externals)["static_ram_bytes"], 0)
+
+    def test_size_budget_equality_regression_and_missing_report(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            directory = root / "tiny"
+            directory.mkdir()
+            case = {"name": "tiny", "budget": {"image_bytes": 1024, "static_ram_bytes": 128}}
+            path = directory / "tiny.resources.json"
+            self.assertFalse(check_cases(root, [case])[1])
+            path.write_text(json.dumps({"usage": case["budget"]}))
+            self.assertTrue(check_cases(root, [case])[1])
+            path.write_text(json.dumps({"usage": {"image_bytes": 1025, "static_ram_bytes": 130}}))
+            text, passed = check_cases(root, [case])
+            self.assertFalse(passed)
+            self.assertIn("image_bytes +1, static_ram_bytes +2", text)
+
     def test_build_directory_is_normalized_before_sdk_root(self):
         root = Path('/workspace/sdk')
         build = root / 'out/one'

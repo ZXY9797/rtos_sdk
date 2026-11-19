@@ -7,13 +7,19 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
+import tempfile
 
 from boot_layout import canonical_layout_names, load_layout
 
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "tools"))
+from scripts.sdk_image import image_cache_reset_args
+
+STAGES = ("preloader", "loader", "app")
 TOOLCHAIN_CANDIDATES = (
     ROOT / "out/toolchains/gcc-9.3.1/xpack-arm-none-eabi-gcc-9.3.1-1.4",
     Path("D:/code/mcu_prebuilt/win_x64/xpack-arm-none-eabi-gcc-9.3.1-1.4"),
@@ -51,20 +57,10 @@ def cmake_configure(
         "-B",
         str(build_dir),
         "-GNinja",
-        "-ULINKER_SCRIPT",
-        "-UCMAKE_EXE_LINKER_FLAGS",
-        "-UBOOT_LAYOUT",
-        "-UCONFIG_DIR",
-        "-UAPPLICATION",
-        "-UBOARD",
-        "-UBOARD_ROOT",
-        "-UCONF_FILE",
-        "-UDTC_OVERLAY_FILE",
-        "-UMODULE_ROOTS",
+        *image_cache_reset_args(),
         f"-Dp={product}",
         f"-DFIRMWARE_TYPE={firmware_type}",
         f"-DPROFILE={profile}",
-        "-UEXTRA_CONF_FILE",
         ("-DPython3_EXECUTABLE="
          f"{Path(sys.executable).absolute().as_posix()}"),
     ]
@@ -103,6 +99,9 @@ def build_firmware(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("project", choices=canonical_layout_names())
+    for stage in STAGES:
+        parser.add_argument(f"--{stage}-dir", type=Path,
+                            help=f"use the existing {stage} build (supply all three directories)")
     parser.add_argument(
         "--out",
         type=Path,
@@ -138,6 +137,10 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def stage_dirs(out_root: Path) -> dict[str, Path]:
+    return {stage: out_root / stage for stage in STAGES}
+
+
 def verify_production_configs(out_root: Path) -> None:
     required = {"preloader": "CONFIG_BOOT_PRODUCTION=y", "loader": "CONFIG_BOOT_PRODUCTION=y",
                 "app": "CONFIG_APP_PRODUCTION=y"}
@@ -150,20 +153,35 @@ def verify_production_configs(out_root: Path) -> None:
         raise SystemExit("error: production application lacks watchdog")
 
 
-def verify_image_set(out_root: Path, product: str) -> None:
+def verify_image_set(out_root: Path, product: str, *, required_profile: str | None = None) -> None:
     layout = load_layout(product)
     expected_layout = hashlib.sha256(layout['path'].read_bytes()).hexdigest()
     board = None
-    for image in ('preloader', 'loader', 'app'):
+    for image in STAGES:
         info = json.loads((out_root / image / 'build-info.json').read_text(encoding='utf-8'))
         if info.get('product') != product or info.get('firmware') != image:
             raise SystemExit(f'error: {image} build identity differs from the requested product/image')
+        if required_profile and info.get('profile') != required_profile:
+            raise SystemExit(f'error: {image} requires the {required_profile} profile for production')
         if info.get('inputs', {}).get('layout') != expected_layout:
             raise SystemExit(f'error: {image} does not use the canonical product layout')
-        selected_board = info.get('board')
-        if not selected_board or (board is not None and selected_board != board):
+        hardware = info['inputs'].get('board_sha256')
+        if not hardware:
+            raise SystemExit(f'error: {image} lacks a base board fingerprint; rebuild this image')
+        selected_board = (info.get('board'), hardware)
+        if not selected_board[0] or (board is not None and selected_board != board):
             raise SystemExit(f'error: {image} board differs from the rest of the image set')
         board = selected_board
+
+
+def verify_linked_files(directory: Path, name: str) -> None:
+    manifest = json.loads((directory / f"{name}.manifest.json").read_text(encoding="utf-8"))
+    metadata = json.loads((directory / "build-info.json").read_text(encoding="utf-8"))
+    binary = directory / f"{name}.bin"
+    if (metadata != manifest["build"]
+            or hashlib.sha256(binary.read_bytes()).hexdigest() != manifest["artifacts"][binary.name]["sha256"]
+            or hashlib.sha256((directory / ".config").read_bytes()).hexdigest() != metadata["inputs"]["config"]):
+        raise SystemExit(f"error: {name} inputs differ from the linked manifest; rebuild this image")
 
 
 def main() -> None:
@@ -188,33 +206,49 @@ def main() -> None:
     out_root = (args.out or ROOT / "out" / f"{args.project}_3in1").resolve()
     out_root.mkdir(parents=True, exist_ok=True)
 
-    preloader_bin = build_firmware(
-        out_root,
-        args.project,
-        "preloader",
-        toolchain_path,
-        profile="release" if args.production else "default",
-    )
-    loader_bin = build_firmware(
-        out_root,
-        args.project,
-        "loader",
-        toolchain_path,
-        profile="release" if args.production else "default",
-    )
-    app_bin = build_firmware(out_root, args.project, "app", toolchain_path,
-                             profile="release" if args.production else "default")
-    verify_image_set(out_root, args.project)
-    if args.production:
-        verify_production_configs(out_root)
-    app_image = out_root / f"{args.project}_app.img"
+    supplied = {stage: getattr(args, f"{stage}_dir") for stage in STAGES}
+    directories = stage_dirs(out_root)
+    if any(supplied.values()):
+        if not all(supplied.values()):
+            raise SystemExit("error: provide --app-dir, --loader-dir and --preloader-dir together")
+        directories = {stage: path.resolve() for stage, path in supplied.items()}
+    else:
+        for stage in STAGES:
+            build_firmware(out_root, args.project, stage, toolchain_path,
+                           profile="release" if args.production else "default")
+    with tempfile.TemporaryDirectory(prefix="factory-", dir=out_root) as tmp:
+        assemble(args, directories, Path(tmp), out_root, signature_path, public_key_path)
+
+
+def assemble(args, directories, work, out_root, signature_path, public_key_path):
+    # Copy first, then verify and pack those same bytes. A concurrent link can
+    # change an input directory without changing an already validated package.
+    binaries = {}
+    try:
+        for stage, source in directories.items():
+            directory = work / stage
+            directory.mkdir()
+            shutil.copyfile(source / "build-info.json", directory / "build-info.json")
+        verify_image_set(work, args.project, required_profile="release" if args.production else None)
+        for stage, source in directories.items():
+            directory = work / stage
+            name = firmware_output_name(args.project, stage)
+            for filename in (f"{name}.bin", f"{name}.manifest.json", ".config"):
+                shutil.copyfile(source / filename, directory / filename)
+            verify_linked_files(directory, name)
+            binaries[stage] = directory / f"{name}.bin"
+        if args.production:
+            verify_production_configs(work)
+    except (OSError, ValueError, KeyError) as error:
+        raise SystemExit(f"error: incomplete factory image set: {error}; rebuild the selected images") from error
+    app_image = work / f"{args.project}_app.img"
     pack_cmd = [
         sys.executable,
         str(ROOT / "bootloader" / "scripts" / "pack_image.py"),
         "--layout",
         args.project,
         "--input",
-        str(app_bin),
+        str(binaries["app"]),
         "--output",
         str(app_image),
         "--security-version",
@@ -226,7 +260,7 @@ def main() -> None:
         pack_cmd.extend(["--public-key", str(public_key_path)])
     run(pack_cmd)
 
-    output = out_root / f"{args.project}_3in1.bin"
+    output = work / f"{args.project}_3in1.bin"
     run(
         [
             sys.executable,
@@ -234,16 +268,18 @@ def main() -> None:
             "--layout",
             args.project,
             "--preloader",
-            str(preloader_bin),
+            str(binaries["preloader"]),
             "--loader",
-            str(loader_bin),
+            str(binaries["loader"]),
             "--app",
             str(app_image),
             "--output",
             str(output),
         ]
     )
-    print(f"three-image firmware: {output}", flush=True)
+    app_image.replace(out_root / app_image.name)
+    final_image = output.replace(out_root / output.name)
+    print(f"three-image firmware: {final_image}", flush=True)
 
 
 if __name__ == "__main__":

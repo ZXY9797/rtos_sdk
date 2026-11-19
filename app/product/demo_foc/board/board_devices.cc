@@ -1,5 +1,4 @@
 #include "board/board_devices.h"
-#include <gd32_regs.h>
 #include <devicetree.h>
 #include <devicetree/gpio.h>
 #include <drivers/gpio.h>
@@ -10,6 +9,15 @@ namespace app::board {
 namespace {
 #define MOTOR_NODE DT_NODELABEL(foc_control)
 static_assert(DT_PROP(MOTOR_NODE, timer_clock_hz) == CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC);
+static_assert(DT_PROP_LEN(MOTOR_NODE, current_triggers) == 1 &&
+              DT_PROP_LEN(MOTOR_NODE, joint_triggers) == 1);
+using CurrentTrigger = hal::DeviceTrait<DT_ORD(DT_PHANDLE(MOTOR_NODE, current_triggers))>
+    ::AdcTrigger<DT_PHA(MOTOR_NODE, current_triggers, event)>;
+using JointTrigger = hal::DeviceTrait<DT_ORD(DT_PHANDLE(MOTOR_NODE, joint_triggers))>
+    ::AdcTrigger<DT_PHA(MOTOR_NODE, joint_triggers, event)>;
+static_assert(hal::device_supports<DT_ORD(DT_ALIAS(adc_current)), hal::DeviceCapability::TriggeredScan>
+           && hal::device_supports<DT_ORD(DT_ALIAS(adc_joint)), hal::DeviceCapability::TriggeredScan>);
+static_assert(hal::device_supports<DT_ORD(DT_ALIAS(can0)), hal::DeviceCapability::CanFd>);
 constexpr uint32_t kPeriod = DT_PROP(DT_ALIAS(pwm0), period);
 static_assert(kPeriod == DT_PROP(MOTOR_NODE, timer_clock_hz) /
                          (2U * DT_PROP(MOTOR_NODE, pwm_frequency_hz)));
@@ -71,7 +79,7 @@ bool start_acquisition(hal::AdcBase::ScanCallback current,
     constexpr uint8_t channels[] = DT_PROP(MOTOR_NODE, current_channels);
     static_assert(sizeof(channels) == 6U);
     scan.channel_count = 6U;
-    scan.trigger_input = DT_PROP(MOTOR_NODE, current_trigger_input);
+    scan.trigger_input = CurrentTrigger::input;
     for (unsigned rank = 0U; rank < 6U; ++rank)
         scan.channels[rank] = {static_cast<hal::AdcChannel>(channels[rank]), hal::AdcSampleTime::Cycles16};
     if (current_adc().start_scan(scan, current_buffer, 12U, current, context) != hal::Status::Ok)
@@ -79,24 +87,19 @@ bool start_acquisition(hal::AdcBase::ScanCallback current,
     constexpr uint8_t output_channels[] = DT_PROP(MOTOR_NODE, joint_channels);
     static_assert(sizeof(output_channels) == 2U);
     scan.channel_count = 2U;
-    scan.trigger_input = DT_PROP(MOTOR_NODE, joint_trigger_input);
+    scan.trigger_input = JointTrigger::input;
     for (unsigned rank = 0U; rank < 2U; ++rank)
         scan.channels[rank] = {static_cast<hal::AdcChannel>(output_channels[rank]), hal::AdcSampleTime::Cycles16};
     if (joint_adc().start_scan(scan, joint_buffer, 4U, joint, context) != hal::Status::Ok) {
         stop_acquisition(); return false;
     }
-    const uint32_t pwm_base = DT_REG_ADDR(DT_ALIAS(pwm0));
     const uint32_t trigger = algo::motor::CurrentLoop::adc_trigger_count(kPeriod,
         DT_PROP(MOTOR_NODE, pwm_frequency_hz), DT_PROP(MOTOR_NODE, adc_before_peak_ns));
-    auto& pwm = *reinterpret_cast<gd32::TimerRegs*>(pwm_base);
-    pwm.CHCTL1 = (pwm.CHCTL1 & ~(7U << 12U)) | (6U << 12U) | (1U << 11U);
-    pwm.CHCTL2 |= 1U << 12U;
-    if (power_pwm().set_pulse(hal::PwmChannel::Ch4, trigger) != hal::Status::Ok) {
-        stop_acquisition(); return false;
+    if (CurrentTrigger::configure(power_pwm(), trigger) != hal::Status::Ok ||
+        JointTrigger::configure(device_get(joint_timer)) != hal::Status::Ok) {
+        stop_acquisition();
+        return false;
     }
-    pwm.SWEVG = 1U;
-    auto& joint_timer = *reinterpret_cast<gd32::TimerRegs*>(DT_REG_ADDR(DT_ALIAS(joint_timer)));
-    joint_timer.CTL1 = (joint_timer.CTL1 & ~(7U << 4U)) | (2U << 4U);
     if (power_pwm().start() != hal::Status::Ok || device_get(joint_timer).start() != hal::Status::Ok) {
         stop_acquisition(); return false;
     }

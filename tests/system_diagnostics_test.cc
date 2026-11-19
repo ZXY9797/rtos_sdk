@@ -6,7 +6,7 @@
 #include <cstdlib>
 #include <fstream>
 
-#define CHECK(x) do { if (!(x)) std::abort(); } while (false)
+#include "test_check.h"
 namespace osal {
 bool Kernel::in_isr() { return false; }
 uint32_t Kernel::uptime_ms() { return 123U; }

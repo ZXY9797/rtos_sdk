@@ -46,8 +46,10 @@ include(${CMAKE_CURRENT_LIST_DIR}/tools/cmake/env.cmake)
 include(sdk_component)
 sdk_load_modules()
 include(${CMAKE_CURRENT_LIST_DIR}/tools/cmake/modules/boot_layout.cmake)
+list(APPEND DTS_ROOT "${TOP_DIR}/component/motor/drive")
 include(${CMAKE_CURRENT_LIST_DIR}/tools/cmake/modules/dts.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/tools/cmake/modules/kconfig.cmake)
+include(sdk_devices)
 include(${CMAKE_CURRENT_LIST_DIR}/tools/cmake/toolchain/compiler.cmake)
 
 # Pure runtime contracts are also consumed by the platform implementation.
@@ -57,12 +59,7 @@ add_subdirectory(component)
 add_subdirectory(bootloader/common)
 sdk_build_modules()
 add_subdirectory(${PROJECT_DIR} ${PROJECT_BINARY_DIR}/product)
-target_link_libraries(app PRIVATE embedded)
-
-if(TARGET device_codegen)
-    add_dependencies(app device_codegen)
-    add_dependencies(drivers device_codegen)
-endif()
+target_link_libraries(app PRIVATE embedded ${SDK_IMAGE_DEVICE_TARGETS})
 
 add_executable(${PROJECT_NAME}
     ${NULL_C}

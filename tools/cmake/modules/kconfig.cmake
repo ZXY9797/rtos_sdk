@@ -82,7 +82,9 @@ file(GLOB_RECURSE kconfig_source_candidates CONFIGURE_DEPENDS
   ${TOP_DIR}/component/Kconfig*
   ${PROJECT_DIR}/Kconfig*
 )
-list(APPEND kconfig_source_candidates ${KCONFIG_ROOT})
+# DT-derived defaults and dependencies must be re-evaluated from the image
+# fragments when hardware changes, rather than from the previous resolved values.
+list(APPEND kconfig_source_candidates ${KCONFIG_ROOT} ${FIRMWARE_DTS} ${DEVICETREE_GENERATED_H})
 get_property(_module_directories GLOBAL PROPERTY SDK_MODULE_DIRECTORIES)
 foreach(_module IN LISTS _module_directories)
   file(GLOB_RECURSE _module_kconfig CONFIGURE_DEPENDS "${_module}/Kconfig*")
@@ -213,3 +215,8 @@ add_custom_target(config-twister DEPENDS ${DOTCONFIG})
 
 # Import the .config file and make all settings available in CMake processing.
 import_kconfig(${KCONFIG_NAMESPACE} ${DOTCONFIG})
+if(DEFINED SDK_REQUESTED_RTOS_SYMBOL)
+  if(NOT ${SDK_REQUESTED_RTOS_SYMBOL})
+    message(FATAL_ERROR "Resolved Kconfig does not enable ${SDK_REQUESTED_RTOS_SYMBOL} requested by SDK_RTOS_BACKEND")
+  endif()
+endif()

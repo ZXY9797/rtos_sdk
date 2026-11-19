@@ -5,6 +5,10 @@ compatible: "gd,gd32-can"
 include: [can-fd-controller.yaml, pinctrl-device.yaml]
 
 cxx-driver:
+  kconfig: CAN_GD32
+  capabilities: [read, write]
+  capabilities-if:
+    can-fd: fd-enabled
   adapter:
     header: device_adapters/can_dt.h
     macro: HAL_CAN_DT_ADAPT

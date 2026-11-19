@@ -22,8 +22,6 @@ target_sources(${MODULE_NAME}
         services/ble_app.cc
         comm/link_bridge.cc
         tasks/app_tasks.cc
-        ${DRIVERS_GENERATED_CC}
-        ${PINCTRL_GENERATED_CC}
 )
 
 target_link_libraries(${MODULE_NAME}

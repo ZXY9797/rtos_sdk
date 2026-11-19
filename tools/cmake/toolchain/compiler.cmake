@@ -12,8 +12,17 @@ separate_arguments(_sdk_vfp_flags UNIX_COMMAND "${VFP_FLAGS}")
 separate_arguments(_sdk_system_flags UNIX_COMMAND "${SYSTEM_PATH}")
 
 set(_sdk_optimization -O2)
-if(FIRMWARE_TYPE STREQUAL "loader")
+if(CONFIG_SDK_OPTIMIZE_FOR_SIZE OR FIRMWARE_TYPE STREQUAL "loader")
     set(_sdk_optimization -Os)
+endif()
+
+if(CONFIG_SDK_OPTIMIZE_FOR_SIZE)
+    target_link_options(sdk_build_config INTERFACE -Os)
+    if(CMAKE_HOST_WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        # GCC's parallel LTO sub-make can pass native paths through a POSIX sh.
+        # A serial LTO link keeps those paths in the Windows compiler process.
+        target_link_options(sdk_build_config INTERFACE -flto=1)
+    endif()
 endif()
 
 set(_sdk_c_family_options

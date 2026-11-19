@@ -1,7 +1,7 @@
 #include <drivers/dma_memory.h>
 #include <cstdlib>
 
-#define CHECK(x) do { if (!(x)) std::abort(); } while (false)
+#include "test_check.h"
 namespace {
 unsigned prepared = 0U, completed = 0U;
 bool fail_rx_prepare = false, fail_rx_complete = false;

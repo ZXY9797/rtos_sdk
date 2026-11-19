@@ -6,7 +6,7 @@
 #include <mutex>
 #include <thread>
 
-#define CHECK(x) do { if (!(x)) std::abort(); } while (false)
+#include "test_check.h"
 
 struct osal_bare_sem { std::mutex mutex; std::condition_variable condition; unsigned tokens; };
 namespace { std::recursive_mutex critical; std::atomic<unsigned> waiting {0U}; }

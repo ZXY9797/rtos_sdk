@@ -5,6 +5,7 @@ compatible: "gd,gd32-adc"
 include: gd32-adc-common.yaml
 
 cxx-driver:
+  kconfig: ADC_GD32
   adapter:
     header: device_adapters/adc_dt.h
     macro: HAL_ADC_DT_ADAPT

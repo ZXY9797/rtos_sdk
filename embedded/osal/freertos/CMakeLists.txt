@@ -23,6 +23,12 @@ if(EXISTS ${FREERTOS_DIR}/portable/${FREERTOS_PORT_DIR}/portasm.c)
     )
 endif()
 
+# Naked context-switch assembly needs the port's own literal pools.
+if(CONFIG_SDK_OPTIMIZE_FOR_SIZE AND CMAKE_C_COMPILER_ID STREQUAL "GNU")
+    set_property(SOURCE ${FREERTOS_PORT_SOURCES} TARGET_DIRECTORY ${MODULE_NAME}
+                 APPEND PROPERTY COMPILE_OPTIONS -fno-lto)
+endif()
+
 target_sources(${MODULE_NAME}
     PRIVATE
         osal.cc

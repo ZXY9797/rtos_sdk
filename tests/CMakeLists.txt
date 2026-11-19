@@ -4,6 +4,20 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 enable_testing()
+
+# Keep CTest selection and the matching incremental build targets together.
+function(sdk_host_test name target labels)
+    add_test(NAME ${name} COMMAND ${target} ${ARGN})
+    set_tests_properties(${name} PROPERTIES LABELS "${labels}")
+    add_custom_target(host-case-${name})
+    add_dependencies(host-case-${name} ${target})
+    foreach(label IN LISTS labels)
+        if(NOT TARGET host-label-${label})
+            add_custom_target(host-label-${label})
+        endif()
+        add_dependencies(host-label-${label} ${target})
+    endforeach()
+endfunction()
 add_compile_options(
     $<$<CXX_COMPILER_ID:MSVC>:/W4>
     $<$<CXX_COMPILER_ID:MSVC>:/WX>
@@ -17,7 +31,7 @@ add_subdirectory(../samples/interaction_control interaction-control)
 add_executable(interaction_test interaction_test.cc)
 target_link_libraries(interaction_test PRIVATE sdk::motor)
 target_compile_options(interaction_test PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG> $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-UNDEBUG>)
-add_test(NAME interaction COMMAND interaction_test)
+sdk_host_test(interaction interaction_test "motor")
 
 foreach(contract algorithm calibration control diagnostics)
     add_executable(motor_${contract}_test motor_${contract}_test.cc)
@@ -25,7 +39,7 @@ foreach(contract algorithm calibration control diagnostics)
     target_compile_options(motor_${contract}_test PRIVATE
         $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>
         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-UNDEBUG>)
-    add_test(NAME motor_${contract} COMMAND motor_${contract}_test)
+    sdk_host_test(motor_${contract} motor_${contract}_test "motor")
 endforeach()
 
 add_executable(demo_foc_control_test
@@ -41,26 +55,28 @@ target_link_libraries(demo_foc_control_test PRIVATE sdk::motor)
 target_compile_options(demo_foc_control_test PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>
     $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-UNDEBUG>)
-add_test(NAME demo_foc_control COMMAND demo_foc_control_test)
+sdk_host_test(demo_foc_control demo_foc_control_test "motor")
 
 add_executable(joint_canopen_fd_test
     joint_canopen_fd_test.cc
     ../app/product/demo_foc/comm/joint_canopen_fd.cc)
 target_include_directories(joint_canopen_fd_test PRIVATE
     ../app/product/demo_foc ../embedded/include)
-add_test(NAME joint_canopen_fd COMMAND joint_canopen_fd_test)
+sdk_host_test(joint_canopen_fd joint_canopen_fd_test "motor;link")
 
 add_executable(link_can_observer_test link_can_observer_test.cc)
 target_include_directories(link_can_observer_test PRIVATE
     stubs ../component/link/include ../embedded/include ../embedded/include/osal ../embedded/osal/baremetal)
 target_compile_definitions(link_can_observer_test PRIVATE CONFIG_NUM_IRQ_PRIO_BITS=4)
-add_test(NAME link_can_observer COMMAND link_can_observer_test)
+sdk_host_test(link_can_observer link_can_observer_test "link")
 
 add_executable(adc_scan_test adc_scan_test.cc
     ../embedded/drivers/adc/adc_gd32.cc
     ../embedded/drivers/adc/adc_scan_gd32.cc
+    ../embedded/drivers/pwm/pwm_gd32.cc
     ../embedded/drivers/dma/dma_gd32.cc)
-target_include_directories(adc_scan_test PRIVATE stubs/adc ../embedded/include
+target_compile_definitions(adc_scan_test PRIVATE CONFIG_NUM_IRQ_PRIO_BITS=4)
+target_include_directories(adc_scan_test PRIVATE stubs/adc ../embedded/include ../embedded/osal/baremetal
     ../embedded/soc/gd/gd32f50x/include)
 target_compile_options(adc_scan_test PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>
@@ -70,7 +86,7 @@ if(MSVC)
 else()
     target_compile_options(adc_scan_test PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/stubs/adc/gd32f50x.h)
 endif()
-add_test(NAME adc_scan COMMAND adc_scan_test)
+sdk_host_test(adc_scan adc_scan_test "drivers")
 
 find_package(Threads REQUIRED)
 add_executable(event_group_runtime_test event_group_runtime_test.cc ../embedded/osal/event_group.cc)
@@ -78,37 +94,37 @@ target_include_directories(event_group_runtime_test PRIVATE
     ../embedded/include ../embedded/include/osal ../embedded/osal/baremetal)
 target_compile_definitions(event_group_runtime_test PRIVATE CONFIG_NUM_IRQ_PRIO_BITS=4)
 target_link_libraries(event_group_runtime_test PRIVATE Threads::Threads)
-add_test(NAME event_group_runtime COMMAND event_group_runtime_test)
+sdk_host_test(event_group_runtime event_group_runtime_test "osal;quick")
 set_tests_properties(event_group_runtime PROPERTIES TIMEOUT 15)
 
 add_executable(runtime_contract_test runtime_contract_test.cc)
 target_include_directories(runtime_contract_test PRIVATE ../embedded/include ../component/ipc/include)
 target_link_libraries(runtime_contract_test PRIVATE sdk::runtime sdk::ipc)
-add_test(NAME runtime_contract COMMAND runtime_contract_test)
+sdk_host_test(runtime_contract runtime_contract_test "runtime;quick")
 
 add_executable(system_diagnostics_test system_diagnostics_test.cc ../embedded/system/diagnostics.cc)
 target_include_directories(system_diagnostics_test PRIVATE stubs ../embedded/include
     ../embedded/include/osal ../embedded/osal/baremetal ../bootloader/include)
 target_compile_definitions(system_diagnostics_test PRIVATE CONFIG_NUM_IRQ_PRIO_BITS=4)
 target_link_libraries(system_diagnostics_test PRIVATE sdk::runtime)
-add_test(NAME system_diagnostics COMMAND system_diagnostics_test "${CMAKE_CURRENT_BINARY_DIR}/diagnostics.bin")
+sdk_host_test(system_diagnostics system_diagnostics_test "runtime" "${CMAKE_CURRENT_BINARY_DIR}/diagnostics.bin")
 
 add_executable(event_bits_test event_bits_test.cc)
 target_compile_features(event_bits_test PRIVATE cxx_std_17)
 target_include_directories(event_bits_test PRIVATE ../embedded/include)
-add_test(NAME event_bits COMMAND event_bits_test)
+sdk_host_test(event_bits event_bits_test "osal")
 
 add_executable(frame_tx_queue_test frame_tx_queue_test.cc)
 target_compile_features(frame_tx_queue_test PRIVATE cxx_std_17)
 target_include_directories(frame_tx_queue_test PRIVATE ../component/link/include)
-add_test(NAME frame_tx_queue COMMAND frame_tx_queue_test)
+sdk_host_test(frame_tx_queue frame_tx_queue_test "link")
 
 add_executable(link_fragment_test
     ../component/link/tests/fragment_test.cc)
 target_compile_features(link_fragment_test PRIVATE cxx_std_17)
 target_include_directories(link_fragment_test PRIVATE
     ../component/link/include)
-add_test(NAME link_fragment COMMAND link_fragment_test)
+sdk_host_test(link_fragment link_fragment_test "link")
 
 add_executable(link_codec_test
     ../component/link/tests/codec_test.cc
@@ -118,7 +134,7 @@ add_executable(link_codec_test
 target_compile_features(link_codec_test PRIVATE cxx_std_17)
 target_include_directories(link_codec_test PRIVATE
     ../component/link/include)
-add_test(NAME link_codec COMMAND link_codec_test)
+sdk_host_test(link_codec link_codec_test "link;quick")
 
 add_executable(link_codec_max_frame_test
     ../component/link/tests/codec_test.cc
@@ -130,7 +146,7 @@ target_compile_definitions(link_codec_max_frame_test PRIVATE
     CONFIG_LINK_MAX_FRAME_SIZE=1023)
 target_include_directories(link_codec_max_frame_test PRIVATE
     ../component/link/include)
-add_test(NAME link_codec_max_frame COMMAND link_codec_max_frame_test)
+sdk_host_test(link_codec_max_frame link_codec_max_frame_test "link")
 
 add_executable(link_replay_cache_test
     ../component/link/tests/replay_cache_test.cc
@@ -138,7 +154,7 @@ add_executable(link_replay_cache_test
 target_compile_features(link_replay_cache_test PRIVATE cxx_std_17)
 target_include_directories(link_replay_cache_test PRIVATE
     ../component/link/include)
-add_test(NAME link_replay_cache COMMAND link_replay_cache_test)
+sdk_host_test(link_replay_cache link_replay_cache_test "link")
 
 add_executable(link_diagnostics_test
     ../component/link/tests/diagnostics_test.cc
@@ -146,7 +162,7 @@ add_executable(link_diagnostics_test
 target_compile_features(link_diagnostics_test PRIVATE cxx_std_17)
 target_include_directories(link_diagnostics_test PRIVATE
     ../component/link/include)
-add_test(NAME link_diagnostics COMMAND link_diagnostics_test)
+sdk_host_test(link_diagnostics link_diagnostics_test "link")
 
 add_executable(link_router_policy_test
     ../component/link/tests/router_policy_test.cc)
@@ -159,7 +175,7 @@ target_include_directories(link_router_policy_test PRIVATE
     ../embedded/osal/baremetal)
 target_compile_definitions(link_router_policy_test PRIVATE
     CONFIG_NUM_IRQ_PRIO_BITS=4)
-add_test(NAME link_router_policy COMMAND link_router_policy_test)
+sdk_host_test(link_router_policy link_router_policy_test "link")
 
 add_library(link_router_contract OBJECT
     ../component/link/src/router.cc)
@@ -184,7 +200,7 @@ add_executable(can_dlc_test
 target_compile_features(can_dlc_test PRIVATE cxx_std_17)
 target_include_directories(can_dlc_test PRIVATE
     ../embedded/include)
-add_test(NAME can_dlc COMMAND can_dlc_test)
+sdk_host_test(can_dlc can_dlc_test "drivers")
 
 add_executable(icm40609d_test
     ../embedded/drivers/imu/tests/icm40609d_test.cc)
@@ -198,7 +214,7 @@ target_include_directories(icm40609d_test PRIVATE
     ../embedded/osal/baremetal)
 target_compile_definitions(icm40609d_test PRIVATE
     CONFIG_NUM_IRQ_PRIO_BITS=4)
-add_test(NAME icm40609d COMMAND icm40609d_test)
+sdk_host_test(icm40609d icm40609d_test "drivers")
 
 add_executable(sensor_batch_core_test
     sensor_batch_core_test.cc
@@ -212,7 +228,7 @@ target_include_directories(sensor_batch_core_test PRIVATE
     ../embedded/osal/baremetal)
 target_compile_definitions(sensor_batch_core_test PRIVATE
     CONFIG_NUM_IRQ_PRIO_BITS=4)
-add_test(NAME sensor_batch_core COMMAND sensor_batch_core_test)
+sdk_host_test(sensor_batch_core sensor_batch_core_test "drivers")
 
 add_executable(boot_power_loss_test
     ../bootloader/common/tests/boot_power_loss_test.cc
@@ -221,7 +237,7 @@ add_executable(boot_power_loss_test
 target_compile_features(boot_power_loss_test PRIVATE cxx_std_17)
 target_include_directories(boot_power_loss_test PRIVATE
     ../bootloader/include)
-add_test(NAME boot_power_loss COMMAND boot_power_loss_test)
+sdk_host_test(boot_power_loss boot_power_loss_test "boot")
 
 add_executable(boot_protocol_policy_test
     ../bootloader/common/tests/boot_protocol_policy_test.cc)
@@ -229,7 +245,7 @@ target_compile_features(boot_protocol_policy_test PRIVATE cxx_std_17)
 target_include_directories(boot_protocol_policy_test PRIVATE
     ../bootloader/include
     ../component/link/include)
-add_test(NAME boot_protocol_policy COMMAND boot_protocol_policy_test)
+sdk_host_test(boot_protocol_policy boot_protocol_policy_test "boot")
 
 add_executable(nvs_power_loss_test
     ../component/nvs/tests/nvs_power_loss_test.cc
@@ -241,7 +257,7 @@ target_include_directories(nvs_power_loss_test PRIVATE
     ../embedded/osal/baremetal)
 target_compile_definitions(nvs_power_loss_test PRIVATE
     CONFIG_NUM_IRQ_PRIO_BITS=4)
-add_test(NAME nvs_power_loss COMMAND nvs_power_loss_test)
+sdk_host_test(nvs_power_loss nvs_power_loss_test "storage")
 
 add_library(boot_logic_contract OBJECT
     ../bootloader/loader/src/boot_logic.cc)
@@ -287,7 +303,7 @@ target_include_directories(device_pm_test PRIVATE
     ../embedded/osal/baremetal)
 target_compile_definitions(device_pm_test PRIVATE
     CONFIG_NUM_IRQ_PRIO_BITS=4)
-add_test(NAME device_pm COMMAND device_pm_test)
+sdk_host_test(device_pm device_pm_test "drivers")
 
 add_executable(gimbal_functional_test
     gimbal_functional_test.cc
@@ -309,13 +325,14 @@ target_include_directories(gimbal_functional_test PRIVATE
     ../embedded/osal/baremetal)
 target_compile_definitions(gimbal_functional_test PRIVATE
     CONFIG_NUM_IRQ_PRIO_BITS=4)
-add_test(NAME gimbal_functional COMMAND gimbal_functional_test)
+sdk_host_test(gimbal_functional gimbal_functional_test "motor")
 
 add_library(driver_header_contract OBJECT
     driver_header_contract.cc)
 target_compile_features(driver_header_contract PRIVATE cxx_std_17)
 target_link_libraries(driver_header_contract PRIVATE sdk::runtime)
 target_include_directories(driver_header_contract PRIVATE
+    ../app/product/gimbal/include
     stubs
     ../embedded/include
     ../embedded/include/osal
@@ -327,7 +344,7 @@ target_compile_definitions(driver_header_contract PRIVATE
 add_executable(dma_memory_test dma_memory_test.cc)
 target_compile_features(dma_memory_test PRIVATE cxx_std_17)
 target_include_directories(dma_memory_test PRIVATE ../embedded/include)
-add_test(NAME dma_memory COMMAND dma_memory_test)
+sdk_host_test(dma_memory dma_memory_test "drivers")
 
 foreach(assert_variant file no_file)
     add_executable(assert_abi_${assert_variant} assert_abi_test.cc assert_abi_backend.cc)
@@ -337,5 +354,5 @@ foreach(assert_variant file no_file)
     if(assert_variant STREQUAL "no_file")
         target_compile_definitions(assert_abi_${assert_variant} PRIVATE CONFIG_ASSERT_NO_FILE_INFO=1)
     endif()
-    add_test(NAME assert_abi_${assert_variant} COMMAND assert_abi_${assert_variant})
+    sdk_host_test(assert_abi_${assert_variant} assert_abi_${assert_variant} "runtime")
 endforeach()

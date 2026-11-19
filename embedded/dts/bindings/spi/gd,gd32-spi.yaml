@@ -5,6 +5,7 @@ compatible: "gd,gd32-spi"
 include: [spi-controller.yaml, base.yaml, pinctrl-device.yaml]
 
 cxx-driver:
+  kconfig: SPI_GD32
   capabilities: [read, write, async-transfer, cancel, dma]
   adapter:
     header: device_adapters/spi_dt.h

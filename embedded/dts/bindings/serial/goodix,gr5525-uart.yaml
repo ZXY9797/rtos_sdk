@@ -5,6 +5,7 @@ compatible: "goodix,gr5525-uart"
 include: [uart-controller.yaml, base.yaml]
 
 cxx-driver:
+  kconfig: UART_GR5525
   adapter:
     header: device_adapters/uart_dt.h
     macro: HAL_UART_DT_ADAPT

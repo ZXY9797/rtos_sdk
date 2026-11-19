@@ -5,14 +5,3 @@ menuconfig PWM
 
 rsource "Kconfig.stm32"
 rsource "Kconfig.gd32"
-
-if PWM
-
-config PWM_INIT_PRIORITY
-	int "PWM init priority"
-	range 0 999
-	default KERNEL_INIT_PRIORITY_DEFAULT
-	help
-	  PWM driver device initialization priority.
-
-endif # PWM

@@ -21,6 +21,9 @@ INIT_LEVELS = {
     'application': 'INITCALL_LEVEL_APPLICATION',
 }
 
+CAPABILITY_BITS = {'read': 1, 'write': 2, 'async-transfer': 4, 'cancel': 8,
+                   'dma': 16, 'power-management': 32, 'triggered-scan': 64, 'can-fd': 128}
+
 ADAPTER_DRIVER_KEYS = {
     'adapter',
     'type-name',
@@ -33,6 +36,8 @@ ADAPTER_DRIVER_KEYS = {
     'readiness',
     'device-base',
     'capabilities',
+    'capabilities-if',
+    'kconfig',
 }
 
 ADAPTER_KEYS = {
@@ -274,15 +279,27 @@ def parse_adapter(cxx_driver, filepath, compatible):
             f'{init_priority}')
 
     capabilities = cxx_driver.get('capabilities', [])
-    known_capabilities = {'read', 'write', 'async-transfer', 'cancel', 'dma', 'power-management'}
+    backend = cxx_driver.get('kconfig')
+    if backend is not None and (not isinstance(backend, str)
+                                or not re.fullmatch(r'[A-Z][A-Z0-9_]*', backend)):
+        raise ValueError(f'invalid backend Kconfig symbol in {filepath}: {backend!r}')
     if (not isinstance(capabilities, list)
-            or any(not isinstance(x, str) or x not in known_capabilities for x in capabilities)
+            or any(not isinstance(x, str) or x not in CAPABILITY_BITS for x in capabilities)
             or len(capabilities) != len(set(capabilities))):
         raise ValueError(f'invalid capabilities in {filepath}: {capabilities!r}')
+    conditional = cxx_driver.get('capabilities-if', {})
+    if not isinstance(conditional, dict):
+        raise ValueError(f'invalid conditional capabilities in {filepath}')
+    for capability, prop in conditional.items():
+        if (capability not in CAPABILITY_BITS or capability in capabilities
+                or not isinstance(prop, str) or not prop):
+            raise ValueError(f'invalid conditional capability {capability!r} in {filepath}')
     return {
+        'conditional_capabilities': conditional,
         'adapter_header': header.strip(),
         'adapter_macro': macro,
         'type_name': type_name.strip(),
+        'kconfig': backend,
         'compatible': compatible,
         'has_init': has_init,
         'has_isr': bool(interrupts),

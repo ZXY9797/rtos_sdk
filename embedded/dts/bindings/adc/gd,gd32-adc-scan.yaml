@@ -3,6 +3,8 @@ compatible: "gd,gd32-adc-scan"
 include: gd32-adc-common.yaml
 
 cxx-driver:
+  kconfig: ADC_GD32
+  capabilities: [dma, triggered-scan]
   adapter:
     header: device_adapters/adc_dt.h
     macro: HAL_GD32_ADC_SCAN_DT_ADAPT

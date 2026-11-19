@@ -143,8 +143,9 @@ properties:
       Control mode: 0=Torque, 1=Speed, 2=Duty, 3=Position
 
 cxx-driver:
+  kconfig: FOC_CURRENT_CONTROL
   adapter:
-    header: device_adapters/foc_motor_dt.h
+    header: foc/foc_motor_dt.h
     macro: HAL_FOC_MOTOR_DT_ADAPT
   type-name: foc::MotorDevice
   init: true

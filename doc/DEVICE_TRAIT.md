@@ -55,15 +55,19 @@ binding、ordinal、alias、status、interrupt 和依赖，再展开 C++ adapter
 Python。生成器不解析 `devicetree_generated.h`，只负责节点枚举、契约校验、
 依赖检查和公共代码生成。
 
-生成步骤通过 CMake `add_custom_command()` 接入 build DAG。EDT pickle、
-binding YAML 和生成脚本都是显式依赖；实际生成文件采用内容不变不重写策略，
-避免无意义的 C++ 重编译。
+设备树先提供 Kconfig 的 `DT_HAS_*`，CMake 再把最终 `.config` 与 EDT 交给生成器。
+binding 的 `cxx-driver.kconfig` 指定后端符号，`capabilities-if` 按节点布尔属性启用能力。
+应用可在自己的 `product.cmake` 中设置 `SDK_REQUIRED_DEVICE_CAPABILITIES`，
+例如 `can0:can-fd`。缺少实例、后端或能力会在配置阶段报告。
+初始化优先级取 binding 默认值，单设备可用 overlay 的 `init-priority` 覆盖。
+配置输入或生成脚本发生变化时 CMake 自动重新生成，内容相同的输出保留原时间戳。
 
 ### Binding YAML 示例
 
 ```yaml
 # binding YAML (gd,gd32-spi.yaml)
 cxx-driver:
+  kconfig: SPI_GD32
   adapter:
     header: device_adapters/spi_dt.h
     macro: HAL_SPI_DT_ADAPT

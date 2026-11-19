@@ -5,6 +5,7 @@ compatible: "st,stm32-usart"
 include: st,stm32-uart-base.yaml
 
 cxx-driver:
+  kconfig: UART_STM32
   adapter:
     header: device_adapters/uart_dt.h
     macro: HAL_UART_DT_ADAPT

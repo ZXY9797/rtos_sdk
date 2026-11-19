@@ -38,8 +38,9 @@ properties:
     description: Maximum fraction of the SVPWM linear vector radius in per mille
 
 cxx-driver:
+  kconfig: FOC_VOLTAGE_CONTROL
   adapter:
-    header: device_adapters/gimbal_motor_dt.h
+    header: foc/gimbal_motor_dt.h
     macro: HAL_GIMBAL_MOTOR_DT_ADAPT
   type-name: foc::VoltageMotorDevice
   init: false

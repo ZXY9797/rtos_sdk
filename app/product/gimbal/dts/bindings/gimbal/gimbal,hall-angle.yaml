@@ -27,7 +27,7 @@ properties:
 
 cxx-driver:
   adapter:
-    header: device_adapters/gimbal_hall_dt.h
+    header: gimbal/gimbal_hall_dt.h
     macro: HAL_GIMBAL_HALL_DT_ADAPT
   type-name: gimbal::HallAdcDevice
   init: true

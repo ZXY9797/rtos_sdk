@@ -1,5 +1,6 @@
 #include <drivers/adc.h>
 #include <gd32_regs.h>
+#include <device_adapters/gd32_timer_trigger.h>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -11,7 +12,9 @@
 #include <sys/mman.h>
 #endif
 
-namespace osal { class IsrContext {}; }
+void osal_interrupt_enter() {}
+void osal_interrupt_leave() {}
+void osal_yield_from_isr(int) {}
 
 #define CHECK(condition) do { if (!(condition)) { \
     std::fprintf(stderr, "check failed at line %d: %s\n", __LINE__, #condition); \
@@ -47,6 +50,23 @@ int main()
     CHECK(memory == reinterpret_cast<void*>(address));
     std::memset(memory, 0, size);
     {
+        using Current = hal::Gd32TimerTrigger<TIMER0_BASE, GD32_TIMER_COMPARE_CH3>;
+        using Joint = hal::Gd32TimerTrigger<TIMER7_BASE, GD32_TIMER_UPDATE>;
+        static_assert(Current::input == 14U && Joint::input == 15U);
+        hal::Pwm<TIMER0_BASE> pwm;
+        hal::Pwm<TIMER7_BASE> joint;
+        hal::PwmConfig timer {};
+        timer.period = 4800U;
+        CHECK(pwm.init(timer) == hal::Status::Ok && joint.init(timer) == hal::Status::Ok);
+        CHECK(Current::configure(pwm, 4801U) == hal::Status::InvalidArgument);
+        CHECK(Current::configure(pwm, 4608U) == hal::Status::Ok);
+        CHECK(Joint::configure(joint) == hal::Status::Ok);
+        auto& timer0 = *reinterpret_cast<gd32::TimerRegs*>(TIMER0_BASE);
+        auto& timer7 = *reinterpret_cast<gd32::TimerRegs*>(TIMER7_BASE);
+        CHECK(timer0.CH3CV == 4608U && (timer0.CHCTL2 & (1U << 12U)));
+        CHECK((timer0.CHCTL1 & (7U << 12U)) == (6U << 12U) && timer0.SWEVG == 1U);
+        CHECK((timer7.CTL1 & (7U << 4U)) == (2U << 4U));
+        CHECK(pwm.start() == hal::Status::Ok && Current::configure(pwm, 1U) == hal::Status::Busy);
         hal::Adc<ADC1_BASE> adc;
         hal::AdcConfig config;
         config.oversample_ratio = 16U;
@@ -57,7 +77,7 @@ int main()
         CHECK((regs.OVSAMPCTL & 0x1FFU) == 13U);
         CHECK((gd32::rcu_apb2en() & (1U << 10U)) != 0U);
         hal::AdcScanConfig scan;
-        scan.trigger_input = 15U;
+        scan.trigger_input = Joint::input;
         scan.channel_count = 2U;
         scan.channels[0] = {hal::AdcChannel::Ch17, hal::AdcSampleTime::Cycles16};
         scan.channels[1] = {hal::AdcChannel::Ch7, hal::AdcSampleTime::Cycles16};

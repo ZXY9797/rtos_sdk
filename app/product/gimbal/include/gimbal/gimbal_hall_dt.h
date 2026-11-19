@@ -1,7 +1,7 @@
 #pragma once
 
 #include <device.h>
-#include <device_adapters/hall_device.h>
+#include <gimbal/hall_device.h>
 
 #include <cstdint>
 

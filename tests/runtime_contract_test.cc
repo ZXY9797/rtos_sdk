@@ -6,7 +6,7 @@
 #include <ipc/experimental/timed_topic.h>
 #include <cstdlib>
 
-#define CHECK(x) do { if (!(x)) std::abort(); } while (false)
+#include "test_check.h"
 
 int main()
 {

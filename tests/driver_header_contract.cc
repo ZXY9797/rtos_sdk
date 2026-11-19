@@ -1,6 +1,6 @@
 #include <device.h>
 #include <device_pm.h>
-#include <device_adapters/hall_device.h>
+#include <gimbal/hall_device.h>
 #include <drivers/can.h>
 #include <drivers/can_dlc.h>
 #include <drivers/i2c.h>

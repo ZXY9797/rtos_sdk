@@ -1,6 +1,6 @@
 #include <osal/event_bits.h>
 #include <cstdlib>
-#define CHECK(x) do { if (!(x)) std::abort(); } while (false)
+#include "test_check.h"
 
 int main()
 {

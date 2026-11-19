@@ -74,6 +74,7 @@ properties:
       the TX channel and "rx" for the RX channel.
 
 cxx-driver:
+  kconfig: I2C_STM32
   adapter:
     header: device_adapters/i2c_dt.h
     macro: HAL_I2C_DT_ADAPT

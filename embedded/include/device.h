@@ -173,7 +173,7 @@ struct DeviceInfo {
 
 enum class DeviceCapability : uint32_t {
     Read = 1U, Write = 2U, AsyncTransfer = 4U, Cancel = 8U,
-    Dma = 16U, PowerManagement = 32U,
+    Dma = 16U, PowerManagement = 32U, TriggeredScan = 64U, CanFd = 128U,
 };
 
 template <int Ord>

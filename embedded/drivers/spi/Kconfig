@@ -6,14 +6,3 @@ menuconfig SPI
 rsource "Kconfig.stm32"
 rsource "Kconfig.gd32"
 rsource "Kconfig.gr5525"
-
-if SPI
-
-config SPI_INIT_PRIORITY
-	int "SPI init priority"
-	range 0 999
-	default KERNEL_INIT_PRIORITY_DEFAULT
-	help
-	  SPI driver device initialization priority.
-
-endif # SPI

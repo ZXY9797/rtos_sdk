@@ -28,13 +28,25 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           persist-credentials: false
-      - name: Configure and run MSVC contracts
-        run: |
-          cmake -S tests -B out/host-windows -G "Visual Studio 17 2022" -A x64
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cmake --build out/host-windows --config Debug --parallel 8
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          ctest --test-dir out/host-windows -C Debug --output-on-failure --no-tests=error
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Install Python build dependencies
+        run: python -m pip install --disable-pip-version-check -r tools/requirements-ci.txt
+      - name: Run the Windows host suite
+        run: python tools/sdk.py test --suite host -B out/checks --generator "Visual Studio 17 2022"
+      - name: Retain test results and failure diagnostics
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: windows-host-results
+          path: |
+            out/checks/test-results.json
+            out/checks/host/ctest.xml
+            out/checks/host/Testing/Temporary/LastTest.log
+            out/checks/**/CMakeConfigureLog.yaml
+          if-no-files-found: warn
+          retention-days: 14
 
   host-contracts:
     name: Host contracts
@@ -58,27 +70,20 @@ jobs:
           python -m pip install --disable-pip-version-check \
             -r tools/requirements-ci.txt
 
-      - name: Run Python contract tests
-        run: |
-          python tools/scripts/dependency_inventory.py
-          python tools/scripts/source_audit.py --check
-          python -m unittest discover -s bootloader/scripts/tests \
-            -p "test_*.py" -v
-          python -m unittest discover -s tools/scripts/tests \
-            -p "test_*.py" -v
-          python -m unittest discover -s tools/demo_foc \
-            -p "test_*.py" -v
-
-      - name: Configure C++ contract tests
-        run: cmake -S tests -B out/host-tests -G Ninja
-
-      - name: Build C++ contract tests
-        run: cmake --build out/host-tests --parallel
-
-      - name: Run C++ contract tests
-        run: |
-          ctest --test-dir out/host-tests --output-on-failure \
-            --no-tests=error
+      - name: Run the Linux host suite
+        run: python tools/sdk.py test --suite host -B out/checks
+      - name: Retain test results and failure diagnostics
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: linux-host-results
+          path: |
+            out/checks/test-results.json
+            out/checks/host/ctest.xml
+            out/checks/host/Testing/Temporary/LastTest.log
+            out/checks/**/CMakeConfigureLog.yaml
+          if-no-files-found: warn
+          retention-days: 14
 
   firmware-contracts:
     name: Firmware contracts
@@ -137,177 +142,74 @@ jobs:
           "${toolchain}/bin/arm-none-eabi-gcc" --version
           echo "ARMGCC9_TOOLCHAIN_PATH=${toolchain}" >> "${GITHUB_ENV}"
 
-      - name: Verify fail-closed configuration policies
+      - name: Run configuration policies, port and external app contracts
+        run: python tools/sdk.py test --suite contracts -B out/contracts
+
+      - name: Build firmware configurations and check resource budgets
         run: |
           mkdir -p out
+          python tools/sdk.py test --suite firmware -B out/architecture-matrix 2>&1 | tee out/firmware-checks.log
 
-          expect_rejected() {
-            local name="$1"
-            local product="$2"
-            local toolchain="$3"
-            local firmware_type="$4"
-            local config_file="$5"
-            local expected="$6"
-            local profile="${7:-default}"
-            local build_dir="out/${name}-negative"
-            local log_file="${build_dir}.log"
-            local config_args=()
+      - name: Build and verify all factory images
+        run: python tools/scripts/check_factory_images.py -B out/architecture-matrix 2>&1 | tee out/factory-checks.log
 
-            if [[ -n "${config_file}" ]]; then
-              config_args+=("-DEXTRA_CONF_FILE=${config_file}")
-            fi
-
-            if cmake -S . -B "${build_dir}" -G Ninja \
-                "-Dp=${product}" "-Dt=${toolchain}" \
-                "-DFIRMWARE_TYPE=${firmware_type}" \
-                "-DPROFILE=${profile}" \
-                "${config_args[@]}" \
-                >"${log_file}" 2>&1; then
-              echo "::error title=${name} policy::configuration was accepted"
-              return 1
-            fi
-            if ! grep -Fq -- "${expected}" "${log_file}"; then
-              cat "${log_file}"
-              echo "::error title=${name} policy::wrong rejection reason"
-              return 1
-            fi
-            echo "Rejected ${name} as expected: ${expected}"
-          }
-
-          expect_rejected \
-            cached-dma demo_foc armgcc app \
-            tests/config/cached_dma.conf \
-            "Cached DMA requires product memory provider"
-          expect_rejected \
-            secure-link demo_foc armgcc app tests/config/link_secure.conf \
-            "CONFIG_LINK_SECURITY requires product provider"
-          expect_rejected \
-            production-boot demo_foc armgcc loader \
-            "" "Production boot requires product security provider" release
-          expect_rejected \
-            production-preloader demo_foc armgcc preloader \
-            "" "Production preloader requires product root-of-trust provider" release
-          expect_rejected \
-            goodix-toolchain demo_ble armgcc app "" \
-            "GR5525 requires Arm GNU Toolchain 9.3.1"
-
-      - name: Build FreeRTOS application
+      - name: Summarize firmware resources and factory checksums
+        if: ${{ !cancelled() }}
         run: |
-          cmake -S . -B out/demo_foc-freertos -G Ninja \
-            -Dp=demo_foc -Dt=armgcc
-          cmake --build out/demo_foc-freertos --parallel
+          if [[ -f out/architecture-matrix/resource-summary.md ]]; then
+            cat out/architecture-matrix/resource-summary.md >> "${GITHUB_STEP_SUMMARY}"
+          fi
+          if [[ -f out/architecture-matrix/factory/SHA256SUMS ]]; then
+            {
+              echo "### Factory image SHA-256"
+              echo '```text'
+              cat out/architecture-matrix/factory/SHA256SUMS
+              echo '```'
+            } >> "${GITHUB_STEP_SUMMARY}"
+          fi
 
-      - name: Build FreeRTOS BLE application
-        run: |
-          cmake -S . -B out/demo_foc-ble -G Ninja \
-            -Dp=demo_ble -Dt=armgcc9
-          cmake --build out/demo_foc-ble --parallel
-
-      - name: Build BLE configuration contracts
-        run: |
-          cmake -S . -B out/demo_foc-ble-minimal -G Ninja \
-            -Dp=demo_ble -Dt=armgcc9 \
-            -DEXTRA_CONF_FILE=tests/config/demo_ble_minimal.conf
-          cmake --build out/demo_foc-ble-minimal --parallel
-          cmake -S . -B out/demo_foc-ble-production -G Ninja \
-            -Dp=demo_ble -Dt=armgcc9 \
-            -DPROFILE=release
-          cmake --build out/demo_foc-ble-production --parallel
-
-      - name: Build RT-Thread application
-        run: |
-          cmake -S . -B out/demo_foc-rtthread -G Ninja \
-            -Dp=demo_foc -Dt=armgcc \
-            -DEXTRA_CONF_FILE=tests/config/rtthread.conf
-          cmake --build out/demo_foc-rtthread --parallel
-
-      - name: Build architecture and OSAL contract matrix
-        run: |
-          python tools/sdk.py test --suite firmware -B out/architecture-matrix
-          python tools/scripts/check_rtos_ports.py \
-            --compiler "${ARMGCC9_TOOLCHAIN_PATH}/bin/arm-none-eabi-gcc" \
-            --build out/port-contracts
-          cmake -S tests/fixtures/external_app -B out/external-app -G Ninja \
-            "-DSDK_ROOT=${PWD}"
-          cmake -S tests/fixtures/external_app -B out/external-app -G Ninja \
-            "-DSDK_ROOT=${PWD}"
-          cmake --build out/external-app --parallel
-
-      - name: Build boot-chain firmware matrix
-        run: |
-          for product in demo_foc demo_ble gimbal; do
-            toolchain=armgcc
-            if [[ "${product}" == "demo_ble" ]]; then
-              toolchain=armgcc9
-            fi
-
-            for image in preloader loader; do
-              build="out/${product}-${image}"
-              cmake -S . -B "${build}" -G Ninja \
-                "-Dp=${product}" "-Dt=${toolchain}" \
-                "-DFIRMWARE_TYPE=${image}"
-              cmake --build "${build}" --parallel
-            done
-
-            build="out/${product}-upgrade"
-            loader_bin="${PWD}/out/${product}-loader/${product}_loader.bin"
-            cmake -S . -B "${build}" -G Ninja \
-              "-Dp=${product}" "-Dt=${toolchain}" \
-              -DFIRMWARE_TYPE=upgrade \
-              "-DLOADER_PAYLOAD_FILE=${loader_bin}"
-            cmake --build "${build}" --parallel
-          done
-
-      - name: Build factory images
-        run: |
-          python bootloader/scripts/pack_image.py --layout demo_foc \
-            --input out/demo_foc-freertos/demo_foc.bin \
-            --output out/demo_foc-app.img
-          python bootloader/scripts/merge_firmware.py --layout demo_foc \
-            --preloader out/demo_foc-preloader/demo_foc_preloader.bin \
-            --loader out/demo_foc-loader/demo_foc_loader.bin \
-            --app out/demo_foc-app.img --output out/demo_3in1.bin
-          python bootloader/scripts/pack_image.py --layout demo_ble \
-            --input out/demo_foc-ble/demo_ble.bin \
-            --output out/demo_foc-ble-app.img
-          python bootloader/scripts/merge_firmware.py --layout demo_ble \
-            --preloader out/demo_ble-preloader/demo_ble_preloader.bin \
-            --loader out/demo_ble-loader/demo_ble_loader.bin \
-            --app out/demo_foc-ble-app.img --output out/demo_ble_3in1.bin
-
-      - name: Record firmware checksums
-        run: |
-          sha256sum \
-            out/demo_3in1.bin \
-            out/demo_ble_3in1.bin \
-            >out/factory-images.sha256
-          {
-            echo "### Factory image SHA-256"
-            echo '```text'
-            cat out/factory-images.sha256
-            echo '```'
-          } >>"${GITHUB_STEP_SUMMARY}"
+      - name: Retain firmware test and configuration evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: firmware-contract-results
+          path: |
+            out/firmware-checks.log
+            out/factory-checks.log
+            out/contracts/test-results.json
+            out/contracts/**/*.log
+            out/contracts/**/report.json
+            out/architecture-matrix/test-results.json
+            out/architecture-matrix/resource-summary.md
+            out/architecture-matrix/*/*.resources.json
+            out/architecture-matrix/**/CMakeConfigureLog.yaml
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Upload development firmware outputs
-        # actions/upload-artifact v7.0.1
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: development-firmware-${{ github.sha }}
+          include-hidden-files: true
           path: |
-            out/demo_foc-freertos/demo_foc.*
-            out/demo_foc-rtthread/demo_foc.*
-            out/demo_foc-*/demo_*.*
-            out/demo_ble-*/demo_ble_*.*
-            out/gimbal-*/gimbal_*.*
-            out/demo_foc-app.img
-            out/demo_foc-ble-app.img
-            out/demo_foc-ble-production/demo_ble.*
-            out/demo_3in1.bin
-            out/demo_ble_3in1.bin
-            out/factory-images.sha256
+            out/architecture-matrix/osal-freertos/.config
+            out/architecture-matrix/osal-freertos/build-info.json
+            out/architecture-matrix/osal-rtthread/.config
+            out/architecture-matrix/osal-rtthread/build-info.json
+            out/architecture-matrix/*/*.bin
+            out/architecture-matrix/*/*.elf
+            out/architecture-matrix/*/*.elf_origin
+            out/architecture-matrix/*/*.hex
+            out/architecture-matrix/*/*.map
             out/architecture-matrix/*/*.manifest.json
-            out/architecture-matrix/*/*.resources.json
             out/architecture-matrix/*/*.architecture.md
             out/architecture-matrix/*/*.devices.dot
+            out/architecture-matrix/*/include/generated/devices.json
+            out/architecture-matrix/factory/*/*.bin
+            out/architecture-matrix/factory/*/*.img
+            out/architecture-matrix/factory/*/*/*.bin
+            out/architecture-matrix/factory/*/*/*.elf
+            out/architecture-matrix/factory/*/*/*.manifest.json
+            out/architecture-matrix/factory/SHA256SUMS
           if-no-files-found: error
           retention-days: 14

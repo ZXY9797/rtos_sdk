@@ -6,14 +6,3 @@ menuconfig UART
 rsource "Kconfig.stm32"
 rsource "Kconfig.gd32"
 rsource "Kconfig.gr5525"
-
-if UART
-
-config UART_INIT_PRIORITY
-	int "UART init priority"
-	range 0 999
-	default KERNEL_INIT_PRIORITY_DEFAULT
-	help
-	  UART driver device initialization priority.
-
-endif # UART

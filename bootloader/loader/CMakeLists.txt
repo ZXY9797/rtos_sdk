@@ -57,8 +57,6 @@ target_sources(${MODULE_NAME}
         ${TOP_DIR}/component/link/src/codec.cc
         ${TOP_DIR}/component/link/src/crc8.cc
         ${TOP_DIR}/component/link/src/crc16.cc
-        ${DRIVERS_GENERATED_CC}
-        ${PINCTRL_GENERATED_CC}
 )
 
 if(CONFIG_BOOT_DFU_UART)

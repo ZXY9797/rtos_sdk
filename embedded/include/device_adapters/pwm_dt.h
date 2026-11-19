@@ -2,6 +2,9 @@
 
 #include <device.h>
 #include <drivers/pwm.h>
+#if defined(CONFIG_PWM_GD32)
+#include <device_adapters/gd32_timer_trigger.h>
+#endif
 
 #define HAL_GD32_PWM_DT_ADAPT(node_id)                             \
     template <>                                                    \
@@ -15,6 +18,8 @@
                                                                    \
         static_assert(kChannel <= 3U, "PWM channel is invalid");   \
                                                                    \
+        template <unsigned Event>                                  \
+        using AdcTrigger = Gd32TimerTrigger<DT_REG_ADDR(node_id), Event>; \
         using type = Pwm<                                         \
             DT_REG_ADDR(node_id),                                 \
             static_cast<PwmChannel>(kChannel)>;                    \

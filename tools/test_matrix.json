@@ -1,19 +1,46 @@
 {
   "schema": "rtos-sdk.tests.v1",
-  "host": {"runner": "ctest", "capabilities": ["threads", "pure-components"]},
+  "host": {
+    "runner": "ctest",
+    "capabilities": ["threads", "pure-components"],
+    "python": {
+      "tools": "tools/scripts/tests",
+      "boot": "bootloader/scripts/tests",
+      "motor": "tools/demo_foc"
+    },
+    "audit": {
+      "dependency-inventory": ["tools/scripts/dependency_inventory.py"],
+      "source-audit": ["tools/scripts/source_audit.py", "--check"]
+    }
+  },
+  "rejected_configurations": [
+    {"name": "cached-dma", "arguments": ["-Dp=demo_foc", "-Dt=armgcc9", "-DEXTRA_CONF_FILE=tests/config/cached_dma.conf"], "expected": "Cached DMA requires product memory provider"},
+    {"name": "secure-link", "arguments": ["-Dp=demo_foc", "-Dt=armgcc9", "-DEXTRA_CONF_FILE=tests/config/link_secure.conf"], "expected": "CONFIG_LINK_SECURITY requires product provider"},
+    {"name": "production-boot", "arguments": ["-Dp=demo_foc", "-Dt=armgcc9", "-DFIRMWARE_TYPE=loader", "-DPROFILE=release"], "expected": "Production boot requires product security provider"},
+    {"name": "production-preloader", "arguments": ["-Dp=demo_foc", "-Dt=armgcc9", "-DFIRMWARE_TYPE=preloader", "-DPROFILE=release"], "expected": "Production preloader requires product root-of-trust provider"},
+    {"name": "goodix-toolchain", "arguments": ["-Dp=demo_ble", "-Dt=armgcc"], "expected": "GR5525 requires Arm GNU Toolchain 9.3.1"}
+  ],
   "firmware": [
     {"name": "demo_foc-freertos", "arguments": ["-Dp=demo_foc", "-Dt=armgcc9"], "verification": "build", "capabilities": ["dma", "foc", "link", "can-fd", "joint-sync"]},
-    {"name": "demo_foc-rtthread", "arguments": ["-Dp=demo_foc", "-Dt=armgcc9", "-DEXTRA_CONF_FILE=tests/config/rtthread.conf"], "verification": "build", "capabilities": ["osal"]},
-    {"name": "demo_foc-release", "arguments": ["-Dp=demo_foc", "-Dt=armgcc9", "-DPROFILE=release"], "verification": "build", "capabilities": ["watchdog"]},
+    {"name": "demo_foc-rtthread", "arguments": ["-Dp=demo_foc", "-Dt=armgcc9", "-DSDK_RTOS_BACKEND=rt-thread"], "verification": "build", "capabilities": ["osal"]},
+    {"name": "demo_foc-release", "arguments": ["-Dp=demo_foc", "-Dt=armgcc9", "-DPROFILE=release"], "verification": "build", "capabilities": ["watchdog"], "budget": {"image_bytes": 151552, "static_ram_bytes": 117760}},
     {"name": "gimbal", "arguments": ["-Dp=gimbal", "-Dt=armgcc9"], "verification": "build", "capabilities": ["dma-batch", "timing", "safety"]},
-    {"name": "gimbal-release", "arguments": ["-Dp=gimbal", "-Dt=armgcc9", "-DPROFILE=release"], "verification": "build", "capabilities": ["watchdog", "timing", "safety"]},
+    {"name": "gimbal-release", "arguments": ["-Dp=gimbal", "-Dt=armgcc9", "-DPROFILE=release"], "verification": "build", "capabilities": ["watchdog", "timing", "safety"], "budget": {"image_bytes": 112640, "static_ram_bytes": 44032}},
     {"name": "demo_foc-debug", "arguments": ["-Dp=demo_foc", "-Dt=armgcc9", "-DPROFILE=debug"], "verification": "build", "capabilities": ["assertions", "debug-profile"]},
     {"name": "demo_foc-motion", "arguments": ["-Dp=demo_foc", "-Dt=armgcc9", "-DEXTRA_CONF_FILE=tests/config/md007_motion.conf"], "verification": "build", "capabilities": ["gd32f503", "can-fd", "joint-sync", "brake"]},
     {"name": "demo_ble", "arguments": ["-Dp=demo_ble", "-Dt=armgcc9"], "verification": "build", "capabilities": ["ble", "link"]},
-    {"name": "demo_ble-release", "arguments": ["-Dp=demo_ble", "-Dt=armgcc9", "-DPROFILE=release"], "verification": "build", "capabilities": ["watchdog", "ble"]},
-    {"name": "osal-freertos", "arguments": ["-Dp=demo_foc", "-Dt=armgcc9", "-DAPPLICATION=samples/osal_contract"], "verification": "build", "capabilities": ["osal-contract-runtime"]},
-    {"name": "osal-rtthread", "arguments": ["-Dp=demo_foc", "-Dt=armgcc9", "-DAPPLICATION=samples/osal_contract", "-DEXTRA_CONF_FILE=tests/config/rtthread.conf"], "verification": "build", "capabilities": ["osal-contract-runtime"]}
+    {"name": "demo_ble-release", "arguments": ["-Dp=demo_ble", "-Dt=armgcc9", "-DPROFILE=release"], "verification": "build", "capabilities": ["watchdog", "ble"], "budget": {"image_bytes": 139264, "static_ram_bytes": 91136}},
+    {"name": "osal-freertos", "arguments": ["-Dp=demo_foc", "-Dt=armgcc9", "-DAPPLICATION=samples/osal_contract"], "verification": "build", "capabilities": ["osal-contract-runtime"], "budget": {"image_bytes": 26624, "static_ram_bytes": 45056}},
+    {"name": "osal-rtthread", "arguments": ["-Dp=demo_foc", "-Dt=armgcc9", "-DAPPLICATION=samples/osal_contract", "-DSDK_RTOS_BACKEND=rt-thread"], "verification": "build", "capabilities": ["osal-contract-runtime"], "budget": {"image_bytes": 22528, "static_ram_bytes": 44032}},
+    {"name": "demo_foc-system-gcc", "arguments": ["-Dp=demo_foc", "-Dt=armgcc"], "verification": "build", "capabilities": ["system-toolchain"]},
+    {"name": "demo_foc-rtthread-system-gcc", "arguments": ["-Dp=demo_foc", "-Dt=armgcc", "-DSDK_RTOS_BACKEND=rt-thread"], "verification": "build", "capabilities": ["system-toolchain", "osal"]},
+    {"name": "demo_ble-minimal", "arguments": ["-Dp=demo_ble", "-Dt=armgcc9", "-DEXTRA_CONF_FILE=tests/config/demo_ble_minimal.conf"], "verification": "build", "capabilities": ["minimal-ble"]}
   ],
+  "factory": {
+    "demo_ble": {"app_case": "demo_ble", "boot_toolchain": "armgcc9"},
+    "demo_foc": {"app_case": "demo_foc-system-gcc", "boot_toolchain": "armgcc"},
+    "gimbal": {"app_case": "gimbal", "boot_toolchain": "armgcc"}
+  },
   "target_acceptance": [
     {"name": "osal-contract", "products": ["demo_foc"], "backends": ["freertos", "rt-thread"], "success_marker": "OSAL_CONTRACT_PASS", "requires": ["programming", "serial capture"]},
     {"name": "control-latency", "products": ["gimbal"], "requires": ["logic analyzer", "loaded control loop"], "metrics": ["max_execution_us", "max_latency_us", "deadline_misses", "stack_watermark"]},

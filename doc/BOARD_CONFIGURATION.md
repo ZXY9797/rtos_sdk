@@ -80,6 +80,11 @@ Kconfig：
 
 ## 使用
 
+`sdk.py configure` 每次根据本次参数选择产品、应用、镜像配置和 overlay。相对构建路径相对于调用目录。
+省略 `--application` 时使用产品应用，省略 `--backend` 时使用镜像自身的 Kconfig 内核选择。
+显式选择内核时，普通功能片段与内核可以组合，例如
+`python tools/sdk.py configure -p demo_foc -B out/foc-motion --backend rt-thread --cmake-arg=-DEXTRA_CONF_FILE=tests/config/md007_motion.conf`。
+
 ```powershell
 python tools/sdk.py configure -p gimbal -B out/gimbal-release --profile release
 python tools/sdk.py build -B out/gimbal-release

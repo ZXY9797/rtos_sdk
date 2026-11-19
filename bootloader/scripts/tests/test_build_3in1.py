@@ -24,20 +24,50 @@ class BuildThreeInOneTest(unittest.TestCase):
             for image in ('preloader', 'loader', 'app'):
                 (root / image).mkdir()
                 (root / image / 'build-info.json').write_text(json.dumps({
-                    'product': 'demo_foc', 'firmware': image, 'board': 'gd32_demo',
-                    'inputs': {'layout': checksum}}), encoding='utf-8')
+                    'product': 'demo_foc', 'firmware': image, 'board': 'gd32_demo', 'profile': 'release',
+                    'inputs': {'layout': checksum, 'board_sha256': 'c' * 64}}), encoding='utf-8')
             build_3in1.verify_image_set(root, 'demo_foc')
             path = root / 'app/build-info.json'
             info = json.loads(path.read_text(encoding='utf-8'))
+            build_3in1.verify_image_set(root, 'demo_foc', required_profile='release')
+            info['profile'] = 'debug'
+            path.write_text(json.dumps(info), encoding='utf-8')
+            with self.assertRaisesRegex(SystemExit, 'release profile for production'):
+                build_3in1.verify_image_set(root, 'demo_foc', required_profile='release')
             info['board'] = 'other-board'
             path.write_text(json.dumps(info), encoding='utf-8')
             with self.assertRaisesRegex(SystemExit, 'board differs'):
                 build_3in1.verify_image_set(root, 'demo_foc')
             info['board'] = 'gd32_demo'
+            info['inputs']['board_sha256'] = 'd' * 64
+            path.write_text(json.dumps(info), encoding='utf-8')
+            with self.assertRaisesRegex(SystemExit, 'board differs'):
+                build_3in1.verify_image_set(root, 'demo_foc')
+            del info['inputs']['board_sha256']
+            path.write_text(json.dumps(info), encoding='utf-8')
+            with self.assertRaisesRegex(SystemExit, 'rebuild'):
+                build_3in1.verify_image_set(root, 'demo_foc')
             info['inputs']['layout'] = 'different-layout'
             path.write_text(json.dumps(info), encoding='utf-8')
             with self.assertRaisesRegex(SystemExit, 'canonical product layout'):
                 build_3in1.verify_image_set(root, 'demo_foc')
+
+    def test_prebuilt_image_rejects_a_replaced_binary_or_changed_config(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "test.bin").write_bytes(b"image")
+            (root / ".config").write_bytes(b"config")
+            info = {"inputs": {"config": hashlib.sha256(b"config").hexdigest()}}
+            (root / "build-info.json").write_text(json.dumps(info), encoding="utf-8")
+            manifest = {"build": info, "artifacts": {"test.bin": {"sha256": hashlib.sha256(b"image").hexdigest()}}}
+            (root / "test.manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            build_3in1.verify_linked_files(root, "test")
+            for name, original in (("test.bin", b"image"), (".config", b"config")):
+                with self.subTest(file=name):
+                    (root / name).write_bytes(b"another build")
+                    with self.assertRaisesRegex(SystemExit, "differ from the linked manifest"):
+                        build_3in1.verify_linked_files(root, "test")
+                    (root / name).write_bytes(original)
 
     def test_production_verifies_each_final_image_configuration(self):
         with tempfile.TemporaryDirectory() as directory:

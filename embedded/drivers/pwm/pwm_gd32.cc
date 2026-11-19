@@ -1,4 +1,4 @@
-#include <drivers/pwm.h>
+#include <device_adapters/gd32_timer_trigger.h>
 #include <gd32_regs.h>
 
 namespace hal {
@@ -188,6 +188,28 @@ Status PwmBase::deinit() {
     m_initialized = false;
     m_three_phase = false;
     m_complementary = false;
+    return Status::Ok;
+}
+
+Status gd32_timer::configure_adc_compare(PwmBase& timer, uint32_t count)
+{
+    if (!timer.is_initialized()) return Status::InvalidArgument;
+    auto& regs = *reinterpret_cast<TimerRegs*>(timer.base_addr());
+    if (regs.CTL0 & CTL0_CEN) return Status::Busy;
+    if (count > regs.CAR) return Status::InvalidArgument;
+    configure_channel(regs, PwmChannel::Ch4);
+    regs.CHCTL2 |= CHCTL2_CH3EN;
+    regs.CH3CV = count;
+    regs.SWEVG = SWEVG_UPG;
+    return Status::Ok;
+}
+
+Status gd32_timer::configure_adc_update(PwmBase& timer)
+{
+    if (!timer.is_initialized()) return Status::InvalidArgument;
+    auto& regs = *reinterpret_cast<TimerRegs*>(timer.base_addr());
+    if (regs.CTL0 & CTL0_CEN) return Status::Busy;
+    regs.CTL1 = (regs.CTL1 & ~CTL1_MMC_Msk) | CTL1_MMC_TRGO;
     return Status::Ok;
 }
 

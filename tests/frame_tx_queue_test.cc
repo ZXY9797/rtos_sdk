@@ -2,7 +2,7 @@
 #include <link/fragment.h>
 #include <array>
 #include <cstdlib>
-#define CHECK(x) do { if (!(x)) std::abort(); } while (false)
+#include "test_check.h"
 
 int main()
 {

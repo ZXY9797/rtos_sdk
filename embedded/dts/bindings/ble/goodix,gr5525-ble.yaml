@@ -52,6 +52,7 @@ properties:
     description: Enable bonding (0=disabled, 1=enabled)
 
 cxx-driver:
+  kconfig: BLE_GR5525
   adapter:
     header: device_adapters/ble_dt.h
     macro: HAL_BLE_DT_ADAPT

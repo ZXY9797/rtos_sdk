@@ -5,6 +5,7 @@ compatible: "goodix,gr5525-spi"
 include: [spi-controller.yaml, base.yaml]
 
 cxx-driver:
+  kconfig: SPI_GR5525
   adapter:
     header: device_adapters/spi_dt.h
     macro: HAL_SPI_DT_ADAPT

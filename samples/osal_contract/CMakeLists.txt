@@ -1,4 +1,4 @@
-sdk_add_library(app STATIC main.cc ${DRIVERS_GENERATED_CC} ${PINCTRL_GENERATED_CC})
+sdk_add_library(app STATIC main.cc)
 target_link_libraries(app PRIVATE drivers osal boot_common)
 if(DEFINED EXTERNAL_CONTRACT_COMPONENT)
     target_link_libraries(app PRIVATE ${EXTERNAL_CONTRACT_COMPONENT})

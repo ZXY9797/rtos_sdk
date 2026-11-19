@@ -3,9 +3,11 @@
 
 import argparse
 import json
+from pathlib import Path
 import sys
 
 from device_bindings import (
+    CAPABILITY_BITS,
     DEFAULT_INIT_LEVEL,
     DEFAULT_INIT_PRIORITY,
     INIT_LEVELS,
@@ -26,10 +28,6 @@ from device_codegen_common import (
 INIT_LEVEL_ORDER = {
     level: index for index, level in enumerate(INIT_LEVELS)
 }
-
-CAPABILITY_BITS = {'read': 1, 'write': 2, 'async-transfer': 4, 'cancel': 8,
-                   'dma': 16, 'power-management': 32}
-
 
 def stable_device_id(path):
     value = 2166136261
@@ -73,6 +71,9 @@ def collect_resources(edt):
 def parse_args():
     parser = argparse.ArgumentParser(allow_abbrev=False)
     parser.add_argument('--edt-pickle', required=True)
+    parser.add_argument('--config', type=Path, required=True)
+    parser.add_argument('--require', action='append', default=[], metavar='ALIAS:CAPABILITY')
+    parser.add_argument('--no-instances', action='store_true')
     parser.add_argument('--bindings-dir', required=True, action='append')
     parser.add_argument('--header-out', required=True)
     parser.add_argument('--source-out', required=True)
@@ -265,7 +266,7 @@ def resolve_interrupts(node, declarations):
     return resolved
 
 
-def generate_specs(edt, drivers):
+def generate_specs(edt, drivers, *, instantiate=True):
     specs = []
     used_headers = set()
 
@@ -278,7 +279,7 @@ def generate_specs(edt, drivers):
         if driver is None:
             continue
 
-        enabled = node_enabled(node)
+        enabled = instantiate and node_enabled(node)
         if node.dep_ordinal is None:
             raise ValueError(
                 f'{node.path}: C++ device has no dependency ordinal')
@@ -286,7 +287,15 @@ def generate_specs(edt, drivers):
             resolve_interrupts(node, driver['interrupts'])
             if enabled else [])
 
+        capabilities = list(driver.get('capabilities', []))
+        for capability, name in driver.get('conditional_capabilities', {}).items():
+            prop = node.props.get(name)
+            if prop is None or prop.type != 'boolean':
+                raise ValueError(f'{node.path}: capability {capability} needs boolean {name}')
+            if prop.val:
+                capabilities.append(capability)
         spec = {
+            'kconfig': driver.get('kconfig'),
             'node': node,
             'ord': node.dep_ordinal,
             'alias': node_alias(node),
@@ -307,7 +316,7 @@ def generate_specs(edt, drivers):
             'has_init': driver['has_init'],
             'has_isr': driver['has_isr'],
             'interrupts': interrupts,
-            'capabilities': driver.get('capabilities', []),
+            'capabilities': capabilities,
         }
         specs.append(spec)
         if enabled:
@@ -766,6 +775,7 @@ def render_report(specs, resources=None):
             'compatible': spec['compatible'],
             'type': spec['type'],
             'header': spec['header'],
+            'backend': spec.get('kconfig'),
             'enabled': spec['enabled'],
             'init_level': resolve_init_level_key(spec),
             'init_priority': resolve_init_priority(spec),
@@ -790,6 +800,26 @@ def render_report(specs, resources=None):
         report, ensure_ascii=False, indent=2) + '\n'
 
 
+def validate_image_devices(specs, config, requirements):
+    enabled_symbols = {line.removeprefix('CONFIG_').removesuffix('=y')
+                       for line in config.splitlines()
+                       if line.startswith('CONFIG_') and line.endswith('=y')}
+    devices = {alias: spec for spec in specs for alias in spec['node'].aliases}
+    for requirement in requirements:
+        alias, separator, capability = requirement.partition(':')
+        if not separator or capability not in CAPABILITY_BITS:
+            raise ValueError(f'invalid device requirement {requirement!r}; expected alias:capability')
+        spec = devices.get(alias)
+        if not spec or not spec['enabled'] or capability not in spec['capabilities']:
+            raise ValueError(f'{alias}: image requires an enabled device with {capability}')
+    for spec in specs:
+        backend = spec['kconfig']
+        if spec['enabled'] and backend and backend not in enabled_symbols:
+            capabilities = ', '.join(spec['capabilities']) or spec['type']
+            raise ValueError(f"{spec['alias'] or spec['path']} ({spec['path']}, {capabilities}): "
+                             f"enabled device requires CONFIG_{backend}=y")
+
+
 def main():
     args = parse_args()
     try:
@@ -797,7 +827,8 @@ def main():
         drivers = {}
         for directory in args.bindings_dir:
             drivers.update(scan_bindings(directory))
-        specs, used_headers = generate_specs(edt, drivers)
+        specs, used_headers = generate_specs(edt, drivers, instantiate=not args.no_instances)
+        validate_image_devices(specs, args.config.read_text(encoding='utf-8'), args.require)
         resources = collect_resources(edt)
         check_init_dependencies(specs)
 

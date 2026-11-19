@@ -4,14 +4,3 @@ menuconfig DMA
 	  Include DMA drivers in system config
 
 rsource "Kconfig.gd32"
-
-if DMA
-
-config DMA_INIT_PRIORITY
-	int "DMA init priority"
-	range 0 999
-	default KERNEL_INIT_PRIORITY_DEFAULT
-	help
-	  DMA driver device initialization priority.
-
-endif # DMA

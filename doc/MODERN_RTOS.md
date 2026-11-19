@@ -61,7 +61,9 @@ project(my_product LANGUAGES NONE)
 ```
 
 find_package 必须先于第一个 project，以便在主机平台初始化前选择交叉工具链。
-应用创建 app target，SDK 为其接入平台依赖；平台也提供 `sdk::platform` 别名。
+应用创建 app target，声明自己的源文件和依赖。SDK 为 App 和 loader 加入
+`sdk::devices` 与 `sdk::pinctrl`，upgrade 只接入 pinctrl。镜像可在 `prj.conf`
+中启用 `CONFIG_SDK_OPTIMIZE_FOR_SIZE`。有单独时序要求的源文件可设置自己的编译选项。
 独立应用可在 config/board.dts 中描述自己的硬件，未提供时使用所选产品的硬件。
 DTC_OVERLAY_FILE 在默认镜像 overlay 后显式追加 overlay 列表；
 BOOT_LAYOUT 可选择已有布局名或外部 layout.json。
@@ -82,7 +84,7 @@ sdk_add_component(my_component
 host 工程没有 sdk_build_config，可直接复用 `component/algo`、`component/motor`、`component/ipc`
 与 `component/runtime`。接入例子见 [control_pipeline](../samples/control_pipeline/CMakeLists.txt) 和
 [interaction_control](../samples/interaction_control/CMakeLists.txt)。
-Hall 硬件门面位于 device_adapters，`sdk::motor` 接收采样值并计算角度和标定结果。
+云台 Hall 硬件适配器随产品维护，可复用的电机设备 binding 和适配器位于 `component/motor/drive`。`sdk::motor` 接收采样值并计算角度和标定结果。
 云台三轴领域契约位于产品目录。裁剪的 Zephyr 内部 CMake 辅助函数不作为稳定扩展 API。
 
 runtime 的源码与公开头文件统一位于 `component/runtime`，由 `sdk::runtime` 提供。
@@ -153,40 +155,67 @@ python tools/scripts/decode_system_diagnostics.py diagnostics-payload.bin
 
 每次固件链接生成 image.manifest.json、.resources.json、.devices.dot 和
 .architecture.md。build-info.json 关联 SDK/应用/模块 revision 或内容标识、dirty
-状态、编译器、配置、DTS、layout、编译命令和依赖摘要。资源来自最终 ELF，不能替代
-栈水位和目标时序。dependencies.json 记录已有导入的内容摘要，缺失的 upstream
-revision 明确保留 unknown，不根据版本号伪造 commit。
+状态、编译器、配置、DTS、layout、编译命令和依赖摘要。
+`.resources.json` 的 `usage` 记录镜像大小、物理分区上限、剩余字节和静态 RAM。
+App 镜像大小含固定包头，可升级上限取 slot0 和 upgrade 的较小值。静态 RAM
+按压缩前 ELF 的 RAM 分配段求和，栈水位和控制环最坏时延需要板上测量。
+用 `-DSDK_RESOURCE_BASELINE=<上次构建的.resources.json>` 比较同应用、基础板、布局、
+镜像、profile、内核、工具链及所选配置片段的历史报告。旧报告缺少身份字段时，需重新构建基线。
+独立应用可在项目中设置稳定的 `SDK_APPLICATION_ID`，供不同检出路径比较同一应用。
+三个产品的 release 和两个 OSAL 样例还有独立的 Flash、静态 RAM 预算。限值位于
+`tools/test_matrix.json`，实际用量、限值和检查结果写入 `resource-summary.md` 和 CI 任务摘要。
 
 ```powershell
 python tools/sdk.py configure -p demo_foc -B out/demo_foc --profile release
 python tools/sdk.py build -B out/demo_foc
 python tools/sdk.py inspect -B out/demo_foc --kind resources
+python tools/sdk.py test --suite quick
+python tools/sdk.py test --suite host --label motor
+python tools/sdk.py test --suite host --list
 python tools/sdk.py test --suite host
-python tools/sdk.py test --suite firmware --toolchain-path C:/arm-none-eabi-gcc-9.3.1-1.4
+python tools/sdk.py test --suite contracts
+python tools/sdk.py test --suite firmware
 ```
 
-test_matrix.json 区分 host、firmware build 和 target acceptance。
-samples/osal_contract 在两个内核执行事件组契约后从 UART 输出 OSAL_CONTRACT_PASS。
-CLI/CI 只构建，不自动烧录或将构建记为运行通过。samples/control_pipeline 运行
+PC 和 CI 使用同一份测试清单。用 `--case` 重现报告中的单项，用 `--toolchain-path`
+向主机配置集成测试和固件构建指定 GCC 9 工具链。系统 GCC 的矩阵项从 PATH 选择交叉编译器。
+每次运行的 `test-results.json` 记录各项状态与失败原因。CI 保存主机测试结果和配置失败日志。
+Windows 使用 VS 2022 时，运行 `python tools/sdk.py test --suite host --generator "Visual Studio 17 2022" -B out/msvc`。
+两个 ARM 工具链就绪后，`python tools/sdk.py test --suite all -B out/checks` 会连同固件预算和工厂组包一起验证。
+
+三合一组包入口 `bootloader/scripts/build_3in1.py` 校验各阶段的基础板指纹、产品、
+布局和二进制摘要。已有构建可传 `--app-dir`、`--loader-dir`、`--preloader-dir`。
+基础板指纹覆盖板级 DTS 及包含的硬件定义，同板各阶段可分别启用自己的 overlay。
+原生 DTS 的 `/include/` 和 `/incbin/` 输入也会触发增量配置。基础板声明的可选引脚计入板指纹，
+仅由镜像 overlay 引入的文件影响各自的镜像。
+
+### OSAL 串口验收
+
+先构建矩阵中的 `osal-freertos` 或 `osal-rtthread`，将对应固件部署到测试板。
+在主机安装 `pyserial` 后启动接收，看到监听提示后复位测试板。以下以 FreeRTOS 为例。
+
+```powershell
+python tools/sdk.py test --suite firmware --case osal-freertos -B out/matrix
+python tools/sdk.py hil -B out/matrix/osal-freertos --port COM3 --timeout 30
+```
+
+样例完成事件组、超时和线程 join 检查后，从 UART 输出 `OSAL_CONTRACT_PASS <build_id>`。
+接收器根据已链接的清单核对完整回执，超时或标识不符时退出失败。每次运行在
+`<build>/hil/osal-*/` 独立目录中记录 `result.json`，开始采集后保存原始 `uart.bin`。
+RT-Thread 使用 `osal-rtthread` 的构建目录，分别保留两个内核的运行记录。
+
+samples/control_pipeline 运行
 快照/PID/Link 编解码/异步完成/输出 latch，并产生明确标注 host simulation 的
 benchmark JSON；gimbal 提供 MCU 参考组合和运行诊断。
 
 目标板验收包括 IRQ 抢占、DMA 缓存/取消、输出关闭延迟、watchdog、满载 deadline
-和栈水位、重连，以及 Boot swap/rollback 各阶段断电。生产三合一构建同时要求生产
-Boot provider 与 App release profile，不生成密钥或替代产品认证 transport。
+和栈水位、重连，以及 Boot swap/rollback 各阶段断电。生产三合一组包验证三个阶段的
+release profile、最终生产配置、App watchdog 和签名。根信任与认证 transport 由产品提供。
 gimbal 保留自己的 Boot 布局、产品标识和 loader 配置；三个产品分别构建并打包，
 不能跨产品混用 Loader。构建通过后仍须按实际板卡完成 Boot 断电与回滚验收。
 
-## 本次落地验证（2026-11-17）
-
-- Windows + GCC 主机契约：23 项 CTest、59 项工具 Python 测试、29 项 Boot Python 测试。
-- 固件矩阵：demo_foc、demo_ble、gimbal，FreeRTOS/RT-Thread、release 和 OSAL 测试应用，
-  共 10 项应用配置（含 debug 和各产品 release）；另验证三个产品各自的 preloader、loader、upgrade 和开发三合一镜像。
-- 独立应用及外部模块：完整链接、重复配置；错误的 project/find_package 顺序被拒绝。
-- 负向配置：缺失缓存 DMA provider、Link 安全 provider、生产 Boot provider 和 profile
-  均按预期拒绝。三个产品的原有布局 JSON、产品标识和分区保持一致。
-- 本地验证没有烧录或控制目标板；新增 GitHub Actions 矩阵和 MSVC 作业尚未远端执行。
-  量产认证、缓存后端、板上性能和电气保护须使用真实产品 provider 与实板验收。
+可筛选的用例从 `python tools/sdk.py test --suite all --list` 获取。工厂校验和位于测试目录下的
+`factory/SHA256SUMS`，串口验收报告对应实际接收数据的那次运行。
 
 兼容性迁移需关注显式 profile 选择、FaultRecord v4、CAN/BLE 整帧入队语义，
 以及独立应用的 CMake 初始化顺序。升级时须同时复核配置、主机解码工具和 ACK 超时预算。

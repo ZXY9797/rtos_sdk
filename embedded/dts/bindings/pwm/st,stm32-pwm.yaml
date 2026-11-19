@@ -37,6 +37,7 @@ pwm-cells:
   - flags
 
 cxx-driver:
+  kconfig: PWM_STM32
   adapter:
     header: device_adapters/pwm_dt.h
     macro: HAL_STM32_PWM_DT_ADAPT

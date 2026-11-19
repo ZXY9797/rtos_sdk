@@ -1,5 +1,5 @@
 description: Product FOC acquisition and PWM timing
-compatible: "app,foc-control"
+compatible: "rtos_sdk,md007-control"
 include: base.yaml
 properties:
   current-channels:
@@ -20,11 +20,13 @@ properties:
   adc-before-peak-ns:
     type: int
     required: true
-  current-trigger-input:
-    type: int
+  current-triggers:
+    type: phandle-array
+    specifier-space: trigger
     required: true
-  joint-trigger-input:
-    type: int
+  joint-triggers:
+    type: phandle-array
+    specifier-space: trigger
     required: true
   brake-enable-gpios:
     type: phandle-array

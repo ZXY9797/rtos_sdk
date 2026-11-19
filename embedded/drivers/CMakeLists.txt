@@ -1,42 +1,17 @@
 set(MODULE_NAME drivers)
 sdk_add_library(${MODULE_NAME} ${NULL_C})
 
-target_include_directories(${MODULE_NAME}
-    PUBLIC
-)
-
-add_subdirectory_ifdef(CONFIG_GPIO gpio)
-target_link_libraries_ifdef(CONFIG_GPIO ${MODULE_NAME} PUBLIC gpio)
-
-add_subdirectory_ifdef(CONFIG_SPI spi)
-target_link_libraries_ifdef(CONFIG_SPI ${MODULE_NAME} PUBLIC spi)
-
-add_subdirectory_ifdef(CONFIG_I2C i2c)
-target_link_libraries_ifdef(CONFIG_I2C ${MODULE_NAME} PUBLIC i2c)
-
-add_subdirectory_ifdef(CONFIG_UART uart)
-target_link_libraries_ifdef(CONFIG_UART ${MODULE_NAME} PUBLIC uart)
-if(TARGET uart AND TARGET device_codegen)
-    add_dependencies(uart device_codegen)
-endif()
-
-add_subdirectory_ifdef(CONFIG_CAN can)
-target_link_libraries_ifdef(CONFIG_CAN ${MODULE_NAME} PUBLIC can)
-
-add_subdirectory_ifdef(CONFIG_FLASH flash)
-target_link_libraries_ifdef(CONFIG_FLASH ${MODULE_NAME} PUBLIC flash)
-
-add_subdirectory_ifdef(CONFIG_PWM pwm)
-target_link_libraries_ifdef(CONFIG_PWM ${MODULE_NAME} PUBLIC pwm)
-
-add_subdirectory_ifdef(CONFIG_ADC adc)
-target_link_libraries_ifdef(CONFIG_ADC ${MODULE_NAME} PUBLIC adc)
-
-add_subdirectory_ifdef(CONFIG_PINCTRL pinctrl)
-target_link_libraries_ifdef(CONFIG_PINCTRL ${MODULE_NAME} PUBLIC pinctrl)
-
-add_subdirectory_ifdef(CONFIG_DMA dma)
-target_link_libraries_ifdef(CONFIG_DMA ${MODULE_NAME} PUBLIC dma)
+foreach(family IN ITEMS gpio spi i2c uart can flash pwm adc pinctrl dma)
+    string(TOUPPER "${family}" symbol)
+    if(CONFIG_${symbol})
+        add_subdirectory(${family})
+        get_target_property(sources ${family} SOURCES)
+        if(NOT sources)
+            message(FATAL_ERROR "CONFIG_${symbol}=y has no compiled backend for this image")
+        endif()
+        target_link_libraries(drivers PUBLIC ${family})
+    endif()
+endforeach()
 
 add_subdirectory_ifdef(CONFIG_IMU_ICM40609D imu)
 

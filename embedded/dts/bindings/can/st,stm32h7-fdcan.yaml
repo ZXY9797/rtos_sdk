@@ -5,6 +5,7 @@ compatible: "st,stm32h7-fdcan"
 include: ["bosch,m_can-base.yaml", "pinctrl-device.yaml"]
 
 cxx-driver:
+  kconfig: CAN_STM32
   adapter:
     header: device_adapters/can_dt.h
     macro: HAL_CAN_DT_ADAPT

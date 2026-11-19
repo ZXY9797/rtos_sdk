@@ -28,6 +28,7 @@ properties:
     description: Manual chip-select GPIO
 
 cxx-driver:
+  kconfig: IMU_ICM40609D
   adapter:
     header: device_adapters/icm40609d_dt.h
     macro: HAL_ICM40609D_DT_ADAPT

@@ -1,6 +1,8 @@
 set(MODULE_NAME arch)
 
 sdk_add_library(${MODULE_NAME} OBJECT)
+# Startup reads constants patched in the ELF by gcc_compress after linking.
+set_property(TARGET arch PROPERTY INTERPROCEDURAL_OPTIMIZATION FALSE)
 
 target_include_directories(${MODULE_NAME}
     PUBLIC

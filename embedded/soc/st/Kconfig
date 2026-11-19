@@ -47,8 +47,7 @@ config SWJ_ANALOG_PRIORITY
 	default 49
 	help
 	  Initialization priority of the routine within the PRE_KERNEL1 level.
-	  This priority must be greater than GPIO_INIT_PRIORITY and lower than
-	  UART_INIT_PRIORITY.
+	  Schedule this routine after GPIO setup and before UART initialization.
 
 config STM32_FLASH_PREFETCH
 	bool "Flash prefetch buffer"

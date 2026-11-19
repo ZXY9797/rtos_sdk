@@ -24,6 +24,7 @@ child-binding:
       type: string
 
 cxx-driver:
+  kconfig: GPIO
   adapter:
     header: device_adapters/gpio_dt.h
     macro: HAL_GPIO_DT_ADAPT

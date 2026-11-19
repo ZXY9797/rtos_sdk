@@ -22,4 +22,8 @@ target_include_directories(control_pipeline PRIVATE "${SDK_ROOT}/component/link/
 target_link_libraries(control_pipeline PRIVATE sdk::algo sdk::ipc sdk::runtime)
 target_compile_definitions(control_pipeline PRIVATE
     HOST_COMPILER="${CMAKE_CXX_COMPILER_ID}-${CMAKE_CXX_COMPILER_VERSION}")
-add_test(NAME control_pipeline COMMAND control_pipeline "${CMAKE_CURRENT_BINARY_DIR}/benchmark.json")
+if(COMMAND sdk_host_test)
+    sdk_host_test(control_pipeline control_pipeline "runtime" "${CMAKE_CURRENT_BINARY_DIR}/benchmark.json")
+else()
+    add_test(NAME control_pipeline COMMAND control_pipeline "${CMAKE_CURRENT_BINARY_DIR}/benchmark.json")
+endif()

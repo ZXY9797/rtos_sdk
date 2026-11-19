@@ -40,9 +40,7 @@ target_sources(${MODULE_NAME}
         control/attitude_ekf.cc
         services/gimbal_app.cc
         services/parameters.cc
-        services/parameter_store.cc
-        ${DRIVERS_GENERATED_CC}
-        ${PINCTRL_GENERATED_CC})
+        services/parameter_store.cc)
 
 target_sources_ifdef(CONFIG_FEEDBACK_CONTROL ${MODULE_NAME} PRIVATE control/controller.cc)
 target_sources_ifdef(CONFIG_MOTION ${MODULE_NAME} PRIVATE

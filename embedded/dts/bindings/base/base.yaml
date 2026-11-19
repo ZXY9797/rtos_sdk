@@ -27,7 +27,7 @@ properties:
       Optional auto-initialization priority for generated C++ initcalls.
 
       The value is consumed by tools/scripts/gen_device_traits.py when a
-      matching binding has a cxx-driver init-cfg section. It overrides the
+      matching binding has a cxx-driver section. It overrides the
       binding's cxx-driver init-priority for this specific devicetree node.
 
       Lower numbers run earlier within the same init level. The current linker
@@ -40,7 +40,7 @@ properties:
       Optional auto-initialization level for generated C++ initcalls.
 
       The value is consumed by tools/scripts/gen_device_traits.py when a
-      matching binding has a cxx-driver init-cfg section. It overrides the
+      matching binding has a cxx-driver section. It overrides the
       binding's cxx-driver init-level for this specific devicetree node.
 
       Supported values are:

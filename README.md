@@ -271,15 +271,20 @@ rtos_sdk/
 ## 快速开始
 
 ```bash
-# 配置（未指定 -Dt 时默认 armgcc9）
-cmake -B out -GNinja -Dp=demo_foc
-
-# 编译
-ninja -C out
-
-# 产物
-ls out/demo_foc.elf  out/demo_foc.bin  out/demo_foc.hex
+python tools/sdk.py configure -p demo_foc -B out/demo_foc
+python tools/sdk.py build -B out/demo_foc
+python tools/sdk.py inspect -B out/demo_foc --kind resources
+python tools/sdk.py test --suite host
 ```
+
+修改驱动、overlay 或 Kconfig 后，开发者与 AI 可用 `inspect --kind devices` 核对生成的设备依赖，
+用 `inspect --kind build` 核对实际配置片段与镜像。固件产物位于 `out/demo_foc/`。
+
+编辑器使用 clangd 时，先执行 `python tools/sdk.py inspect -B out/demo_foc --kind clangd`。
+在 VS Code 的工作区设置 JSON 中，把输出的 `arguments` 数组填入 `clangd.arguments`，
+保留已有的其他参数，再执行命令面板中的 `clangd: Restart language server`。
+其他编辑器将同一参数加入 clangd 的启动参数。切换产品或 profile 时选择对应的构建目录，
+索引即可使用该镜像的生成头文件与编译宏。
 
 Bootloader 和三合一固件：
 

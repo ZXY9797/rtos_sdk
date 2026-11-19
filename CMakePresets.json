@@ -3,7 +3,7 @@
   "configurePresets": [
     {"name": "demo_foc", "generator": "Ninja", "binaryDir": "${sourceDir}/out/presets/demo_foc", "cacheVariables": {"p": "demo_foc", "t": "armgcc9"}},
     {"name": "demo_foc-release", "inherits": "demo_foc", "binaryDir": "${sourceDir}/out/presets/demo_foc-release", "cacheVariables": {"PROFILE": "release"}},
-    {"name": "demo_foc-rtthread", "inherits": "demo_foc", "binaryDir": "${sourceDir}/out/presets/demo_foc-rtthread", "cacheVariables": {"EXTRA_CONF_FILE": "tests/config/rtthread.conf"}},
+    {"name": "demo_foc-rtthread", "inherits": "demo_foc", "binaryDir": "${sourceDir}/out/presets/demo_foc-rtthread", "cacheVariables": {"SDK_RTOS_BACKEND": "rt-thread"}},
     {"name": "gimbal", "generator": "Ninja", "binaryDir": "${sourceDir}/out/presets/gimbal", "cacheVariables": {"p": "gimbal", "t": "armgcc9"}},
     {"name": "demo_foc-ble", "generator": "Ninja", "binaryDir": "${sourceDir}/out/presets/demo_foc-ble", "cacheVariables": {"p": "demo_ble", "t": "armgcc9"}}
   ],

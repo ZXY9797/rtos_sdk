@@ -85,6 +85,14 @@ public:
 /// The caller owns serialization and must pass a valid initialized timer.
 namespace fast {
 
+#if defined(_MSC_VER)
+#define HAL_PWM_INLINE __forceinline
+#elif __has_cpp_attribute(gnu::always_inline)
+#define HAL_PWM_INLINE [[gnu::always_inline]] inline
+#else
+#define HAL_PWM_INLINE inline
+#endif
+
 /// Timer offsets shared by the supported STM32 and GD32 layouts.
 namespace reg {
     constexpr uintptr_t CR1   = 0x00;
@@ -111,52 +119,48 @@ namespace reg {
 }
 
 /// Set the bound channel duty without runtime validation.
-[[gnu::always_inline]]
-inline void set_duty_count(PwmBase &pwm, uint32_t count) {
+HAL_PWM_INLINE void set_duty_count(PwmBase &pwm, uint32_t count) {
     auto *ccr = reinterpret_cast<volatile uint32_t *>(
         pwm.base_addr() + ccr_offset(pwm.channel()));
     *ccr = count;
 }
 
 /// Set an explicit channel duty without runtime validation.
-[[gnu::always_inline]]
-inline void set_duty_count(PwmBase &pwm, PwmChannel ch, uint32_t count) {
+HAL_PWM_INLINE void set_duty_count(PwmBase &pwm, PwmChannel ch, uint32_t count) {
     auto *ccr = reinterpret_cast<volatile uint32_t *>(
         pwm.base_addr() + ccr_offset(ch));
     *ccr = count;
 }
 
 /// Enable the advanced-timer main output.
-[[gnu::always_inline]]
-inline void enable_output(PwmBase &pwm) {
+HAL_PWM_INLINE void enable_output(PwmBase &pwm) {
     auto *bdtr = reinterpret_cast<volatile uint32_t *>(
         pwm.base_addr() + reg::BDTR);
     *bdtr |= reg::BDTR_MOE;
 }
 
 /// Disable the advanced-timer main output.
-[[gnu::always_inline]]
-inline void disable_output(PwmBase &pwm) {
+HAL_PWM_INLINE void disable_output(PwmBase &pwm) {
     auto *bdtr = reinterpret_cast<volatile uint32_t *>(
         pwm.base_addr() + reg::BDTR);
     *bdtr &= ~reg::BDTR_MOE;
 }
 
 /// Enable an explicit timer channel.
-[[gnu::always_inline]]
-inline void enable_channel(PwmBase &pwm, PwmChannel ch) {
+HAL_PWM_INLINE void enable_channel(PwmBase &pwm, PwmChannel ch) {
     auto *ccer = reinterpret_cast<volatile uint32_t *>(
         pwm.base_addr() + reg::CCER);
     *ccer |= (reg::CCER_CC1E << (static_cast<uint8_t>(ch) * 4));
 }
 
 /// Disable an explicit timer channel.
-[[gnu::always_inline]]
-inline void disable_channel(PwmBase &pwm, PwmChannel ch) {
+HAL_PWM_INLINE void disable_channel(PwmBase &pwm, PwmChannel ch) {
     auto *ccer = reinterpret_cast<volatile uint32_t *>(
         pwm.base_addr() + reg::CCER);
     *ccer &= ~(reg::CCER_CC1E << (static_cast<uint8_t>(ch) * 4));
 }
+
+#undef HAL_PWM_INLINE
 
 } // namespace fast
 

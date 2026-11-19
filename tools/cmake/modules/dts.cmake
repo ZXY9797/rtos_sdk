@@ -57,6 +57,16 @@ if(DEFINED CMAKE_DTS_PREPROCESSOR)
 else()
   set(dts_preprocessor ${CMAKE_C_COMPILER})
 endif()
+# Resolve the physical board separately so App and Boot can be paired even
+# when their image overlays select different peripherals.
+set(SDK_BASE_BOARD "${PROJECT_BINARY_DIR}/board.dts.pre")
+zephyr_dt_preprocess(
+  CPP ${dts_preprocessor}
+  SOURCE_FILES ${DTS_SOURCE}
+  OUT_FILE ${SDK_BASE_BOARD}
+  EXTRA_CPPFLAGS ${DTS_EXTRA_CPPFLAGS}
+  INCLUDE_DIRECTORIES ${DTS_ROOT_SYSTEM_INCLUDE_DIRS}
+  WORKING_DIRECTORY ${TOP_DIR})
 zephyr_dt_preprocess(
   CPP ${dts_preprocessor}
   SOURCE_FILES ${dts_files}
@@ -75,6 +85,7 @@ toolchain_parse_make_rule(${DTS_DEPS}
 # build system to re-run CMake.
 set_property(DIRECTORY APPEND PROPERTY
   CMAKE_CONFIGURE_DEPENDS
+  ${SDK_BASE_BOARD}
   ${DTS_INCLUDE_FILES}
   ${GEN_EDT_SCRIPT}
   ${GEN_DEFINES_SCRIPT}
@@ -89,15 +100,9 @@ unset(DTS_ROOT_BINDINGS)
 unset(DTS_BINDING_FILES)
 foreach(dts_root ${DTS_ROOT})
   set(bindings_path ${dts_root}/dts/bindings)
-  if(EXISTS ${bindings_path})
-    list(APPEND
-      DTS_ROOT_BINDINGS
-      ${bindings_path}
-      )
-    file(GLOB_RECURSE root_binding_files
-      CONFIGURE_DEPENDS
-      ${bindings_path}/*.yaml
-      )
+  file(GLOB_RECURSE root_binding_files CONFIGURE_DEPENDS "${bindings_path}/*.yaml")
+  if(root_binding_files)
+    list(APPEND DTS_ROOT_BINDINGS "${bindings_path}")
     list(APPEND DTS_BINDING_FILES ${root_binding_files})
   endif()
 
@@ -169,92 +174,6 @@ execute_process(
 zephyr_file_copy(${DEVICETREE_GENERATED_H}.new ${DEVICETREE_GENERATED_H} ONLY_IF_DIFFERENT)
 file(REMOVE ${DEVICETREE_GENERATED_H}.new)
 message(STATUS "Generated devicetree_generated.h: ${DEVICETREE_GENERATED_H}")
-
-#
-# Configure EDT-based build-time source generation.
-#
-
-set(DEVICE_CODEGEN_COMMON
-    ${TOP_DIR}/tools/scripts/device_codegen_common.py)
-set(DEVICE_BINDINGS_SCRIPT
-    ${TOP_DIR}/tools/scripts/device_bindings.py)
-set(GEN_DEVICE_TRAITS_SCRIPT
-    ${TOP_DIR}/tools/scripts/gen_device_traits.py)
-set(GEN_PINCTRL_SCRIPT
-    ${TOP_DIR}/tools/scripts/gen_pinctrl.py)
-set(DRIVERS_GENERATED_H ${BINARY_DIR_INCLUDE_GENERATED}/drivers_generated.h)
-set(DRIVERS_GENERATED_CC ${BINARY_DIR_INCLUDE_GENERATED}/drivers_generated.cc)
-set(PINCTRL_GENERATED_CC ${BINARY_DIR_INCLUDE_GENERATED}/pinctrl_generated.cc)
-set(DEVICES_REPORT_JSON ${BINARY_DIR_INCLUDE_GENERATED}/devices.json)
-set(DTS_BINDINGS_DIR ${TOP_DIR}/embedded/dts/bindings)
-set(CXX_BINDING_ARGS)
-foreach(_bindings IN LISTS DTS_ROOT_BINDINGS)
-  list(APPEND CXX_BINDING_ARGS --bindings-dir "${_bindings}")
-endforeach()
-set(DEVICE_CODEGEN_STAMP
-    ${BINARY_DIR_INCLUDE_GENERATED}/device_codegen.stamp)
-set(PINCTRL_CODEGEN_STAMP
-    ${BINARY_DIR_INCLUDE_GENERATED}/pinctrl_codegen.stamp)
-
-file(GLOB_RECURSE CXX_DRIVER_BINDINGS
-  CONFIGURE_DEPENDS
-  ${DTS_BINDINGS_DIR}/*.yaml
-  )
-
-add_custom_command(
-  OUTPUT ${DEVICE_CODEGEN_STAMP}
-  BYPRODUCTS
-    ${DRIVERS_GENERATED_H}
-    ${DRIVERS_GENERATED_CC}
-    ${DEVICES_REPORT_JSON}
-  COMMAND ${PYTHON_EXECUTABLE} ${GEN_DEVICE_TRAITS_SCRIPT}
-    --edt-pickle ${EDT_PICKLE}
-    ${CXX_BINDING_ARGS}
-    --header-out ${DRIVERS_GENERATED_H}
-    --source-out ${DRIVERS_GENERATED_CC}
-    --report-out ${DEVICES_REPORT_JSON}
-  COMMAND ${CMAKE_COMMAND} -E touch ${DEVICE_CODEGEN_STAMP}
-  DEPENDS
-    ${EDT_PICKLE}
-    ${GEN_DEVICE_TRAITS_SCRIPT}
-    ${DEVICE_BINDINGS_SCRIPT}
-    ${DEVICE_CODEGEN_COMMON}
-    ${CXX_DRIVER_BINDINGS}
-    ${DTS_BINDING_FILES}
-  WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
-  COMMENT "Generating DeviceTrait sources from EDT"
-  VERBATIM
-  )
-
-add_custom_command(
-  OUTPUT ${PINCTRL_CODEGEN_STAMP}
-  BYPRODUCTS ${PINCTRL_GENERATED_CC}
-  COMMAND ${PYTHON_EXECUTABLE} ${GEN_PINCTRL_SCRIPT}
-    --edt-pickle ${EDT_PICKLE}
-    --output ${PINCTRL_GENERATED_CC}
-  COMMAND ${CMAKE_COMMAND} -E touch ${PINCTRL_CODEGEN_STAMP}
-  DEPENDS
-    ${EDT_PICKLE}
-    ${GEN_PINCTRL_SCRIPT}
-    ${DEVICE_CODEGEN_COMMON}
-  WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
-  COMMENT "Generating pinctrl source from EDT"
-  VERBATIM
-  )
-
-add_custom_target(device_codegen
-  DEPENDS
-    ${DEVICE_CODEGEN_STAMP}
-    ${PINCTRL_CODEGEN_STAMP}
-  )
-
-set_source_files_properties(
-  ${DRIVERS_GENERATED_H}
-  ${DRIVERS_GENERATED_CC}
-  ${PINCTRL_GENERATED_CC}
-  ${DEVICES_REPORT_JSON}
-  PROPERTIES GENERATED TRUE
-  )
 
 #
 # Run GEN_DRIVER_KCONFIG_SCRIPT.

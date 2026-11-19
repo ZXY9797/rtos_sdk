@@ -9,13 +9,6 @@ rsource "Kconfig.gr5525"
 
 if GPIO
 
-config GPIO_INIT_PRIORITY
-	int "GPIO init priority"
-	range 0 999
-	default KERNEL_INIT_PRIORITY_DEFAULT
-	help
-	  GPIO driver device initialization priority.
-
 config GPIO_GET_DIRECTION
 	bool "Support for querying GPIO direction [EXPERIMENTAL]"
 	select EXPERIMENTAL

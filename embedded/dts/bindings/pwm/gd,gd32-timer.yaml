@@ -5,6 +5,7 @@ compatible: "gd,gd32-timer"
 include: [pwm-controller.yaml, base.yaml, pinctrl-device.yaml]
 
 cxx-driver:
+  kconfig: PWM_GD32
   adapter:
     header: device_adapters/pwm_dt.h
     macro: HAL_GD32_PWM_DT_ADAPT
@@ -64,8 +65,15 @@ properties:
     default: 0
     description: Hardware dead-time register value for complementary PWM
 
+  "#trigger-cells":
+    type: int
+    const: 1
+
   "#pwm-cells":
     const: 3
+
+trigger-cells:
+  - event
 
 pwm-cells:
   - channel
