@@ -22,7 +22,8 @@ class SdkCliTest(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="sdk cli ")
         self.addCleanup(temporary.cleanup)
-        self.work = Path(temporary.name)
+        # Match the canonical build path reported by the CLI.
+        self.work = Path(temporary.name).resolve()
         self.build = self.work / "build"
 
     @unittest.skipUnless(shutil.which("cmake") and shutil.which("ninja"), "CMake and Ninja required")

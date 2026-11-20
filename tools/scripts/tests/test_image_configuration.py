@@ -13,7 +13,8 @@ class ImageConfigurationTest(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory(prefix='sdk image config ')
         self.addCleanup(self.directory.cleanup)
-        self.root = Path(self.directory.name)
+        # CMake resolves the temporary directory's Windows short-path alias.
+        self.root = Path(self.directory.name).resolve()
         self.source = self.root / 'source'
         self.source.mkdir()
         self.config = self.root / 'image config'
